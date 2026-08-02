@@ -1,0 +1,11 @@
+{
+  "name": "echelon-business-activity-ledger",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node tools/dev-server.mjs",
+    "test": "node --test tests/*.test.js",
+    "check": "node --check src/app.js && node --check src/api/client.js && node --check src/domain.js && node --test tests/*.test.js"
+  }
+}

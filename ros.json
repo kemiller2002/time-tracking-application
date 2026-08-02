@@ -1,0 +1,17 @@
+{
+  "name": "time-tracking-application",
+  "project": "Time Tracking Application",
+  "rosVersion": "1.0.0",
+  "repSpecificationVersion": "2.0",
+  "profile": "greenfield",
+  "bootstrap": "BOOTSTRAP.md",
+  "canonicalRoots": {
+    "journals": "research/journals",
+    "packages": "research/packages",
+    "theories": "research/theories",
+    "evidence": "research/evidence"
+  },
+  "registries": "registries",
+  "templates": "templates",
+  "generated": "generated"
+}
