@@ -6,7 +6,7 @@ The first vertical slice is a dependency-light standards-based PWA. Semantic HTM
 
 ## Layers
 
-`index.html` is the application shell and semantic route content. `src/app.js` binds feature flows. `src/domain.js` contains pure timer, duration, split, and request-ID logic. `src/state.js` separates persisted client state from presentation. `src/api/client.js` is the sole production network boundary. `service-worker.js` caches only the shell and GET assets.
+`index.html` is the application shell and semantic route content. Secondary workflows render as in-page detail workspaces, never modals. `src/app.js` binds feature flows. `src/domain.js` contains pure timer, duration, split, and request-ID logic. `src/state.js` separates persisted client state from presentation. `src/api/client.js` is the sole production network boundary. `service-worker.js` caches shell assets and explicitly excludes `/api/*`.
 
 State is divided into server records, active timer, queued commands, and transient view/dialog state. Components are semantic CSS patterns rather than a framework runtime. This reduces bundle and interoperability risk while the product model is still being validated.
 

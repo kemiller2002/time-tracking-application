@@ -1,2 +1,9 @@
 main:focus { outline: none; }
 .wordmark { min-height: 44px; }
+.demo-mode { margin-right: auto; margin-left: .65rem; padding: .16rem .45rem; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: .66rem; font-weight: 700; }
+.detail-page { max-width: 740px; margin: 0 auto; padding: 1.1rem 1.2rem 7rem; background: var(--bg); color: var(--ink); min-height: calc(100dvh - 4.4rem); }
+.detail-page > form > header { display: grid; grid-template-columns: 44px 1fr; gap: .7rem; align-items: start; border-bottom: 1px solid var(--line); padding-bottom: 1rem; margin-bottom: 1rem; }
+.detail-page > form > header .icon-button { background: var(--surface); }
+.detail-page > form > header h2 { font-family: Georgia, serif; font-size: 1.7rem; }
+body:has(.detail-page:not([hidden])) .bottom-nav { display: none; }
+body:has(.detail-page:not([hidden])) .compact-timer { display: none; }

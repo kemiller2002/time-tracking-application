@@ -1,11 +1,14 @@
 import { elapsedSeconds, favorites, formatClock, formatDuration, makeRequestId, validateSplit } from './domain.js';
 import { createStore } from './state.js';
+import { LedgerClient } from './api/client.js';
 
 const store = createStore();
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const sheet = $('#sheet');
 const toast = $('#toast');
+const client = new LedgerClient({ baseUrl: location.hostname === 'localhost' ? '/service/v1' : '/api/v1' });
+let sheetReturnFocus = null;
 
 function route(name = location.hash.slice(1) || 'today') {
   if (!['today', 'track', 'month', 'more'].includes(name)) name = 'today';
@@ -17,7 +20,20 @@ function route(name = location.hash.slice(1) || 'today') {
 }
 
 function showToast(message) { toast.textContent = message; toast.hidden = false; clearTimeout(showToast.timer); showToast.timer = setTimeout(() => { toast.hidden = true; }, 3500); }
-function openSheet(title, eyebrow, html) { $('#sheet-heading').innerHTML = `<p class="eyebrow">${eyebrow}</p><h2>${title}</h2>`; $('#sheet-content').innerHTML = html; sheet.showModal(); }
+function openSheet(title, eyebrow, html) {
+  sheetReturnFocus = document.activeElement;
+  $('#sheet-heading').innerHTML = `<p class="eyebrow">${eyebrow}</p><h2 id="sheet-title">${title}</h2>`;
+  $('#sheet-content').innerHTML = html;
+  $('#main').hidden = true;
+  sheet.hidden = false;
+  sheet.querySelector('[data-close-sheet]').focus();
+  window.scrollTo({ top: 0, behavior: 'instant' });
+}
+function closeSheet() {
+  sheet.hidden = true;
+  $('#main').hidden = false;
+  sheetReturnFocus?.focus?.({ preventScroll: true });
+}
 
 function renderTimeline() {
   const activities = store.get().activities;
@@ -77,7 +93,8 @@ function conflictSheet() { openSheet('Review conflict', 'Needs attention', `<div
 
 document.addEventListener('click', event => {
   const target = event.target.closest('button, a'); if (!target) return;
-  if (target.dataset.route) { event.preventDefault(); location.hash = target.dataset.route; return; }
+  if (target.dataset.closeSheet !== undefined || target.value === 'cancel') { event.preventDefault(); closeSheet(); return; }
+  if (target.dataset.route) { event.preventDefault(); closeSheet(); location.hash = target.dataset.route; return; }
   if (target.dataset.favorite) return startTimer(favorites[Number(target.dataset.favorite)]);
   if (target.dataset.duration) return manualSheet(Number(target.dataset.duration));
   if (target.dataset.activity) return activitySheet(target.dataset.activity);
@@ -91,20 +108,20 @@ document.addEventListener('click', event => {
   if (target.dataset.split) return splitSheet(target.dataset.split);
   if (target.dataset.history) return historySheet(target.dataset.history);
   if (target.dataset.void) { const id=target.dataset.void; const a=store.get().activities.find(x=>x.id===id); openSheet(a.voided?'Restore to totals':'Remove from totals', 'Audit-friendly change', `<p class="sheet-intro">${a.voided?'This entry will return to reports and totals.':'This entry will be removed from totals. The original record will remain in history.'}</p><label>Reason<input name="voidReason" required placeholder="Explain this change"></label><div class="sheet-actions"><button class="button button-dark" type="button" data-confirm-void="${id}">${a.voided?'Restore entry':'Remove entry'}</button><button class="button button-light" value="cancel">Cancel</button></div>`); return; }
-  if (target.dataset.confirmVoid) { store.update(s=>{const a=s.activities.find(x=>x.id===target.dataset.confirmVoid);a.voided=!a.voided;}); sheet.close(); showToast('Activity history updated.'); return; }
+  if (target.dataset.confirmVoid) { store.update(s=>{const a=s.activities.find(x=>x.id===target.dataset.confirmVoid);a.voided=!a.voided;}); closeSheet(); showToast('Activity history updated.'); return; }
   if (target.dataset.pickDuration) { $$('[data-pick-duration]').forEach(b=>b.setAttribute('aria-pressed', b===target ? 'true':'false')); $('[data-save-manual]').dataset.minutes=target.dataset.pickDuration; $('[data-save-manual]').textContent=`Add ${target.dataset.pickDuration} minutes`; return; }
-  if (target.dataset.saveManual) { const form=sheet.querySelector('form'); const data=new FormData(form); if(!data.get('description')||!data.get('purpose')) return showToast('Add a description and business purpose.'); const minutes=Number(target.dataset.minutes); store.update(s=>s.activities.push({id:makeRequestId(),start:'Now',end:'',minutes,type:data.get('type'),project:data.get('project'),description:data.get('description'),purpose:data.get('purpose'),evidence:0,status:'saved',manual:true})); sheet.close(); showToast(`${minutes} minutes saved to your activity history.`); return; }
-  if (target.dataset.saveStop !== undefined) { const data=new FormData(sheet.querySelector('form')); store.update(s=>s.activities.push({id:makeRequestId(),start:'Now',end:'',minutes:Number(target.dataset.minutes),type:data.get('type'),project:data.get('project'),description:data.get('description')||'Details to complete',purpose:data.get('purpose')||'',evidence:data.get('evidence')?1:0,status:'saved'})); sheet.close(); showToast('Activity saved to your history.'); route('today'); return; }
-  if (target.dataset.saveCorrection) { const data=new FormData(sheet.querySelector('form')); if(!data.get('reason')) return showToast('Add a reason for the correction.'); store.update(s=>{const a=s.activities.find(x=>x.id===target.dataset.saveCorrection);a.type=data.get('type');a.project=data.get('project');a.description=data.get('description');a.purpose=data.get('purpose');a.corrected=true;}); sheet.close(); showToast('Correction saved. The original remains in history.'); return; }
-  if (target.dataset.saveEvidence) { store.update(s=>s.activities.find(x=>x.id===target.dataset.saveEvidence).evidence++); sheet.close(); showToast('Evidence attached.'); return; }
-  if (target.dataset.saveSplit) { const data=new FormData(sheet.querySelector('form')); const a=store.get().activities.find(x=>x.id===target.dataset.saveSplit); const parts=[Number(data.get('part1')),Number(data.get('part2'))]; if(!validateSplit(a.minutes,parts)) return showToast(`Parts must be positive and total ${a.minutes} minutes.`); sheet.close(); showToast('Activity split. Original remains in history.'); return; }
-  if (target.dataset.attest !== undefined) { if(!sheet.querySelector('[name=attest]').checked) return showToast('Check the review statement first.'); sheet.close(); showToast('Day attested and saved.'); return; }
-  if (target.dataset.resolve !== undefined) { sheet.close(); showToast('Change resubmitted with a new version check.'); return; }
+  if (target.dataset.saveManual) { const form=sheet.querySelector('form'); const data=new FormData(form); if(!data.get('description')||!data.get('purpose')) return showToast('Add a description and business purpose.'); const minutes=Number(target.dataset.minutes); store.update(s=>s.activities.push({id:makeRequestId(),start:'Now',end:'',minutes,type:data.get('type'),project:data.get('project'),description:data.get('description'),purpose:data.get('purpose'),evidence:0,status:'saved',manual:true})); closeSheet(); showToast(`${minutes} minutes saved to your activity history.`); return; }
+  if (target.dataset.saveStop !== undefined) { const data=new FormData(sheet.querySelector('form')); store.update(s=>s.activities.push({id:makeRequestId(),start:'Now',end:'',minutes:Number(target.dataset.minutes),type:data.get('type'),project:data.get('project'),description:data.get('description')||'Details to complete',purpose:data.get('purpose')||'',evidence:data.get('evidence')?1:0,status:'saved'})); closeSheet(); showToast('Activity saved to your history.'); route('today'); return; }
+  if (target.dataset.saveCorrection) { const data=new FormData(sheet.querySelector('form')); if(!data.get('reason')) return showToast('Add a reason for the correction.'); store.update(s=>{const a=s.activities.find(x=>x.id===target.dataset.saveCorrection);a.type=data.get('type');a.project=data.get('project');a.description=data.get('description');a.purpose=data.get('purpose');a.corrected=true;}); closeSheet(); showToast('Correction saved. The original remains in history.'); return; }
+  if (target.dataset.saveEvidence) { store.update(s=>s.activities.find(x=>x.id===target.dataset.saveEvidence).evidence++); closeSheet(); showToast('Evidence attached.'); return; }
+  if (target.dataset.saveSplit) { const data=new FormData(sheet.querySelector('form')); const a=store.get().activities.find(x=>x.id===target.dataset.saveSplit); const parts=[Number(data.get('part1')),Number(data.get('part2'))]; if(!validateSplit(a.minutes,parts)) return showToast(`Parts must be positive and total ${a.minutes} minutes.`); closeSheet(); showToast('Activity split. Original remains in history.'); return; }
+  if (target.dataset.attest !== undefined) { if(!sheet.querySelector('[name=attest]').checked) return showToast('Check the review statement first.'); closeSheet(); showToast('Day attested and saved.'); return; }
+  if (target.dataset.resolve !== undefined) { closeSheet(); showToast('Change resubmitted with a new version check.'); return; }
   if (target.dataset.demo === 'history') return historySheet('a2');
   if (target.dataset.demo === 'evidence') return evidenceSheet('a1');
   if (target.dataset.demo === 'offline') return conflictSheet();
   if (target.dataset.demo === 'shortcuts') return openSheet('iPhone Shortcuts', 'Quick capture', `<div class="shortcut-list"><div><b>Start Research</b><code>POST /api/v1/timers/start</code></div><div><b>Stop Current Activity</b><code>POST /api/v1/timers/stop</code></div><div><b>Add Six Minutes</b><code>POST /api/v1/activities</code></div></div><p class="inline-note">Authenticate through the service’s Shortcut-safe session flow. Never place a GitHub credential in a Shortcut.</p>`);
-  if (target.id === 'sync-button') return openSheet('Everything is saved', 'Synchronization', `<div class="sync-state"><span>✓</span><div><b>Saved</b><p>No commands are waiting to send.</p></div></div><button class="text-button" type="button" data-demo="offline">Demonstrate a stale conflict</button>`);
+  if (target.id === 'sync-button') return openSheet('Service connection', 'Synchronization', `<div class="sync-state"><span>◇</span><div><b>Demo fixture</b><p>The service contract is available, but the displayed activity data is local and non-canonical.</p></div></div><button class="text-button" type="button" data-demo="offline">Demonstrate a stale conflict</button>`);
 });
 
 window.addEventListener('hashchange', () => route());
@@ -113,3 +130,18 @@ $('#today-date').textContent = new Intl.DateTimeFormat('en-US', { weekday:'long'
 renderFavorites(); renderDurations(); route();
 setInterval(renderTimer, 1000);
 if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('/service-worker.js').catch(()=>{});
+
+async function bootstrapService() {
+  const button = $('#sync-button');
+  button.setAttribute('aria-label', 'Checking ledger service status');
+  try {
+    const [health, config] = await Promise.all([client.health(), client.config()]);
+    if (health.status !== 'ok') throw new Error('degraded');
+    document.documentElement.dataset.configVersion = config.projection_version;
+    button.setAttribute('aria-label', 'Ledger service available; prototype data is local demo data');
+  } catch {
+    button.setAttribute('aria-label', 'Ledger service unavailable; prototype data is local demo data');
+    button.classList.add('needs-attention');
+  }
+}
+bootstrapService();

@@ -6,6 +6,13 @@ export class ApiError extends Error {
 
 const required = (value, field) => { if (value == null) throw new ApiError(`The service response is missing ${field}.`, { code: 'invalid_response' }); return value; };
 
+const validateEnvelope = data => {
+  required(data?.meta?.request_id, 'meta.request_id');
+  required(data?.meta?.server_time, 'meta.server_time');
+  if (data.meta.api_version !== 'v1') throw new ApiError('The service returned an unsupported API version.', { code: 'invalid_response' });
+  return required(data.data, 'data');
+};
+
 /** Cloudflare-only browser client. Authentication is supplied by a secure session cookie. */
 export class LedgerClient {
   constructor({ baseUrl = '/api/v1', fetchImpl = fetch, timeoutMs = 8000 } = {}) { this.baseUrl = baseUrl; this.fetchImpl = fetchImpl; this.timeoutMs = timeoutMs; }
@@ -27,4 +34,9 @@ export class LedgerClient {
       throw new ApiError('You appear to be offline. The command is waiting to send.', { code: 'offline', requestId });
     } finally { clearTimeout(timeout); }
   }
+
+  async health(options) { return validateEnvelope(await this.request('/health', options)); }
+  async config(options) { return validateEnvelope(await this.request('/config', options)); }
+  async projects(options) { return validateEnvelope(await this.request('/projects', options)); }
+  async activityTypes(options) { return validateEnvelope(await this.request('/activity-types', options)); }
 }

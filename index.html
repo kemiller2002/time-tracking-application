@@ -13,15 +13,17 @@
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="masthead">
-    <a class="wordmark" href="#today" aria-label="Echelon Ledger home"><span class="brand-mark" aria-hidden="true">E</span><span>Echelon <i>Ledger</i></span></a>
+    <a class="wordmark" href="#today" aria-label="Echelon Ledger home"><span class="brand-mark" aria-hidden="true">E</span><span>Echelon <i>Ledger</i></span></a><span class="demo-mode">Demo data</span>
     <button class="icon-button" id="sync-button" type="button" aria-label="View synchronization status"><span aria-hidden="true">↻</span><span class="sync-dot"></span></button>
   </header>
+
+  <section id="sheet" class="detail-page" aria-labelledby="sheet-title" hidden><form><header><button class="icon-button" type="button" data-close-sheet aria-label="Back to previous view">←</button><div id="sheet-heading"></div></header><div id="sheet-content"></div></form></section>
 
   <main id="main" tabindex="-1">
     <section class="view" data-view="today" aria-labelledby="today-title">
       <div class="page-heading"><div><p class="eyebrow" id="today-date"></p><h1 id="today-title">Today</h1></div><button class="quiet-button" data-action="manual">+ Add time</button></div>
       <section class="daily-total" aria-label="Daily total"><span id="daily-total">2h 30m</span><p>recorded across <strong id="activity-count">3 activities</strong></p></section>
-      <div class="section-heading"><h2>Activity ledger</h2><span class="save-state"><span aria-hidden="true">✓</span> Saved</span></div>
+      <div class="section-heading"><h2>Activity ledger</h2><span class="save-state"><span aria-hidden="true">◇</span> Demo fixture</span></div>
       <ol class="timeline" id="timeline"></ol>
       <section class="review-callout" aria-labelledby="review-title"><div><p class="eyebrow">End-of-day check</p><h2 id="review-title">Your record is nearly ready</h2><p id="review-summary">One activity needs a business purpose.</p></div><button class="button button-dark" data-action="review">Review day <span aria-hidden="true">→</span></button></section>
     </section>
@@ -49,7 +51,6 @@
   <aside class="compact-timer" id="compact-timer" hidden><button data-route="track"><span class="pulse" aria-hidden="true"></span><span><b id="compact-label">Research</b><small id="compact-project">Visual Engineering</small></span><time id="compact-time">00:00</time></button></aside>
   <nav class="bottom-nav" aria-label="Primary navigation"><a href="#today" data-route="today"><span aria-hidden="true">⌂</span>Today</a><a href="#track" data-route="track"><span aria-hidden="true">◉</span>Track</a><a href="#month" data-route="month"><span aria-hidden="true">▥</span>Month</a><a href="#more" data-route="more"><span aria-hidden="true">•••</span>More</a></nav>
 
-  <dialog id="sheet" class="sheet"><form method="dialog"><header><button class="icon-button" value="cancel" aria-label="Close">×</button><div id="sheet-heading"></div></header><div id="sheet-content"></div></form></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
   <script type="module" src="/src/app.js"></script>
 </body>
