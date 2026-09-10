@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Complete a stopped activity in Echelon Ledger."><title>Complete activity · Echelon Ledger</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Primary navigation"><a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true">E</span><span class="brand-name">Echelon Ledger</span></a><nav class="nav-group"><a class="nav-link" href="today.html"><span class="nav-mark" aria-hidden="true">TD</span>Today</a><a class="nav-link" aria-current="page" href="index.html"><span class="nav-mark" aria-hidden="true">TR</span>Track</a><a class="nav-link" href="month.html"><span class="nav-mark" aria-hidden="true">MO</span>Month</a><a class="nav-link" href="more.html"><span class="nav-mark" aria-hidden="true">MR</span>More</a></nav><div class="sidebar-status"><div class="status-line"><span class="status-dot" aria-hidden="true"></span><strong>Timer stopped</strong></div><p class="sidebar-meta">Time is safely held</p></div></aside>
+    <main class="page" id="main">
+      <header class="topbar"><a class="text-link back-link" href="index.html">Back to timer</a><a class="identity" href="settings.html" aria-label="Open settings">KM</a></header>
+      <div class="page-heading"><p class="eyebrow">Timer stopped</p><h1 class="page-title">Complete this activity.</h1><p class="page-intro">Your timer stopped immediately at 2:42 PM. Add enough context to make the record useful later.</p></div>
+      <div class="layout-two">
+        <form class="surface surface-pad" action="today.html" method="get">
+          <div class="completion-total"><strong>32m 18s</strong><span>Product research · HelixNote</span></div>
+          <fieldset class="form-section"><legend class="form-legend">Record details</legend><div class="form-grid">
+            <div class="field"><label for="stop-type">Activity type <span class="required">*</span></label><select id="stop-type" name="type" required><option selected>Research</option><option>Development</option><option>Marketing</option><option>Administration</option></select></div>
+            <div class="field"><label for="stop-project">Project <span class="required">*</span></label><select id="stop-project" name="project" required><option selected>HelixNote</option><option>Echelon Foundry</option><option>General operations</option></select></div>
+            <div class="field field-full"><label for="stop-description">What did you do? <span class="required">*</span></label><textarea id="stop-description" name="description" required>Compared mobile information architectures for the new ledger screen set.</textarea></div>
+            <div class="field field-full"><label for="stop-purpose">Business purpose <span class="required">*</span></label><textarea id="stop-purpose" name="purpose" required>Define a faster and more trustworthy way to record and verify Echelon Foundry work.</textarea><p class="field-help">Explain why this work mattered to the business.</p></div>
+            <div class="field field-full"><label for="stop-outcome">Outcome <span class="field-help">Optional</span></label><input id="stop-outcome" name="outcome" type="text" placeholder="What changed or was completed?"></div>
+          </div></fieldset>
+          <fieldset class="form-section"><legend class="form-legend">Supporting evidence</legend><div class="field"><label for="stop-evidence">Link or reference <span class="field-help">Optional</span></label><input id="stop-evidence" name="evidence" type="url" inputmode="url" placeholder="https://"><p class="field-help">You can also attach evidence later from the activity record.</p></div></fieldset>
+          <div class="form-actions"><a class="text-link" href="remove.html">Discard with explanation</a><button class="button button-secondary" type="submit">Save</button><button class="button button-primary" type="submit" formaction="start.html">Save &amp; start another</button></div>
+        </form>
+        <aside class="stack"><div class="notice"><p class="notice-title">Your time is safe</p><p class="notice-copy">This stopped session remains recoverable even if you leave before completing the details.</p></div><section class="surface surface-pad"><h2 class="section-title">Recorded exactly</h2><div class="detail-grid"><div class="detail-item"><p class="detail-label">Started</p><p class="detail-value">2:10:03 PM</p></div><div class="detail-item"><p class="detail-label">Stopped</p><p class="detail-value">2:42:21 PM</p></div><div class="detail-item"><p class="detail-label">Method</p><p class="detail-value">Timer</p></div><div class="detail-item"><p class="detail-label">Status</p><p class="detail-value">Incomplete draft</p></div></div></section></aside>
+      </div>
+      <footer class="page-footer">The stopped duration is exact. Metadata can be completed without restarting or extending the timer.</footer>
+    </main>
+  </div>
+  <nav class="bottom-nav" aria-label="Primary navigation"><a class="bottom-link" data-mark="TD" href="today.html">Today</a><a class="bottom-link" data-mark="TR" aria-current="page" href="index.html">Track</a><a class="bottom-link" data-mark="MO" href="month.html">Month</a><a class="bottom-link" data-mark="MR" href="more.html">More</a></nav>
+</body>
+</html>

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Static UI concept for the Echelon Business Activity Ledger.">
+  <title>Track activity · Echelon Ledger</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Primary navigation">
+      <a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true">E</span><span class="brand-name">Echelon Ledger</span></a>
+      <nav class="nav-group">
+        <a class="nav-link" href="today.html"><span class="nav-mark" aria-hidden="true">TD</span>Today</a>
+        <a class="nav-link" aria-current="page" href="index.html"><span class="nav-mark" aria-hidden="true">TR</span>Track</a>
+        <a class="nav-link" href="month.html"><span class="nav-mark" aria-hidden="true">MO</span>Month</a>
+        <a class="nav-link" href="more.html"><span class="nav-mark" aria-hidden="true">MR</span>More</a>
+      </nav>
+      <div class="sidebar-status"><div class="status-line"><span class="status-dot" aria-hidden="true"></span><strong>All changes saved</strong></div><p class="sidebar-meta">Synced at 2:41 PM</p></div>
+    </aside>
+
+    <main class="page" id="main">
+      <header class="topbar"><div><p class="eyebrow">Thursday, September 10</p></div><div class="topbar-actions"><span class="sync-note">Saved just now</span><a class="identity" href="settings.html" aria-label="Open settings for Kevin Miller">KM</a></div></header>
+
+      <div class="layout-two">
+        <div>
+          <section class="tracker" aria-labelledby="active-title">
+            <div class="tracker-head"><p class="tracker-label"><span class="tracker-pulse" aria-hidden="true"></span>Timing now</p><span class="timer-state">Server confirmed</span></div>
+            <h1 class="tracker-activity" id="active-title">Product research</h1>
+            <p class="tracker-project">HelixNote · Product strategy</p>
+            <p class="timer-display" aria-label="32 minutes and 18 seconds">00:32:18</p>
+            <p class="timer-started">Started at 2:10 PM · exact elapsed time</p>
+            <div class="tracker-actions"><a class="button button-ghost-light" href="index.html">Pause</a><a class="button button-light" href="stop.html">Stop activity</a><a class="button button-ghost-light button-wide" href="start.html">Switch activity</a></div>
+          </section>
+
+          <section class="section" aria-labelledby="quick-title">
+            <div class="section-head"><div><h2 class="section-title" id="quick-title">Quick start</h2><p class="section-kicker">Your frequent activities, ready in one tap.</p></div><a class="text-link" href="settings.html">Edit</a></div>
+            <div class="quick-grid">
+              <a class="quick-start" href="index.html"><span><span class="quick-title">Visual engineering</span><span class="quick-project">Research · Echelon Foundry</span></span><span class="quick-arrow" aria-hidden="true">→</span></a>
+              <a class="quick-start" href="index.html"><span><span class="quick-title">HelixNote development</span><span class="quick-project">Development · HelixNote</span></span><span class="quick-arrow" aria-hidden="true">→</span></a>
+              <a class="quick-start" href="index.html"><span><span class="quick-title">LinkedIn writing</span><span class="quick-project">Marketing · Echelon Foundry</span></span><span class="quick-arrow" aria-hidden="true">→</span></a>
+              <a class="quick-start" href="index.html"><span><span class="quick-title">Administration</span><span class="quick-project">Operations · Echelon Foundry</span></span><span class="quick-arrow" aria-hidden="true">→</span></a>
+            </div>
+          </section>
+        </div>
+
+        <aside class="stack" aria-label="Today at a glance">
+          <section class="surface mini-ledger" aria-labelledby="today-summary-title">
+            <div class="day-summary"><div><p class="summary-label" id="today-summary-title">Recorded today</p><p class="summary-value">4h 18m</p></div><span class="summary-count">4 entries</span></div>
+            <div class="timeline">
+              <article class="record"><p class="record-time">8:10<br>9:02</p><div class="record-body"><div class="record-head"><h3 class="activity-title">Visual research</h3><span class="duration">52m</span></div><p class="record-project">Echelon Foundry</p></div></article>
+              <article class="record"><p class="record-time">9:18<br>11:04</p><div class="record-body"><div class="record-head"><h3 class="activity-title">Development</h3><span class="duration">1h 46m</span></div><p class="record-project">HelixNote</p></div></article>
+              <article class="record"><p class="record-time">11:20<br>11:56</p><div class="record-body"><div class="record-head"><h3 class="activity-title">LinkedIn</h3><span class="duration">36m</span></div><p class="record-project">Echelon Foundry</p></div></article>
+            </div>
+            <a class="button button-secondary button-full button-small" href="today.html">View today’s ledger</a>
+          </section>
+          <a class="button button-primary button-full" href="manual-entry.html">Add time manually</a>
+          <div class="notice notice-warning"><p class="notice-title">One entry needs context</p><p class="notice-copy">Add a business purpose before reviewing today.</p></div>
+        </aside>
+      </div>
+      <footer class="page-footer">Static design study · Exact seconds remain authoritative; displayed minutes are never rounded up.</footer>
+    </main>
+  </div>
+  <nav class="bottom-nav" aria-label="Primary navigation"><a class="bottom-link" data-mark="TD" href="today.html">Today</a><a class="bottom-link" data-mark="TR" aria-current="page" href="index.html">Track</a><a class="bottom-link" data-mark="MO" href="month.html">Month</a><a class="bottom-link" data-mark="MR" href="more.html">More</a></nav>
+</body>
+</html>
