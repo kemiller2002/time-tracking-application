@@ -1,0 +1,35 @@
+name: F# domain
+
+# Project-owned workflow. Deliberately separate from ros-validation.yml, which
+# is a ROS-managed file: editing that one would break `ros-bootstrap verify`.
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  domain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Tier-boundary check
+        # Static, needs no compiler; fails on any Tier 1/2 infrastructure leak.
+        run: node tools/check-domain-architecture.mjs
+
+      - name: Restore
+        run: dotnet restore TimeEntry.sln
+
+      - name: Build
+        # Warnings are errors: an incomplete pattern match is a domain defect.
+        run: dotnet build TimeEntry.sln --no-restore --configuration Release
+
+      - name: Test
+        run: dotnet test TimeEntry.sln --no-build --configuration Release --logger "console;verbosity=normal"

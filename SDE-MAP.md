@@ -35,18 +35,24 @@ Navigation metadata only — it points at authorities, it is not one.
 |---|---|
 | `docs/time-entry/REQUIREMENTS.md` | Requirement inventory, TE-R-### ids, open questions |
 | `docs/time-entry/TRACEABILITY.md` | Requirement → code → test → evidence chain |
-| `docs/time-entry/DECISIONS.md` | `DF-TE-0001..0003` |
+| `docs/time-entry/DECISIONS.md` | `DF-TE-0001..0008` (all five open questions resolved) |
 | `docs/time-entry/UI-PROVENANCE.md` | Git-history screen provenance |
-| `docs/time-entry/TOOLCHAIN-BLOCKER.md` | Why Tier 4 is not implemented |
+| `docs/time-entry/TOOLCHAIN-BLOCKER.md` | Toolchain: resolved, plus a correction to its own earlier conclusion |
 | `prompts/business_activity_ledger_ui_*.md` | Source requirements authority |
 
 ## Current execution state
 
-Tiers 1–3 are authored in F#. **They have never been compiled or run**: no
-.NET SDK can be installed in this environment, so Tier 4 (GitHub persistence,
-WASM bridge) is not implemented and no F# verification evidence exists. See
-`docs/time-entry/TOOLCHAIN-BLOCKER.md` for the reproducible evidence and the
-three ways to unblock it.
+Tiers 1–3 are implemented in F# and **verified**: `dotnet build` passes with
+0 warnings under warnings-as-errors, `dotnet test` passes 67/67, and the
+tier-boundary check reports 0 violations. .NET SDK 8.0.131 installs from the
+Ubuntu archive (`apt-get install dotnet-sdk-8.0`); the earlier claim that no
+SDK was obtainable was wrong and is corrected in
+`docs/time-entry/TOOLCHAIN-BLOCKER.md`.
+
+Tier 4 is outstanding. The GitHub persistence boundary is now *implementable*
+(WI-0006, active). The WASM host remains blocked: the `wasm-tools` workload is
+not in the Ubuntu archive and ships only from the blocked vendor CDN
+(WI-0007).
 
 The JavaScript prototype in `src/` remains the only runnable application. It
 is **not** the domain authority (TE-R-090) and is retained as working

@@ -74,7 +74,12 @@ module EntryDate =
         if year < 1 || year > 9999 then Error(DateOutOfRange year)
         elif month < 1 || month > 12 then Error(DateOutOfRange year)
         elif day < 1 || day > DateTime.DaysInMonth(year, month) then Error(DateOutOfRange year)
-        else Ok(EntryDate(DateTime(year, month, day).Ticks / TimeSpan.TicksPerDay |> int))
+        else
+            // Bound to a local first: accessing a member on a freshly
+            // constructed struct triggers FS0052 (implicit copy), which is an
+            // error here because warnings are errors.
+            let date = DateTime(year, month, day)
+            Ok(EntryDate(int (date.Ticks / TimeSpan.TicksPerDay)))
 
     let dayNumber (EntryDate d) = d
 

@@ -179,3 +179,187 @@ support.
   `e896ea1`) is the *integration* target, distinct from the design authority.
 - No screen may be recreated from imagination while a `static-ui-screens/`
   counterpart exists.
+
+---
+
+## DF-TE-0004
+
+**Title:** No separate `Label` entity; the taxonomy is activity type + project + purpose
+
+**Status:** accepted · **Resolves:** OQ-2
+
+### Context
+
+The execution instruction names "labels" as an entry concern and asks whether
+they belong to entries or projects, are free-form or controlled, and
+participate in filtering. No repository document defines a `label` entity.
+
+### Evidence
+
+Searched all 18 recovered screens for a label or tag control:
+
+- No `name="tag*"`, no `Tags` heading, no tag placeholder anywhere.
+- The taxonomy fields actually present are **activity type**, **project**, and
+  **purpose/description** — "Purpose" or "Business purpose" appears in
+  `today.html`, `stop.html`, `manual-entry.html`, and `correction.html`;
+  "Description" in `activity.html`, `split.html`, `evidence.html`,
+  `start.html`, and `states.html`.
+
+### Decision
+
+There is no `Label` type. "Labels where supported" is satisfied by
+`ActivityTypeId`, which is the controlled taxonomy the screens and
+`schemas/domain/activity-type.schema.json` actually define. Filtering by
+activity type is supported (`EntryQuery.ActivityType`).
+
+### Rationale
+
+Adding a fourth taxonomy would mean inventing its scope, source, lifecycle,
+and ownership with no requirement defining any of them — and no screen to
+edit it. `EntryState.EntryFacts` therefore carries no `Labels` field, which is
+the honest representation.
+
+### Revisit when
+
+A requirement or screen defines a label distinct from activity type.
+
+---
+
+## DF-TE-0005
+
+**Title:** A description is optional at creation and required for attestation
+
+**Status:** accepted · **Resolves:** OQ-3
+
+### Evidence
+
+The recovered design answers this directly rather than leaving it to
+preference:
+
+- `static-ui-screens/today.html` renders a real entry carrying a
+  `badge-warn` reading **"Purpose missing"** — so an entry can exist,
+  persist, and appear in the ledger without a description.
+- The same screen's notice reads "The LinkedIn entry needs a clear business
+  purpose **before attestation**", and `review.html` blocks the day's review
+  on it.
+
+### Decision
+
+`Description` is `option` on `EntryFacts`. A missing description is not a
+validation failure at creation; it raises the `BusinessPurposeMissing`
+obligation, which blocks attestation.
+
+Constraints: non-whitespace, trimmed, ≤ 4000 characters — an engineering bound
+to prevent unbounded payloads, not a stated requirement.
+
+### Consequence
+
+This is what `Capabilities.Obligation.intrinsic` and the `PurposeMissing`
+badge already implement, so no code change follows from resolving OQ-3 — the
+implementation was already evidence-led.
+
+---
+
+## DF-TE-0006
+
+**Title:** Merge supersedes its sources into a new entry
+
+**Status:** accepted · **Resolves:** OQ-4
+
+### Context
+
+System-prompt §8.11 specifies merge's UI (select activities, preview merged
+time, choose category/project, combine descriptions, choose evidence, require
+reason) but not its lineage semantics. Two readings were possible: supersede N
+sources into a new entry, or void N sources and create one.
+
+### Decision
+
+Merge creates a new entry and transitions every source to
+`Superseded(SupersededByMerge target)`.
+
+### Rationale
+
+`Void` is the wrong state, and provably so rather than merely inelegantly:
+
+1. `Void` means "excluded from totals by user judgment, with a reason", and it
+   is **restorable** (TE-R-025). Restoring one source of a completed merge
+   would return its time to totals while the merged entry still carries it —
+   double-counting. `Superseded` offers no capabilities, so this is
+   unrepresentable.
+2. `Superseded` already exists and already means exactly "excluded from totals
+   because this time now lives in other entries". Merge is the inverse of
+   split; using the same state for both keeps one concept instead of two.
+3. It makes the total-preservation invariant expressible the same way as
+   split's: `merged duration = sum(source durations)`.
+
+### Consequences
+
+- `SupersessionCause.SupersededByMerge` is already defined and now reachable.
+- `Command.MergeEntries`, `MergeEntriesRequest`, a `mergeEntries` transition,
+  a `PersistMerge` effect, and `CanMerge` become implementable.
+- `Capabilities.available` gains `CanMerge` for `Active`, and
+  `BlockedByOpenQuestion "OQ-4"` is retired.
+
+---
+
+## DF-TE-0007
+
+**Title:** Archived projects reject new time but keep existing entries
+
+**Status:** accepted · **Resolves:** OQ-1
+
+### Decision
+
+A project has status `Active` or `Archived`. An `Archived` project may not be
+named by a create or correct command. Entries already referencing it remain
+valid, keep counting toward totals, and stay correctable in every respect
+except moving *to* an archived project.
+
+### Rationale
+
+The two halves each follow from an existing requirement. Allowing new time
+against an archived project makes "archived" mean nothing. Invalidating
+existing entries would destroy recorded history, which TE-R-030 forbids and
+which no requirement authorizes.
+
+### Revisit when
+
+A requirement defines a project lifecycle with more than two states, or states
+that archiving should retroactively affect totals.
+
+---
+
+## DF-TE-0008
+
+**Title:** `static-ui-screens/` is the shipping visual language; the PWA shell is retained
+
+**Status:** accepted · **Resolves:** OQ-5
+
+### Decision
+
+Adopt Design B (`static-ui-screens/styles.css` and its screen structure) as
+the shipping visual language. Retain from Design A only what B does not
+provide: `manifest.webmanifest`, `service-worker.js`, and the PWA shell
+wiring.
+
+### Rationale
+
+Every available signal favours B, and none favours A:
+
+- B is the newest UI commit (`0270575`; A last changed at `e896ea1`).
+- B covers all of required screens §8.1–8.15 plus sign-in; A covers three.
+- B is the HTML+CSS-only design reference the execution instruction describes
+  as carrying screen intent.
+- B already satisfies the project's own accessibility constraints: its
+  stylesheet declares `min-height: 44px` and `48px` targets, and it is
+  modal-free, so `DEC-0003` (no modal workflows) and the 44px floor from
+  `HANDOFF.md` both hold without modification.
+
+### Consequences
+
+- `index.html` must be rebuilt against B's markup and stylesheet.
+- A's minified `src/styles.css` is superseded; `src/accessibility-fixes.css`
+  targets A's class names (`.detail-page`, `.wordmark`) and must be re-derived
+  against B rather than carried over.
+- `src/app.js` is superseded by the WASM bridge (TE-R-091).

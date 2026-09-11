@@ -134,7 +134,7 @@ let ``an unpersisted entry cannot be corrected against any version`` () =
 // Void and restore (TE-R-024, TE-R-025, TE-R-060..TE-R-063)
 // ---------------------------------------------------------------------------
 
-let private voidRequest (entry: TimeEntry) (versionToken: string) =
+let private voidRequest (entry: TimeEntry) (versionToken: string) : VoidEntryRequest =
     { EntryId = entry.Id
       ExpectedVersion = version versionToken
       Reason = reason "Duplicate of the timer entry"
@@ -191,7 +191,7 @@ let ``restoring a voided entry returns it to totals and keeps both events`` () =
     let voided = single (fst (accepted (voidEntry (voidRequest entry "sha-1") entry)))
     let target = { voided with Version = Some(version "sha-2") }
 
-    let restoreRequest =
+    let restoreRequest: RestoreEntryRequest =
         { EntryId = target.Id
           ExpectedVersion = version "sha-2"
           Reason = reason "Not a duplicate after review"
@@ -226,7 +226,7 @@ let ``restoring a voided entry returns it to totals and keeps both events`` () =
 let ``an active entry cannot be restored`` () =
     let entry = persistedEntry "e1" (minutes 52) "sha-1"
 
-    let request =
+    let request: RestoreEntryRequest =
         { EntryId = entry.Id
           ExpectedVersion = version "sha-1"
           Reason = reason "no-op"
@@ -380,7 +380,7 @@ let ``a split of many children preserves the total`` () =
 let ``a command naming an unloaded entry is refused`` () =
     let entry = persistedEntry "e1" (minutes 60) "sha-1"
 
-    let request =
+    let request: VoidEntryRequest =
         { EntryId = entryId "missing"
           ExpectedVersion = version "sha-1"
           Reason = reason "x"

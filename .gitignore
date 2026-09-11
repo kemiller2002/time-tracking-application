@@ -144,3 +144,7 @@ vite.config.ts.timestamp-*
 
 # ROS transient lock state (Repository Operating System 2.0.1)
 .ros/locks/
+
+# .NET build output
+[Bb]in/
+[Oo]bj/

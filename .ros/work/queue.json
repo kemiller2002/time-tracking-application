@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "time-tracking-application",
-  "nextSeq": 20,
+  "nextSeq": 24,
   "items": [
     {
       "id": "WI-0001",
@@ -304,6 +304,70 @@
       "attachments": [],
       "createdAt": "2026-09-11T23:01:37.410Z",
       "updatedAt": "2026-09-11T23:18:48.639Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0020",
+      "title": "TE-019 Implement merge transition: sources superseded into new entry per DF-TE-0006",
+      "description": null,
+      "tags": [
+        "domain"
+      ],
+      "priority": "high",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:28:01.447Z",
+      "updatedAt": "2026-09-11T23:28:01.447Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0021",
+      "title": "TE-020 Implement archived-project policy per DF-TE-0007: reject new time, keep existing entries",
+      "description": null,
+      "tags": [
+        "domain"
+      ],
+      "priority": "medium",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:28:01.735Z",
+      "updatedAt": "2026-09-11T23:28:01.735Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0022",
+      "title": "TE-021 Rebuild app shell on static-ui-screens design system per DF-TE-0008",
+      "description": null,
+      "tags": [
+        "ui"
+      ],
+      "priority": "medium",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:28:02.011Z",
+      "updatedAt": "2026-09-11T23:28:02.011Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0023",
+      "title": "TE-022 BLOCKED: wasm-tools workload unavailable via apt - only remaining toolchain gap",
+      "description": null,
+      "tags": [
+        "blocker"
+      ],
+      "priority": "high",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:28:02.278Z",
+      "updatedAt": "2026-09-11T23:28:02.278Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null

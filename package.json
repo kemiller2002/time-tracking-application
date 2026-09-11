@@ -16,7 +16,12 @@
     "build": "node tools/build.mjs",
     "validate:schemas": "node tools/validate-schemas.mjs",
     "check": "npm run typecheck && npm run validate:schemas && npm run check:architecture && node --test tests/*.test.js",
-    "check:architecture": "node tools/check-domain-architecture.mjs"
+    "check:architecture": "node tools/check-domain-architecture.mjs",
+    "fsharp:restore": "dotnet restore TimeEntry.sln",
+    "fsharp:build": "dotnet build TimeEntry.sln --no-restore",
+    "fsharp:test": "dotnet test TimeEntry.sln --no-build",
+    "check:fsharp": "npm run fsharp:restore && npm run fsharp:build && npm run fsharp:test",
+    "check:all": "npm run check && npm run check:fsharp"
   },
   "dependencies": {
     "@echelon-foundry/typescript-wasm-kernel": "^0.4.1"
