@@ -40,7 +40,7 @@ toward totals with its new values. Rationale in `EntryState.fs` and
 `docs/time-entry/DECISIONS.md`.
 
 Transitions: `createEntry`, `correctEntry`, `splitEntry`, `voidEntry`,
-`restoreEntry`, `attachEvidence`. Merge is absent while OQ-4 is open.
+`restoreEntry`, `attachEvidence`, `mergeEntries`.
 
 Guards shared by every mutation: identity match, capability check, version
 check. Split adds child-count, identity-uniqueness, and total-preservation.
@@ -48,7 +48,9 @@ check. Split adds child-count, identity-uniqueness, and total-preservation.
 ## Invariants
 
 1. History only grows; the oldest revision is always `Created`.
-2. `sum(child durations) = source duration`, in whole seconds.
+2. `sum(child durations) = source duration`, in whole seconds. The merge
+   inverse is structural: the merged duration *is* the sum, never a supplied
+   value that could disagree.
 3. Only `Active` entries contribute to totals.
 4. No mutation proceeds without a matching version token.
 5. No transition performs an effect.
@@ -68,11 +70,11 @@ No other package reference in any tier.
 
 ## Verification
 
-`domain/TimeEntry.Tests` — 59 test methods (67 cases counting `InlineData`
-rows) across duration/rounding (19), transitions legal and illegal (26), and
-projection (14), including the adversarial cases from execution rule §23.
+`domain/TimeEntry.Tests` — 81 cases across duration/rounding, transitions
+legal and illegal (including all six state transitions and merge), and
+projection, including the adversarial cases from execution rule §23.
 
-**Status: passing.** `dotnet test TimeEntry.sln` -> 67/67 in 86 ms;
+**Status: passing.** `dotnet test TimeEntry.sln` -> 81/81 in 89 ms;
 `dotnet build` -> 0 warnings, 0 errors with warnings-as-errors;
 `node tools/check-domain-architecture.mjs` -> 0 tier-boundary violations.
 Every invariant above is demonstrated, not merely designed.

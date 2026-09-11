@@ -316,10 +316,10 @@
         "domain"
       ],
       "priority": "high",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-11T23:28:01.447Z",
-      "updatedAt": "2026-09-11T23:28:01.447Z",
+      "updatedAt": "2026-09-11T23:29:04.748Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null

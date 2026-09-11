@@ -48,7 +48,7 @@ marking work complete merely because code exists.
 | TE-R-023 | Split an entry | Source superseded, children active | WI-0013 | `Transitions.splitEntry` | `TransitionTests` "a two way split supersedes the source and creates active children" | **VERIFIED** |
 | TE-R-024 | Void an entry | Excluded from totals, record kept | WI-0014 | `Transitions.voidEntry` | `TransitionTests` "voiding removes the entry from totals but keeps the record" | **VERIFIED** |
 | TE-R-025 | Restore an entry | Returns to `Active`, both events kept | WI-0014 | `Transitions.restoreEntry` | `TransitionTests` "restoring a voided entry returns it to totals and keeps both events" | **VERIFIED** |
-| TE-R-026 | Merge activities | Sources superseded into a new entry | WI-0020 | *pending* | `TransitionTests` merge-withheld case (passes today) | DECIDED `DF-TE-0006` — implementation pending |
+| TE-R-026 | Merge activities | Sources superseded into a new entry; total is the exact sum | WI-0020 | `Transitions.mergeEntries` | `TransitionTests` 14 merge cases | **VERIFIED** (`DF-TE-0006`) |
 | TE-R-027 | Description of work | Optional at create; blocks attestation | WI-0004 | `Values.Description`, `Obligation.intrinsic` | `ProjectionTests` "a missing purpose surfaces as a badge and an obligation" | **VERIFIED** (`DF-TE-0005`) |
 | TE-R-028 | Associated project | `ProjectId` required in `EntryFacts` | WI-0015 | `EntryState.EntryFacts` | `ProjectionTests` "filtering by project excludes other projects" | **VERIFIED** |
 | TE-R-029 | Associated activity type | `ActivityTypeId` required | WI-0015 | `EntryState.EntryFacts` | — | **VERIFIED** |
@@ -132,15 +132,14 @@ marking work complete merely because code exists.
 | Category | Count |
 |---|---|
 | Requirements inventoried | 66 |
-| Requirements **verified by execution** | **48** |
+| Requirements **verified by execution** | **49** |
 | Verified by build/structure only (no behavioural test yet) | 2 |
 | Holds by construction (nothing to execute) | 2 |
 | Partially verified (Tier 4 half outstanding) | 1 |
-| Decided, implementation pending | 1 (TE-R-026 merge) |
 | Awaiting Tier 4 — GitHub adapter, WASM host, UI | 9 |
 | Blocked by an open question | **0** — all five resolved as `DF-TE-0004..0008` |
 
-Test suite: 67 cases, 0 failures, 86 ms. Tier-boundary check: 14 F# files,
+Test suite: 81 cases, 0 failures, 89 ms. Tier-boundary check: 14 F# files,
 0 violations, adversarially validated against three injected violations.
 
 ## Orphan check

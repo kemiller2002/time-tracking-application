@@ -4,7 +4,7 @@
   "repository": "time-tracking-application",
   "actor": "claude",
   "startedAt": "2026-09-11T22:44:26.239Z",
-  "updatedAt": "2026-09-11T23:27:42.711Z",
+  "updatedAt": "2026-09-11T23:32:57.591Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -510,6 +510,27 @@
         "EXE-20260911T231853671Z-5e804661"
       ],
       "blockReason": "Traceability model authored (docs/time-entry/TRACEABILITY.md) but cannot reach verification: 0 of 62 requirements have execution evidence while the toolchain blocker stands."
+    },
+    {
+      "id": "WI-0020",
+      "type": "default",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Transitions/Transitions.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/TransitionTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T23:32:57.591Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T232905256Z-f6ec2883"
+      ],
+      "completedAt": "2026-09-11T23:32:57.591Z"
     }
   ]
 }

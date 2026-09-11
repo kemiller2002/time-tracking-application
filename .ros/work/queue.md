@@ -22,7 +22,7 @@
 | WI-0017 | TE-015 Accessibility and browser behavior verification | active | verification | medium |
 | WI-0018 | TE-016 Heterogeneous verification: behavioral, boundary, structural, effect, serialization, adversarial | complete | verification | high |
 | WI-0019 | TE-017 Final traceability and handoff | active | traceability | high |
-| WI-0020 | TE-019 Implement merge transition: sources superseded into new entry per DF-TE-0006 | captured | domain | high |
+| WI-0020 | TE-019 Implement merge transition: sources superseded into new entry per DF-TE-0006 | ready | domain | high |
 | WI-0021 | TE-020 Implement archived-project policy per DF-TE-0007: reject new time, keep existing entries | captured | domain | medium |
 | WI-0022 | TE-021 Rebuild app shell on static-ui-screens design system per DF-TE-0008 | captured | ui | medium |
 | WI-0023 | TE-022 BLOCKED: wasm-tools workload unavailable via apt - only remaining toolchain gap | captured | blocker | high |

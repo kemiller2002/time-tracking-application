@@ -284,6 +284,179 @@ let splitEntry (request: SplitEntryRequest) (entry: TimeEntry) : Outcome =
 
         Accepted(supersededSource :: children, [ effect ])
 
+
+// ---------------------------------------------------------------------------
+// Merge (TE-R-026, DF-TE-0006)
+// ---------------------------------------------------------------------------
+
+let private requireAtLeastTwoSources (sources: MergeSource list) : Result<unit, Rejection> =
+    let count = List.length sources
+
+    if count >= 2 then
+        Ok()
+    else
+        Error(MergeNeedsAtLeastTwoSources count)
+
+let private requireUniqueMergeIdentities (target: EntryId) (sources: MergeSource list) : Result<unit, Rejection> =
+    let ids = target :: (sources |> List.map (fun s -> s.EntryId))
+
+    let duplicated =
+        ids
+        |> List.countBy id
+        |> List.tryPick (fun (entryId, count) -> if count > 1 then Some entryId else None)
+
+    match duplicated with
+    | Some entryId -> Error(MergeSourceIdentityNotUnique entryId)
+    | None -> Ok()
+
+let private resolveSources
+    (loaded: TimeEntry list)
+    (sources: MergeSource list)
+    : Result<(MergeSource * TimeEntry) list, Rejection> =
+    let resolved =
+        sources
+        |> List.map (fun source ->
+            match loaded |> List.tryFind (fun e -> e.Id = source.EntryId) with
+            | Some entry -> Ok(source, entry)
+            | None -> Error(EntryNotLoaded source.EntryId))
+
+    let firstError =
+        resolved
+        |> List.tryPick (fun r ->
+            match r with
+            | Error rejection -> Some rejection
+            | Ok _ -> None)
+
+    match firstError with
+    | Some rejection -> Error rejection
+    | None ->
+        Ok(
+            resolved
+            |> List.choose (fun r ->
+                match r with
+                | Ok pair -> Some pair
+                | Error _ -> None)
+        )
+
+/// Every source must be mergeable in its own right: legal in its state, and
+/// at the version the caller read. Checked per source because each was read
+/// independently and any one may be stale (TE-R-070, TE-R-074 "offline edits
+/// overlap").
+let private requireAllSourcesMergeable (pairs: (MergeSource * TimeEntry) list) : Result<unit, Rejection> =
+    let failure =
+        pairs
+        |> List.tryPick (fun (source, entry) ->
+            match requireCapability CanMerge entry with
+            | Error rejection -> Some rejection
+            | Ok() ->
+                match requireVersion source.ExpectedVersion entry with
+                | Error rejection -> Some rejection
+                | Ok() -> None)
+
+    match failure with
+    | Some rejection -> Error rejection
+    | None -> Ok()
+
+let private requireSingleDay (pairs: (MergeSource * TimeEntry) list) : Result<unit, Rejection> =
+    let days =
+        pairs
+        |> List.map (fun (_, entry) -> EntryDate.dayNumber entry.Effective.Date)
+        |> List.distinct
+
+    if List.length days = 1 then
+        Ok()
+    else
+        Error(MergeSpansMultipleDays(List.length days))
+
+/// Merge N entries into one.
+///
+/// The merged duration is the exact integer sum of the sources' durations, so
+/// total preservation is structural: there is no supplied total that could
+/// disagree with the sources, and therefore no invariant to violate.
+///
+/// Each source becomes `Superseded(SupersededByMerge target)` rather than
+/// `Void`. `Void` would be wrong and not merely inelegant: it is restorable,
+/// so restoring one source of a completed merge would return its time to
+/// totals while the merged entry still carries it. `Superseded` offers no
+/// capabilities, making that unrepresentable (DF-TE-0006).
+let mergeEntries (request: MergeEntriesRequest) (loaded: TimeEntry list) : Outcome =
+    let validated =
+        requireAtLeastTwoSources request.Sources
+        |> Result.bind (fun () -> requireUniqueMergeIdentities request.NewEntryId request.Sources)
+        |> Result.bind (fun () -> resolveSources loaded request.Sources)
+        |> Result.bind (fun pairs ->
+            requireAllSourcesMergeable pairs
+            |> Result.bind (fun () -> requireSingleDay pairs)
+            |> Result.map (fun () -> pairs))
+
+    match validated with
+    | Error rejection -> Rejected rejection
+    | Ok pairs ->
+        let totalSeconds =
+            pairs |> List.sumBy (fun (_, entry) -> Duration.seconds entry.Effective.Duration)
+
+        match Duration.ofSeconds totalSeconds with
+        | Error _ -> Rejected(MergeDurationOutOfRange totalSeconds)
+        | Ok mergedDuration ->
+            let _, firstEntry = List.head pairs
+
+            let facts =
+                { Project = request.Project
+                  ActivityType = request.ActivityType
+                  Date = firstEntry.Effective.Date
+                  Duration = mergedDuration
+                  Description = request.Description
+                  // A merge is a deliberate manual act with a required
+                  // reason, so the merged entry is not a timed record even
+                  // when every source was.
+                  Origin = Manual request.Reason
+                  Evidence = request.Evidence }
+
+            let sourceIds = pairs |> List.map (fun (_, entry) -> entry.Id)
+
+            let target =
+                { Id = request.NewEntryId
+                  State = Active
+                  Effective = facts
+                  History =
+                    [ { Id = request.Attribution.NewRevisionId
+                        Change = CreatedByMergeOf sourceIds
+                        Facts = facts
+                        RecordedAt = request.Attribution.OccurredAt
+                        RecordedBy = request.Attribution.Actor
+                        Device = request.Attribution.Device } ]
+                  Version = None }
+
+            let supersede (source: MergeSource, entry: TimeEntry) =
+                let revision =
+                    { Id = source.NewRevisionId
+                      Change = MergedInto request.NewEntryId
+                      Facts = entry.Effective
+                      RecordedAt = request.Attribution.OccurredAt
+                      RecordedBy = request.Attribution.Actor
+                      Device = request.Attribution.Device }
+
+                TimeEntry.appendRevision
+                    revision
+                    (Superseded(SupersededByMerge request.NewEntryId))
+                    entry.Effective
+                    entry
+
+            let superseded = pairs |> List.map supersede
+
+            let effect =
+                PersistMerge(
+                    { Entry = target; ExpectedVersion = None },
+                    superseded
+                    |> List.map2
+                        (fun (source: MergeSource, _) entry ->
+                            { Entry = entry
+                              ExpectedVersion = Some source.ExpectedVersion })
+                        pairs
+                )
+
+            Accepted(target :: superseded, [ effect ])
+
 // ---------------------------------------------------------------------------
 // Dispatch
 // ---------------------------------------------------------------------------
@@ -305,3 +478,5 @@ let apply (loaded: TimeEntry list) (command: Command) : Outcome =
     | VoidEntry request -> against request.EntryId (voidEntry request)
     | RestoreEntry request -> against request.EntryId (restoreEntry request)
     | AttachEvidence request -> against request.EntryId (attachEvidence request)
+    // Merge spans many entries, so it takes the whole loaded set rather than one.
+    | MergeEntries request -> mergeEntries request loaded

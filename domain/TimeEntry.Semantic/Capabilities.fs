@@ -33,13 +33,12 @@ module Capabilities =
 
     /// The capabilities available in a given state.
     ///
-    /// `CanMerge` is withheld in every state: OQ-4 (does merge supersede N
-    /// sources into a new entry, or void N and create one?) is unresolved, and
-    /// the two readings produce different, irreversible history. Offering the
-    /// action would require inventing that semantics.
+    /// `CanMerge` is available on `Active` since DF-TE-0006 resolved OQ-4:
+    /// merge supersedes its sources into a new entry, reusing `Superseded`
+    /// rather than `Void`.
     let available (state: EntryState) : EntryCapability list =
         match state with
-        | Active -> [ CanCorrect; CanSplit; CanVoid; CanAttachEvidence ]
+        | Active -> [ CanCorrect; CanSplit; CanVoid; CanMerge; CanAttachEvidence ]
         | Void _ -> [ CanRestore ]
         | Superseded _ -> []
 
@@ -51,11 +50,14 @@ module Capabilities =
         if has capability state then
             None
         else
+            // State-dominant cases first. `Superseded` is the strongest fact
+            // about an entry and must win over `NotVoid`: a merged or split
+            // source is not restorable *because it is superseded*, and
+            // reporting "not void" would invite the caller to try voiding it.
             match capability, state with
-            | CanMerge, _ -> Some(BlockedByOpenQuestion "OQ-4")
-            | CanRestore, _ -> Some NotVoid
-            | _, Void _ -> Some AlreadyVoid
             | _, Superseded cause -> Some(AlreadySuperseded cause)
+            | _, Void _ -> Some AlreadyVoid
+            | CanRestore, Active -> Some NotVoid
             | _ -> None
 
 /// Work an entry still owes before it can be attested.

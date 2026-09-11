@@ -77,12 +77,37 @@ type AttachEvidenceRequest =
       Evidence: EvidenceRef
       Attribution: Attribution }
 
-/// Every legal user intention against the ledger.
+/// One entry being merged away. Carries its own expected version, because
+/// each source was read independently and any one of them may be stale
+/// (TE-R-070), and its own revision id for the supersession revision it gains.
+type MergeSource =
+    { EntryId: EntryId
+      ExpectedVersion: VersionToken
+      NewRevisionId: RevisionId }
+
+/// Merge N entries into one (TE-R-026, DF-TE-0006).
 ///
-/// Merge (TE-R-026) is absent: OQ-4 leaves its lineage semantics undefined,
-/// and the two candidate readings produce different irreversible history.
-/// Adding a `MergeEntries` case would require inventing that semantics, so the
-/// command does not exist rather than existing and behaving arbitrarily.
+/// There is no `Duration` field: the merged duration is *computed* as the sum
+/// of the sources' durations. Supplying it would create a value that could
+/// disagree with the sources; computing it makes total preservation
+/// structural rather than validated. System-prompt 8.11 asks only to "preview
+/// merged time", never to edit it — unlike split, which explicitly permits
+/// "optional time correction".
+type MergeEntriesRequest =
+    { NewEntryId: EntryId
+      Sources: MergeSource list
+      /// The final category and project chosen in the merge UI (8.11).
+      Project: ProjectId
+      ActivityType: ActivityTypeId
+      /// Combined description (8.11 "combine descriptions").
+      Description: Description option
+      /// Evidence chosen to carry onto the merged entry (8.11).
+      Evidence: EvidenceRef list
+      /// 8.11: "require reason".
+      Reason: Reason
+      Attribution: Attribution }
+
+/// Every legal user intention against the ledger.
 type Command =
     | CreateEntry of CreateEntryRequest
     | CorrectEntry of CorrectEntryRequest
@@ -90,3 +115,4 @@ type Command =
     | VoidEntry of VoidEntryRequest
     | RestoreEntry of RestoreEntryRequest
     | AttachEvidence of AttachEvidenceRequest
+    | MergeEntries of MergeEntriesRequest

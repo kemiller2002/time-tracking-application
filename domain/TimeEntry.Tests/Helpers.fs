@@ -64,6 +64,21 @@ let persistedEntry (id: string) (duration: Duration) (versionToken: string) =
             Device = deviceLabel "iPhone" } ]
       Version = Some(version versionToken) }
 
+/// An entry on a specific ledger day, for cross-day cases.
+let persistedEntryOn (id: string) (duration: Duration) (versionToken: string) (date: EntryDate) =
+    let entry = persistedEntry id duration versionToken
+
+    { entry with
+        Effective = { entry.Effective with Date = date }
+        History =
+            entry.History
+            |> List.map (fun r -> { r with Facts = { r.Facts with Date = date } }) }
+
+let mergeSource (id: string) (versionToken: string) : MergeSource =
+    { EntryId = entryId id
+      ExpectedVersion = version versionToken
+      NewRevisionId = revisionId (id + "-merged") }
+
 let splitChild (id: string) (duration: Duration) =
     { NewEntryId = entryId id
       NewRevisionId = revisionId (id + "-r1")

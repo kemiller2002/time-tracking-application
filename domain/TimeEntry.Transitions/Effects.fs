@@ -35,6 +35,11 @@ type Effect =
     /// the backend permits, and so a partial write is a single reportable
     /// outcome rather than several (TE-R-035).
     | PersistSplit of source: PersistRequest * children: PersistRequest list
+    /// A merge writes the new entry and every superseded source. One effect
+    /// for the same reason as `PersistSplit`: the group must be as atomic as
+    /// the backend permits, and a partial write must be one reportable
+    /// outcome (TE-R-035).
+    | PersistMerge of target: PersistRequest * sources: PersistRequest list
 
 /// Why a transition was refused. Every case is a typed domain rejection — no
 /// stringly-typed errors, so the UI can respond to a conflict differently from
@@ -57,6 +62,20 @@ type Rejection =
     | SplitChildIdentityNotUnique of duplicated: EntryId
     /// The entry the command names was not supplied to the transition.
     | EntryNotLoaded of EntryId
+    /// A merge needs something to merge.
+    | MergeNeedsAtLeastTwoSources of supplied: int
+    /// Two sources, or a source and the new entry, share an identity.
+    | MergeSourceIdentityNotUnique of duplicated: EntryId
+    /// The sources fall on different ledger days. Refused rather than
+    /// silently resolved: the ledger is day-oriented (daily totals, daily
+    /// attestation), so merging across days would move time between two days
+    /// and change both days' totals. System-prompt 8.11 describes merging
+    /// "adjacent or related activities", which does not authorise that.
+    | MergeSpansMultipleDays of days: int
+    /// The sources' durations sum to something `Duration` cannot represent.
+    /// Reachable in principle by merging enough long entries; surfaced rather
+    /// than clamped, because clamping would lose recorded time (TE-R-001).
+    | MergeDurationOutOfRange of totalSeconds: int
     /// A transition whose semantics no repository requirement defines.
     | TransitionUndefined of questionId: string
 
