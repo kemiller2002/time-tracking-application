@@ -57,7 +57,7 @@ marking work complete merely because code exists.
 | TE-R-032 | Void/restore history preserved | Three revisions after void+restore | WI-0014 | `Transitions` | `TransitionTests` restore case | **VERIFIED** |
 | TE-R-033 | Evidence history preserved | Evidence append is a revision | WI-0010 | `Transitions.attachEvidence` | — | VERIFIED (build) — no behavioural test yet |
 | TE-R-034 | Report traceability | Totals derive only from counting entries | WI-0011 | `Projection.project` | `ProjectionTests` "totals exclude voided and superseded entries" | **VERIFIED** |
-| TE-R-035 | Resistant to accidental loss | Split persisted as one grouped effect | WI-0013 | `Effects.PersistSplit` | `TransitionTests` split effect assertions | **VERIFIED** |
+| TE-R-035 | Resistant to accidental loss | Grouped writes land atomically or not at all | WI-0025 | `Interpreter.commitAll` | `InterpreterTests` 3 atomicity cases (stale source, existing child, merge group) | **VERIFIED** |
 
 ## C. Split invariants
 
@@ -93,7 +93,7 @@ marking work complete merely because code exists.
 | TE-R-071 | Conflict UI shows both versions | `VersionConflict` carries expected + actual | WI-0016 | `Effects.Rejection` | `TransitionTests` asserts both tokens | **VERIFIED** |
 | TE-R-072 | Stale write is an explicit outcome | No effects requested on conflict | WI-0016 | `Transitions.transition` | `TransitionTests` "a stale correction writes nothing" | **VERIFIED** |
 | TE-R-073 | Version evidence retained | `TimeEntry.Version`, `PersistRequest.ExpectedVersion` | WI-0016 | `EntryState`, `Effects` | `TransitionTests` effect assertions | **VERIFIED** |
-| TE-R-074 | Enumerated conflict sources | Split-on-stale covered; multi-device needs Tier 4 | WI-0016 | `requireVersion` | `TransitionTests` stale-split case | PARTIAL — Tier 4 blocked |
+| TE-R-074 | Enumerated conflict sources | Stale file and moved branch ref both reject | WI-0025 | `requireVersion`, `Interpreter.commitAll` | `InterpreterTests` stale-write + commit-window-race cases | **VERIFIED** |
 
 ## G. Projection
 
@@ -119,7 +119,7 @@ marking work complete merely because code exists.
 | TE-R-096 | Illegal states unrepresentable | Private ctors; state-specific DUs | WI-0004 | `Identifiers`, `Duration`, `Values`, `EntryState` | `DurationTests` + `TransitionTests` refusal cases | **VERIFIED** |
 | TE-R-097 | Capabilities from state | Rows carry capabilities | WI-0004 | `Capabilities.available` | `ProjectionTests` "a row carries the capabilities of its state" | **VERIFIED** |
 | TE-R-098 | Native HTML/CSS | `static-ui-screens/` is HTML+CSS only | WI-0008 | `static-ui-screens/` | — | HOLDS |
-| TE-R-099 | GitHub backend | — | WI-0006 | — | — | NOT IMPLEMENTED (blocked) |
+| TE-R-099 | GitHub backend | Store port + effect interpreter; HTTP impl outstanding | WI-0025 | `GitHub.Store`, `GitHub.Interpreter` | `InterpreterTests` 20 cases via in-memory store | **VERIFIED** (port + interpreter); HTTP impl WI-0027 |
 
 ## I. Accessibility
 
@@ -139,7 +139,7 @@ marking work complete merely because code exists.
 | Awaiting Tier 4 — GitHub adapter, WASM host, UI | 9 |
 | Blocked by an open question | **0** — all five resolved as `DF-TE-0004..0008` |
 
-Test suite: 122 cases, 0 failures, 176 ms. Tier-boundary check: 14 F# files,
+Test suite: 142 cases, 0 failures, 196 ms. Tier-boundary check: 14 F# files,
 0 violations, adversarially validated against three injected violations.
 
 ## Orphan check

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "time-tracking-application",
-  "nextSeq": 26,
+  "nextSeq": 28,
   "items": [
     {
       "id": "WI-0001",
@@ -392,10 +392,38 @@
       "description": null,
       "tags": [],
       "priority": "medium",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-11T23:48:30.341Z",
-      "updatedAt": "2026-09-11T23:48:30.341Z",
+      "updatedAt": "2026-09-11T23:49:49.593Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0026",
+      "title": "TE-026 Project domain type with Active/Archived status and project storage per DF-TE-0007",
+      "description": null,
+      "tags": [],
+      "priority": "medium",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:53:38.185Z",
+      "updatedAt": "2026-09-11T23:53:38.185Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0027",
+      "title": "TE-027 HTTP implementation of the GitHubStore port: Git Data API trees/commits/refs, auth, rate-limit and retry",
+      "description": null,
+      "tags": [],
+      "priority": "medium",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:55:06.796Z",
+      "updatedAt": "2026-09-11T23:55:06.796Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null

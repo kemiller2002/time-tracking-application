@@ -28,6 +28,7 @@ owned here.
 | 2 | `TimeEntry.Transitions` | Commands, guards, transitions, requested effects, typed rejections | Anything that performs an effect |
 | 3 | `TimeEntry.Projection` | Queries, list projection, totals, view state | Serialization, transport |
 | 4 | `TimeEntry.Persistence` | Stored document shape, domain mapping, repository layout, JSON | HTTP, GitHub API |
+| 4 | `TimeEntry.GitHub` | Store port and effect interpreter: optimistic concurrency, atomic grouped writes | Domain decisions |
 | — | `TimeEntry.Tests` | Verification of the above | Network, browser |
 
 Tier 1 targets `netstandard2.0` and references only `FSharp.Core`, so the
@@ -71,11 +72,11 @@ No other package reference in any tier.
 
 ## Verification
 
-`domain/TimeEntry.Tests` — 122 cases across duration/rounding, transitions
+`domain/TimeEntry.Tests` — 142 cases across duration/rounding, transitions
 legal and illegal (including all six state transitions and merge), and
 projection, including the adversarial cases from execution rule §23.
 
-**Status: passing.** `dotnet test TimeEntry.sln` -> 122/122 in 176 ms;
+**Status: passing.** `dotnet test TimeEntry.sln` -> 142/142 in 196 ms;
 `dotnet build` -> 0 warnings, 0 errors with warnings-as-errors;
 `node tools/check-domain-architecture.mjs` -> 0 tier-boundary violations.
 Every invariant above is demonstrated, not merely designed.

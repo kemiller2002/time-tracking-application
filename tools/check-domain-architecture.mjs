@@ -29,6 +29,7 @@ const TIERS = {
   // Tier 4 is the only tier permitted to know about serialization, transport
   // and infrastructure. Everything below it is checked against that.
   'TimeEntry.Persistence': 4,
+  'TimeEntry.GitHub': 4,
   'TimeEntry.Tests': 4
 };
 

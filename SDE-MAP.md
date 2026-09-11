@@ -22,6 +22,7 @@ Navigation metadata only — it points at authorities, it is not one.
 | Time Entry projection | `domain/TimeEntry.Projection/` | 3 | `domain/manifest.md` | Queries, list projection, totals |
 | Domain verification | `domain/TimeEntry.Tests/` | — | `domain/manifest.md` | Behavioural + adversarial domain tests |
 | GitHub persistence boundary | `domain/TimeEntry.Persistence/` | 4 | `domain/manifest.md` | Document shape, mapping, layout, JSON. API adapter still outstanding (WI-0025) |
+| GitHub effect interpreter | `domain/TimeEntry.GitHub/` | 4 | `domain/manifest.md` | Store port, concurrency, atomic writes. HTTP impl outstanding (WI-0027) |
 | WASM / browser bridge | *not yet implemented* | 4 | — | TE-006; blocked, see below |
 | Browser UI (design authority) | `static-ui-screens/` | 4 | `docs/time-entry/UI-PROVENANCE.md` | 18 screens; authoritative per `DF-TE-0003` |
 | Browser UI (delivery shell) | `index.html`, `src/`, `service-worker.js` | 4 | `docs/time-entry/UI-PROVENANCE.md` | PWA shell; current JS prototype |

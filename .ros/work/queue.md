@@ -8,7 +8,7 @@
 | WI-0003 | TE-002 Requirements normalization and traceability for Time Entry domain | complete | requirements | high |
 | WI-0004 | TE-003 Domain state model: entry states, legal transitions, capabilities, obligations, effects | complete | domain | high |
 | WI-0005 | TE-004 Time unit domain: exact elapsed duration plus six-minute billing units | complete | domain | high |
-| WI-0006 | TE-005 GitHub persistence boundary: anti-corruption layer between F# domain and GitHub API | active | persistence | high |
+| WI-0006 | TE-005 GitHub persistence boundary: anti-corruption layer between F# domain and GitHub API | complete | persistence | high |
 | WI-0007 | TE-006 WASM/browser boundary: F# WASM via typescript-wasm-kernel with minimal TS surface | blocked | boundary | high |
 | WI-0008 | TE-007 Historical UI recovery: establish authoritative HTML/CSS screen provenance | complete | ui | high |
 | WI-0009 | TE-018 BLOCKED: .NET/F# toolchain unavailable - proxy denies all Microsoft distribution hosts | complete | blocker | high |
@@ -27,4 +27,6 @@
 | WI-0022 | TE-021 Rebuild app shell on static-ui-screens design system per DF-TE-0008 | captured | ui | medium |
 | WI-0023 | TE-022 BLOCKED: wasm-tools workload unavailable via apt - only remaining toolchain gap | captured | blocker | high |
 | WI-0024 | TE-023 Duration precision: store milliseconds to match exact_duration_ms contract | complete |  | medium |
-| WI-0025 | TE-025 GitHub API adapter and effect interpreter: Git Data API for atomic multi-file split/merge writes | captured |  | medium |
+| WI-0025 | TE-025 GitHub API adapter and effect interpreter: Git Data API for atomic multi-file split/merge writes | active |  | medium |
+| WI-0026 | TE-026 Project domain type with Active/Archived status and project storage per DF-TE-0007 | captured |  | medium |
+| WI-0027 | TE-027 HTTP implementation of the GitHubStore port: Git Data API trees/commits/refs, auth, rate-limit and retry | captured |  | medium |

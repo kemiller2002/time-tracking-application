@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Tier 4 — Host. Effect execution.
+
+    References Tier 1, Tier 2 (for the Effect type it executes) and the
+    persistence boundary. Nothing depends on this project: it sits at the edge.
+
+    The store itself is a port (a record of functions in Store.fs), so this
+    project carries no HTTP dependency and the interpreter is verifiable with
+    an in-memory store and no network.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningLevel>5</WarningLevel>
+    <OtherFlags>$(OtherFlags) --warnon:1182</OtherFlags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Store.fs" />
+    <Compile Include="Interpreter.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../TimeEntry.Semantic/TimeEntry.Semantic.fsproj" />
+    <ProjectReference Include="../TimeEntry.Transitions/TimeEntry.Transitions.fsproj" />
+    <ProjectReference Include="../TimeEntry.Persistence/TimeEntry.Persistence.fsproj" />
+  </ItemGroup>
+
+</Project>

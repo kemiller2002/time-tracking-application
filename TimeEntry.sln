@@ -8,6 +8,8 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "TimeEntry.Projection", "dom
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "TimeEntry.Persistence", "domain\TimeEntry.Persistence\TimeEntry.Persistence.fsproj", "{A1000000-0000-0000-0000-000000000005}"
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "TimeEntry.GitHub", "domain\TimeEntry.GitHub\TimeEntry.GitHub.fsproj", "{A1000000-0000-0000-0000-000000000006}"
+EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "TimeEntry.Tests", "domain\TimeEntry.Tests\TimeEntry.Tests.fsproj", "{A1000000-0000-0000-0000-000000000004}"
 EndProject
 Global
@@ -36,5 +38,9 @@ Global
 		{A1000000-0000-0000-0000-000000000005}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A1000000-0000-0000-0000-000000000005}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A1000000-0000-0000-0000-000000000005}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1000000-0000-0000-0000-000000000006}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1000000-0000-0000-0000-000000000006}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1000000-0000-0000-0000-000000000006}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1000000-0000-0000-0000-000000000006}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

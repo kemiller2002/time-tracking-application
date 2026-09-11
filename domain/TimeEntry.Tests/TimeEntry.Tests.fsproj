@@ -24,12 +24,14 @@
 
   <ItemGroup>
     <Compile Include="Helpers.fs" />
+    <Compile Include="FakeStore.fs" />
     <Compile Include="DurationTests.fs" />
     <Compile Include="TransitionTests.fs" />
     <Compile Include="SplitTests.fs" />
     <Compile Include="MergeTests.fs" />
     <Compile Include="ProjectionTests.fs" />
     <Compile Include="PersistenceTests.fs" />
+    <Compile Include="InterpreterTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -43,6 +45,7 @@
     <ProjectReference Include="../TimeEntry.Transitions/TimeEntry.Transitions.fsproj" />
     <ProjectReference Include="../TimeEntry.Projection/TimeEntry.Projection.fsproj" />
     <ProjectReference Include="../TimeEntry.Persistence/TimeEntry.Persistence.fsproj" />
+    <ProjectReference Include="../TimeEntry.GitHub/TimeEntry.GitHub.fsproj" />
   </ItemGroup>
 
 </Project>
