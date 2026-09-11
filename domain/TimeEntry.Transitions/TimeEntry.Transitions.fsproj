@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Tier 2 — State Transition / Domain Execution.
+
+    References Tier 1 and nothing else. No HTTP client, no serializer, no
+    GitHub SDK: effects are returned as data for Tier 4 to execute
+    (TE-R-093), so this project has no reason to reference infrastructure and
+    is structurally prevented from doing so.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningLevel>5</WarningLevel>
+    <OtherFlags>$(OtherFlags) --warnon:1182</OtherFlags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Commands.fs" />
+    <Compile Include="Effects.fs" />
+    <Compile Include="Transitions.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../TimeEntry.Semantic/TimeEntry.Semantic.fsproj" />
+  </ItemGroup>
+
+</Project>

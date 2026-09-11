@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "time-tracking-application",
-  "nextSeq": 1,
+  "nextSeq": 20,
   "items": [
     {
       "id": "WI-0001",
@@ -17,6 +17,294 @@
       "createdAt": "2026-09-11T22:44:57Z",
       "updatedAt": "2026-09-11T22:45:00Z",
       "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0002",
+      "title": "TE-001 Repository and authority discovery: ROS, SDE, WASM kernel, requirements, source, tests, GitHub boundary, UI history",
+      "description": null,
+      "tags": [
+        "discovery"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:01:26.521Z",
+      "updatedAt": "2026-09-11T23:02:04.000Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0003",
+      "title": "TE-002 Requirements normalization and traceability for Time Entry domain",
+      "description": null,
+      "tags": [
+        "requirements"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:01:26.808Z",
+      "updatedAt": "2026-09-11T23:02:04.000Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0004",
+      "title": "TE-003 Domain state model: entry states, legal transitions, capabilities, obligations, effects",
+      "description": null,
+      "tags": [
+        "domain"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:01:27.088Z",
+      "updatedAt": "2026-09-11T23:18:45.273Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0005",
+      "title": "TE-004 Time unit domain: exact elapsed duration plus six-minute billing units",
+      "description": null,
+      "tags": [
+        "domain"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:01:27.368Z",
+      "updatedAt": "2026-09-11T23:18:45.532Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0006",
+      "title": "TE-005 GitHub persistence boundary: anti-corruption layer between F# domain and GitHub API",
+      "description": null,
+      "tags": [
+        "persistence"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:01:27.666Z",
+      "updatedAt": "2026-09-11T23:18:47.580Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0007",
+      "title": "TE-006 WASM/browser boundary: F# WASM via typescript-wasm-kernel with minimal TS surface",
+      "description": null,
+      "tags": [
+        "boundary"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:01:27.960Z",
+      "updatedAt": "2026-09-11T23:18:47.841Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0008",
+      "title": "TE-007 Historical UI recovery: establish authoritative HTML/CSS screen provenance",
+      "description": null,
+      "tags": [
+        "ui"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:01:28.240Z",
+      "updatedAt": "2026-09-11T23:02:04.000Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0009",
+      "title": "TE-018 BLOCKED: .NET/F# toolchain unavailable - proxy denies all Microsoft distribution hosts",
+      "description": null,
+      "tags": [
+        "blocker"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:01:28.516Z",
+      "updatedAt": "2026-09-11T23:02:04.000Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0010",
+      "title": "TE-008 Create entry vertical slice",
+      "description": null,
+      "tags": [
+        "slice"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:01:34.840Z",
+      "updatedAt": "2026-09-11T23:18:45.792Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0011",
+      "title": "TE-009 Entry history/list projection: load, filter, sort, search, totals",
+      "description": null,
+      "tags": [
+        "slice"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:01:35.137Z",
+      "updatedAt": "2026-09-11T23:18:46.036Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0012",
+      "title": "TE-010 Correction transition with auditable supersession",
+      "description": null,
+      "tags": [
+        "slice"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:01:35.442Z",
+      "updatedAt": "2026-09-11T23:18:46.297Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0013",
+      "title": "TE-011 Split transition and total-preservation invariant",
+      "description": null,
+      "tags": [
+        "slice"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:01:35.718Z",
+      "updatedAt": "2026-09-11T23:18:46.572Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0014",
+      "title": "TE-012 Void and restore transitions with audit behavior",
+      "description": null,
+      "tags": [
+        "slice"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:01:36.002Z",
+      "updatedAt": "2026-09-11T23:18:46.828Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0015",
+      "title": "TE-013 Projects, activity types, and labels state and selection rules",
+      "description": null,
+      "tags": [
+        "slice"
+      ],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:01:36.274Z",
+      "updatedAt": "2026-09-11T23:18:48.088Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0016",
+      "title": "TE-014 GitHub concurrency: explicit version evidence and conflict handling",
+      "description": null,
+      "tags": [
+        "slice"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:01:36.555Z",
+      "updatedAt": "2026-09-11T23:18:47.072Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0017",
+      "title": "TE-015 Accessibility and browser behavior verification",
+      "description": null,
+      "tags": [
+        "verification"
+      ],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:01:36.833Z",
+      "updatedAt": "2026-09-11T23:18:48.365Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0018",
+      "title": "TE-016 Heterogeneous verification: behavioral, boundary, structural, effect, serialization, adversarial",
+      "description": null,
+      "tags": [
+        "verification"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:01:37.131Z",
+      "updatedAt": "2026-09-11T23:18:47.320Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0019",
+      "title": "TE-017 Final traceability and handoff",
+      "description": null,
+      "tags": [
+        "traceability"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:01:37.410Z",
+      "updatedAt": "2026-09-11T23:18:48.639Z",
+      "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null
     }

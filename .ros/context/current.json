@@ -4,7 +4,7 @@
   "repository": "time-tracking-application",
   "actor": "claude",
   "startedAt": "2026-09-11T22:44:26.239Z",
-  "updatedAt": "2026-09-11T22:45:04Z",
+  "updatedAt": "2026-09-11T23:18:54.965Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -32,6 +32,250 @@
         "EXE-20260911T224501330Z-c9dbc2ca"
       ],
       "completedAt": "2026-09-11T22:45:04Z"
+    },
+    {
+      "id": "WI-0002",
+      "type": "research",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "research-record",
+          "path": "SDE-MAP.md"
+        }
+      ],
+      "updatedAt": "2026-09-11T23:17:40.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T230205376Z-f3f35fb2"
+      ],
+      "completedAt": "2026-09-11T23:17:40.000Z",
+      "conclusion": "Baseline recorded: ROS 2.0.1 greenfield, SDE 1.1.1, kernel 0.4.1; no F# project existed; backend was Cloudflare not GitHub; 18 static screens found. Toolchain gap discovered and recorded separately."
+    },
+    {
+      "id": "WI-0003",
+      "type": "research",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "research-record",
+          "path": "docs/time-entry/REQUIREMENTS.md"
+        },
+        {
+          "type": "research-record",
+          "path": "docs/time-entry/TRACEABILITY.md"
+        }
+      ],
+      "updatedAt": "2026-09-11T23:17:51.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T230205438Z-bc2d085c"
+      ],
+      "completedAt": "2026-09-11T23:17:51.000Z",
+      "conclusion": "62 requirements inventoried with stable TE-R ids and cited sources; traceability chain built; 5 open questions recorded rather than resolved; two authority conflicts resolved as DF-TE-0001 (GitHub supersedes Cloudflare) and DF-TE-0002 (duration authoritative, units derived)."
+    },
+    {
+      "id": "WI-0008",
+      "type": "research",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "research-record",
+          "path": "docs/time-entry/UI-PROVENANCE.md"
+        }
+      ],
+      "updatedAt": "2026-09-11T23:17:52.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T230205454Z-f98f1cfd"
+      ],
+      "completedAt": "2026-09-11T23:17:52.000Z",
+      "conclusion": "Git history proves nothing was ever deleted (sole deletion in 5 commits is tools/ros_cli.mjs from the ROS upgrade); static-ui-screens byte-identical to introducing commit 0270575. No recovery needed. Real finding: two complete divergent design systems; screen inventory authority assigned to the newer static-ui-screens, visual reconciliation left open as OQ-5."
+    },
+    {
+      "id": "WI-0009",
+      "type": "research",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "research-record",
+          "path": "docs/time-entry/TOOLCHAIN-BLOCKER.md"
+        }
+      ],
+      "updatedAt": "2026-09-11T23:17:52.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T230205474Z-ac8858b0"
+      ],
+      "completedAt": "2026-09-11T23:17:52.000Z",
+      "conclusion": "Blocker documented with reproducible evidence: proxy denies every Microsoft/.NET distribution host; no npm-vendored SDK is viable; three unblock paths recorded. Three workarounds considered and rejected with reasons."
+    },
+    {
+      "id": "WI-0004",
+      "type": "default",
+      "state": "blocked",
+      "semanticState": "blocked",
+      "evidence": [],
+      "updatedAt": "2026-09-11T23:18:53.796Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T231849093Z-b90753ca"
+      ],
+      "blockReason": "F# source and tests authored; compilation and test execution impossible - no .NET SDK installable (docs/time-entry/TOOLCHAIN-BLOCKER.md). No verification evidence exists, so this cannot be completed."
+    },
+    {
+      "id": "WI-0005",
+      "type": "default",
+      "state": "blocked",
+      "semanticState": "blocked",
+      "evidence": [],
+      "updatedAt": "2026-09-11T23:18:53.796Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T231849427Z-aa4ba348"
+      ],
+      "blockReason": "F# source and tests authored; compilation and test execution impossible - no .NET SDK installable (docs/time-entry/TOOLCHAIN-BLOCKER.md). No verification evidence exists, so this cannot be completed."
+    },
+    {
+      "id": "WI-0010",
+      "type": "default",
+      "state": "blocked",
+      "semanticState": "blocked",
+      "evidence": [],
+      "updatedAt": "2026-09-11T23:18:53.796Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T231849759Z-854987d2"
+      ],
+      "blockReason": "F# source and tests authored; compilation and test execution impossible - no .NET SDK installable (docs/time-entry/TOOLCHAIN-BLOCKER.md). No verification evidence exists, so this cannot be completed."
+    },
+    {
+      "id": "WI-0011",
+      "type": "default",
+      "state": "blocked",
+      "semanticState": "blocked",
+      "evidence": [],
+      "updatedAt": "2026-09-11T23:18:53.796Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T231850123Z-52b762b1"
+      ],
+      "blockReason": "F# source and tests authored; compilation and test execution impossible - no .NET SDK installable (docs/time-entry/TOOLCHAIN-BLOCKER.md). No verification evidence exists, so this cannot be completed."
+    },
+    {
+      "id": "WI-0012",
+      "type": "default",
+      "state": "blocked",
+      "semanticState": "blocked",
+      "evidence": [],
+      "updatedAt": "2026-09-11T23:18:53.796Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T231850466Z-2bb3baed"
+      ],
+      "blockReason": "F# source and tests authored; compilation and test execution impossible - no .NET SDK installable (docs/time-entry/TOOLCHAIN-BLOCKER.md). No verification evidence exists, so this cannot be completed."
+    },
+    {
+      "id": "WI-0013",
+      "type": "default",
+      "state": "blocked",
+      "semanticState": "blocked",
+      "evidence": [],
+      "updatedAt": "2026-09-11T23:18:53.796Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T231850804Z-2796b73c"
+      ],
+      "blockReason": "F# source and tests authored; compilation and test execution impossible - no .NET SDK installable (docs/time-entry/TOOLCHAIN-BLOCKER.md). No verification evidence exists, so this cannot be completed."
+    },
+    {
+      "id": "WI-0014",
+      "type": "default",
+      "state": "blocked",
+      "semanticState": "blocked",
+      "evidence": [],
+      "updatedAt": "2026-09-11T23:18:53.796Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T231851155Z-6c435e2a"
+      ],
+      "blockReason": "F# source and tests authored; compilation and test execution impossible - no .NET SDK installable (docs/time-entry/TOOLCHAIN-BLOCKER.md). No verification evidence exists, so this cannot be completed."
+    },
+    {
+      "id": "WI-0016",
+      "type": "default",
+      "state": "blocked",
+      "semanticState": "blocked",
+      "evidence": [],
+      "updatedAt": "2026-09-11T23:18:53.796Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T231851504Z-c151c02e"
+      ],
+      "blockReason": "F# source and tests authored; compilation and test execution impossible - no .NET SDK installable (docs/time-entry/TOOLCHAIN-BLOCKER.md). No verification evidence exists, so this cannot be completed."
+    },
+    {
+      "id": "WI-0018",
+      "type": "default",
+      "state": "blocked",
+      "semanticState": "blocked",
+      "evidence": [],
+      "updatedAt": "2026-09-11T23:18:53.796Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T231851853Z-09f9980d"
+      ],
+      "blockReason": "F# source and tests authored; compilation and test execution impossible - no .NET SDK installable (docs/time-entry/TOOLCHAIN-BLOCKER.md). No verification evidence exists, so this cannot be completed."
+    },
+    {
+      "id": "WI-0006",
+      "type": "default",
+      "state": "blocked",
+      "semanticState": "blocked",
+      "evidence": [],
+      "updatedAt": "2026-09-11T23:18:54.288Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T231852202Z-82d7245c"
+      ],
+      "blockReason": "Tier 4 not implementable: requires F# WASM build and a compiled domain to adapt. Blocked by toolchain (docs/time-entry/TOOLCHAIN-BLOCKER.md)."
+    },
+    {
+      "id": "WI-0007",
+      "type": "default",
+      "state": "blocked",
+      "semanticState": "blocked",
+      "evidence": [],
+      "updatedAt": "2026-09-11T23:18:54.288Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T231852560Z-4f0e96a2"
+      ],
+      "blockReason": "Tier 4 not implementable: requires F# WASM build and a compiled domain to adapt. Blocked by toolchain (docs/time-entry/TOOLCHAIN-BLOCKER.md)."
+    },
+    {
+      "id": "WI-0015",
+      "type": "default",
+      "state": "blocked",
+      "semanticState": "blocked",
+      "evidence": [],
+      "updatedAt": "2026-09-11T23:18:54.628Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T231852924Z-4c5ccbb6"
+      ],
+      "blockReason": "Blocked by unresolved domain/design questions: OQ-2 (labels undefined as an entity) and OQ-5 (two divergent design systems, no repository evidence selecting one). Resolving either by assumption would invent requirements."
+    },
+    {
+      "id": "WI-0017",
+      "type": "default",
+      "state": "blocked",
+      "semanticState": "blocked",
+      "evidence": [],
+      "updatedAt": "2026-09-11T23:18:54.628Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T231853318Z-6fd6313a"
+      ],
+      "blockReason": "Blocked by unresolved domain/design questions: OQ-2 (labels undefined as an entity) and OQ-5 (two divergent design systems, no repository evidence selecting one). Resolving either by assumption would invent requirements."
+    },
+    {
+      "id": "WI-0019",
+      "type": "default",
+      "state": "blocked",
+      "semanticState": "blocked",
+      "evidence": [],
+      "updatedAt": "2026-09-11T23:18:54.965Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T231853671Z-5e804661"
+      ],
+      "blockReason": "Traceability model authored (docs/time-entry/TRACEABILITY.md) but cannot reach verification: 0 of 62 requirements have execution evidence while the toolchain blocker stands."
     }
   ]
 }

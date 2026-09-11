@@ -15,7 +15,8 @@
     "lint": "node --check src/app.js && node --check src/api/client.js && node --check src/domain.js && node --check src/state.js && node --check worker/src/handler.js && node --check worker/src/store.js",
     "build": "node tools/build.mjs",
     "validate:schemas": "node tools/validate-schemas.mjs",
-    "check": "npm run typecheck && npm run validate:schemas && node --test tests/*.test.js"
+    "check": "npm run typecheck && npm run validate:schemas && npm run check:architecture && node --test tests/*.test.js",
+    "check:architecture": "node tools/check-domain-architecture.mjs"
   },
   "dependencies": {
     "@echelon-foundry/typescript-wasm-kernel": "^0.4.1"
