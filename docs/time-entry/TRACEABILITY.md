@@ -28,13 +28,13 @@ marking work complete merely because code exists.
 
 | Req | Rule | Acceptance criterion | WI | Code | Test | Evidence |
 |---|---|---|---|---|---|---|
-| TE-R-001 | Exact elapsed time is authoritative | Projecting to units leaves seconds unchanged | WI-0005 | `Duration.fs` `Duration` | `DurationTests` "projecting to units leaves the exact duration intact" | **VERIFIED** |
+| TE-R-001 | Exact elapsed time is authoritative, in milliseconds (`DF-TE-0009`) | Projection leaves it unchanged; sub-second time survives | WI-0005 | `Duration.fs` `Duration` | `DurationTests` "projecting to units leaves the exact duration intact" | **VERIFIED** |
 | TE-R-002 | Units are a projection, not a store | `EntryFacts` has no unit field | WI-0004 | `EntryState.fs` `EntryFacts` | structural: absence of field | **VERIFIED** |
 | TE-R-003 | 1 unit = 6 min; 10 units = 1 hour | Constants assert it | WI-0005 | `Duration.fs` literals | `DurationTests` "one unit is six minutes and ten units is one hour" | **VERIFIED** |
 | TE-R-004 | No fractional units in authoritative state | `BillableUnits` only constructible by projection | WI-0005 | `Duration.fs` private ctor | `DurationTests` rounding theories | **VERIFIED** |
 | TE-R-005 | elapsed = end − start − paused | Paused intervals subtract | WI-0005 | `Duration.ofInterval` | `DurationTests` "elapsed time subtracts paused intervals" | **VERIFIED** |
 | TE-R-006 | No JS-interval time | Timer not implemented in JS domain | WI-0007 | — | — | NOT IMPLEMENTED (Tier 4 blocked) |
-| TE-R-007 | No authoritative floating point | No `float` in Tiers 1–3 | WI-0005 | `Duration.fs`, `Projection.fs` | `ProjectionTests` "totals sum exact seconds rather than per entry rounded units" | **VERIFIED** |
+| TE-R-007 | No authoritative floating point | No `float` in Tiers 1–3; integer `int64` ms | WI-0005 | `Duration.fs`, `Projection.fs` | `ProjectionTests` "totals sum exact seconds rather than per entry rounded units" | **VERIFIED** |
 | TE-R-008 | Warn on device/server clock skew | — | WI-0016 | — | — | NOT IMPLEMENTED (Tier 4 blocked) |
 | TE-R-009 | Quick durations 6..60 | — | WI-0017 | — | — | NOT IMPLEMENTED (UI, blocked by OQ-5) |
 
@@ -139,7 +139,7 @@ marking work complete merely because code exists.
 | Awaiting Tier 4 — GitHub adapter, WASM host, UI | 9 |
 | Blocked by an open question | **0** — all five resolved as `DF-TE-0004..0008` |
 
-Test suite: 81 cases, 0 failures, 89 ms. Tier-boundary check: 14 F# files,
+Test suite: 84 cases, 0 failures, 116 ms. Tier-boundary check: 14 F# files,
 0 violations, adversarially validated against three injected violations.
 
 ## Orphan check

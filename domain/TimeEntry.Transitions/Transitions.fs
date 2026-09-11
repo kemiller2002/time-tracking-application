@@ -80,7 +80,7 @@ let private requireTotalPreserved (source: Duration) (children: SplitChild list)
     if Duration.partsPreserve source childDurations then
         Ok()
     else
-        Error(SplitDoesNotPreserveTotal(Duration.seconds source, Duration.sum childDurations))
+        Error(SplitDoesNotPreserveTotal(Duration.milliseconds source, Duration.sum childDurations))
 
 let private revisionOf (attribution: Attribution) (change: RevisionChange) (facts: EntryFacts) =
     { Id = attribution.NewRevisionId
@@ -392,11 +392,12 @@ let mergeEntries (request: MergeEntriesRequest) (loaded: TimeEntry list) : Outco
     match validated with
     | Error rejection -> Rejected rejection
     | Ok pairs ->
-        let totalSeconds =
-            pairs |> List.sumBy (fun (_, entry) -> Duration.seconds entry.Effective.Duration)
+        let totalMilliseconds =
+            pairs
+            |> List.sumBy (fun (_, entry) -> Duration.milliseconds entry.Effective.Duration)
 
-        match Duration.ofSeconds totalSeconds with
-        | Error _ -> Rejected(MergeDurationOutOfRange totalSeconds)
+        match Duration.ofMilliseconds totalMilliseconds with
+        | Error _ -> Rejected(MergeDurationOutOfRange totalMilliseconds)
         | Ok mergedDuration ->
             let _, firstEntry = List.head pairs
 

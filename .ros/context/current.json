@@ -4,7 +4,7 @@
   "repository": "time-tracking-application",
   "actor": "claude",
   "startedAt": "2026-09-11T22:44:26.239Z",
-  "updatedAt": "2026-09-11T23:32:57.591Z",
+  "updatedAt": "2026-09-11T23:39:11.491Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -531,6 +531,27 @@
         "EXE-20260911T232905256Z-f6ec2883"
       ],
       "completedAt": "2026-09-11T23:32:57.591Z"
+    },
+    {
+      "id": "WI-0024",
+      "type": "default",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Semantic/Duration.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/DurationTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T23:39:11.491Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T233541816Z-ef1fc0c9"
+      ],
+      "completedAt": "2026-09-11T23:39:11.491Z"
     }
   ]
 }

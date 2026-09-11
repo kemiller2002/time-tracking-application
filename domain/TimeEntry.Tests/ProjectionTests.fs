@@ -32,7 +32,7 @@ let ``totals exclude voided and superseded entries`` () =
     let result = run dayQuery [ active; voided; superseded ]
 
     // Only the 30-minute active entry counts.
-    Assert.Equal(1800, result.TotalSeconds)
+    Assert.Equal(1800000L, result.TotalMilliseconds)
     Assert.Equal(1, result.CountedEntries)
     Assert.Equal(5, result.TotalBillableUnits)
     Assert.Equal((0, 30), (result.TotalDisplayHours, result.TotalDisplayMinutes))
@@ -50,7 +50,7 @@ let ``the default day view hides non counting entries but discloses how many`` (
     let withVoided = run { dayQuery with Visibility = IncludeVoided } [ active; voided ]
     Assert.Equal(2, List.length withVoided.Entries)
     // Shown, but still not counted.
-    Assert.Equal(1800, withVoided.TotalSeconds)
+    Assert.Equal(1800000L, withVoided.TotalMilliseconds)
     Assert.Equal(1, withVoided.ExcludedEntries)
 
 [<Fact>]
@@ -63,7 +63,7 @@ let ``totals sum exact seconds rather than per entry rounded units`` () =
 
     let result = run dayQuery entries
 
-    Assert.Equal(1800, result.TotalSeconds)
+    Assert.Equal(1800000L, result.TotalMilliseconds)
     Assert.Equal(5, result.TotalBillableUnits)
     // Each row individually still rounds up, which is correct per row.
     Assert.True(result.Entries |> List.forall (fun e -> e.BillableUnits = 1))
@@ -73,7 +73,7 @@ let ``an empty result is reported as empty with zero totals`` () =
     let result = run dayQuery []
 
     Assert.True(result.IsEmpty)
-    Assert.Equal(0, result.TotalSeconds)
+    Assert.Equal(0L, result.TotalMilliseconds)
     Assert.Equal(0, result.TotalBillableUnits)
     Assert.Empty(result.Entries)
 
@@ -87,7 +87,7 @@ let ``a day with only voided entries is not reported as empty`` () =
     let result = run { dayQuery with Visibility = IncludeVoided } [ voided ]
 
     Assert.False(result.IsEmpty)
-    Assert.Equal(0, result.TotalSeconds)
+    Assert.Equal(0L, result.TotalMilliseconds)
     Assert.Equal(1, result.ExcludedEntries)
 
 [<Fact>]
@@ -199,7 +199,7 @@ let ``a missing purpose surfaces as a badge and an obligation`` () =
 [<Fact>]
 let ``display hours and minutes are computed in the projection`` () =
     // TE-R-085: the browser must never do time arithmetic.
-    let entry = persistedEntry "e1" (seconds (23 * SecondsPerBillableUnit)) "sha-1"
+    let entry = persistedEntry "e1" (millis (23L * MillisecondsPerBillableUnit)) "sha-1"
     let row = List.head (run dayQuery [ entry ]).Entries
 
     Assert.Equal(23, row.BillableUnits)

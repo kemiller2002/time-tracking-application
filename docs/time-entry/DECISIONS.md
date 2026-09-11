@@ -363,3 +363,122 @@ Every available signal favours B, and none favours A:
   targets A's class names (`.detail-page`, `.wordmark`) and must be re-derived
   against B rather than carried over.
 - `src/app.js` is superseded by the WASM bridge (TE-R-091).
+
+---
+
+## DF-TE-0009
+
+**Title:** `Duration` stores milliseconds, not whole seconds
+
+**Status:** accepted · **Supersedes part of:** `DF-TE-0002` (representation only)
+
+### Context
+
+`DF-TE-0002` established that exact elapsed time is authoritative and billable
+units are derived. It chose **whole seconds** as the storage unit. Inspecting
+the pre-existing persistence layer — required before designing a new one —
+shows that was the wrong granularity.
+
+### Evidence
+
+`worker/src/store.js` is the repository's only existing persistence
+implementation, and its authoritative time field is **milliseconds**:
+
+- `exact_duration_ms: end - start` on every created activity.
+- `stopTimer` computes `exactMs = max(0, end - started - paused_ms)`.
+- The split invariant is checked in milliseconds:
+  `if (total !== current.exact_duration_ms) throw ... 'duration_invariant_failed'`.
+- `exact_minutes: Number((exactMs / 60000).toFixed(4))` — a derived display
+  value, exactly the projection role `BillableUnits` plays.
+
+The existing contract therefore already separates exact time from derived
+display, and already enforces the split invariant on the exact value. It
+agrees with `DF-TE-0002`'s *structure* and disagrees with its *unit*.
+
+### Decision
+
+`Duration` stores whole **milliseconds**. `Duration.milliseconds` is the
+authoritative accessor; `Duration.seconds` is retained as a derived,
+explicitly lossy convenience for display. `sum` and `partsPreserve` operate on
+milliseconds.
+
+### Rationale
+
+Whole seconds cannot represent the existing contract without loss, and the
+loss is not benign:
+
+- A 1,500 ms entry truncates to 1 s, silently discarding 500 ms of recorded
+  time — a direct TE-R-001 violation.
+- Worse, the split invariant becomes unsatisfiable for sub-second parts:
+  splitting 1,500 ms into 750 + 750 truncates both children to 0, which
+  `Duration`'s constructor rejects, so a legitimate split of real recorded
+  time becomes impossible.
+
+Milliseconds cost nothing — the arithmetic stays integer, so TE-R-007 still
+holds — and remove the truncation class of defect entirely.
+
+### Consequences
+
+- `MillisecondsPerBillableUnit = 360_000`; unit projection is unchanged in
+  behaviour.
+- `Duration.ofInterval` takes epoch **milliseconds**, matching `Date.now()`
+  and the existing `started_at`/`paused_ms` arithmetic.
+- Serialization writes `exact_duration_ms`, matching the established field
+  name, so a future import from the existing format is lossless.
+
+---
+
+## DF-TE-0010
+
+**Title:** The existing implementation's void-based merge is a defect, not a precedent
+
+**Status:** accepted · **Reinforces:** `DF-TE-0006`
+
+### Context
+
+`DF-TE-0006` decided that merge supersedes its sources. The pre-existing
+`worker/src/store.js` does the opposite: `mergeActivities` appends
+`activity.voided` for each source with reason `"Merged into <id>"`, and
+`splitActivity` likewise voids its source with `"Replaced by split"`.
+
+Under `AGENTS.md`'s authority order, current implementation ranks below
+accepted decision records — but it is evidence of intended behaviour and
+deserves an answer rather than silence.
+
+### Decision
+
+`DF-TE-0006` stands. The existing behaviour is treated as a defect.
+
+### Rationale
+
+The existing implementation is demonstrably unsound on its own terms, and this
+is checkable directly in its source:
+
+```js
+restoreActivity(id, input, actor) {
+  const current = this.assertVersion(id, input.base_version);
+  if (!current.voided) throw new ServiceError('not_voided', ...);
+  // ... appends activity.restored, setting a.voided = false
+}
+```
+
+`restoreActivity` gates only on `voided`. A merge source *is* voided.
+Therefore a source of a completed merge can be restored, which sets
+`voided = false` and returns its `exact_duration_ms` to `#summary`'s total —
+while the merged activity still carries that same time. The day's total
+double-counts, with no error raised. The same applies to a split source.
+
+`Superseded` makes this unrepresentable rather than merely discouraged:
+`Capabilities.available (Superseded _)` is empty, so `CanRestore` is not
+offered and `restoreEntry` rejects with
+`NotPermittedInState(CanRestore, AlreadySuperseded _)`. A test asserts it.
+
+### Consequences
+
+- The distinction "excluded by user judgment, restorable" (`Void`) versus
+  "excluded because the time lives elsewhere, terminal" (`Superseded`) is
+  load-bearing and must survive serialization: the persisted form records
+  which one applies and why, not a single `voided` boolean.
+- Should the existing event log ever be imported, `activity.voided` events
+  whose reason marks them as merge or split consequences must map to
+  `Superseded`, not `Void`.

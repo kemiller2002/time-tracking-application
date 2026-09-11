@@ -14,12 +14,13 @@ open TimeEntry.Tests.Helpers
 [<InlineData(-3600)>]
 let ``a non-positive duration is refused`` (value: int) =
     match Duration.ofSeconds value with
-    | Error(DurationNotPositive actual) -> Assert.Equal(value, actual)
+    // The error reports milliseconds, the authoritative unit (DF-TE-0009).
+    | Error(DurationNotPositive actual) -> Assert.Equal(int64 value * MillisecondsPerSecond, actual)
     | other -> failwithf "expected DurationNotPositive, got %A" other
 
 [<Fact>]
 let ``a duration beyond the maximum is refused`` () =
-    match Duration.ofSeconds (MaximumDurationSeconds + 1) with
+    match Duration.ofMilliseconds (MaximumDurationMilliseconds + 1L) with
     | Error(DurationExceedsMaximum _) -> ()
     | other -> failwithf "expected DurationExceedsMaximum, got %A" other
 
@@ -27,7 +28,7 @@ let ``a duration beyond the maximum is refused`` () =
 let ``ofMinutes rejects a minute count that would overflow before multiplying`` () =
     // Guards before the multiply, so an overflowed product can never be
     // mistaken for a valid small duration.
-    match Duration.ofMinutes (MaximumDurationSeconds / SecondsPerMinute + 1) with
+    match Duration.ofMinutes (int (MaximumDurationMilliseconds / 60000L) + 1) with
     | Error(DurationExceedsMaximum _) -> ()
     | other -> failwithf "expected DurationExceedsMaximum, got %A" other
 
@@ -35,18 +36,20 @@ let ``ofMinutes rejects a minute count that would overflow before multiplying`` 
 
 [<Fact>]
 let ``elapsed time subtracts paused intervals`` () =
-    let duration = Duration.ofInterval 1000L 5000L 400 |> expect
+    // Epoch milliseconds: 5_000_000 - 1_000_000 - 400_000 = 3_600_000 ms.
+    let duration = Duration.ofInterval 1000000L 5000000L 400000L |> expect
+    Assert.Equal(3600000L, Duration.milliseconds duration)
     Assert.Equal(3600, Duration.seconds duration)
 
 [<Fact>]
 let ``an interval ending before it starts is refused`` () =
-    match Duration.ofInterval 5000L 1000L 0 with
+    match Duration.ofInterval 5000L 1000L 0L with
     | Error IntervalEndsBeforeStart -> ()
     | other -> failwithf "expected IntervalEndsBeforeStart, got %A" other
 
 [<Fact>]
 let ``an interval fully consumed by pauses is refused`` () =
-    match Duration.ofInterval 1000L 2000L 1000 with
+    match Duration.ofInterval 1000L 2000L 1000L with
     | Error(DurationNotPositive _) -> ()
     | other -> failwithf "expected DurationNotPositive, got %A" other
 
@@ -109,15 +112,15 @@ let ``projecting to units leaves the exact duration intact`` () =
 [<Fact>]
 let ``twenty three units display as two hours eighteen minutes`` () =
     // The worked example from the execution instruction.
-    let duration = seconds (23 * SecondsPerBillableUnit)
+    let duration = millis (23L * MillisecondsPerBillableUnit)
     let units = BillableUnits.ofDuration RoundDown duration
     Assert.Equal(23, BillableUnits.units units)
     Assert.Equal((2, 18), BillableUnits.toHoursAndMinutes units)
 
-// --- TE-R-040: the split invariant, on seconds ----------------------------
+// --- TE-R-040: the split invariant, on milliseconds -----------------------
 
 [<Fact>]
-let ``parts preserve a whole when their seconds sum exactly`` () =
+let ``parts preserve a whole when their milliseconds sum exactly`` () =
     Assert.True(Duration.partsPreserve (minutes 60) [ minutes 36; minutes 24 ])
 
 [<Fact>]
@@ -153,7 +156,33 @@ let ``totals are an exact integer sum`` () =
     // Ten three-minute entries are exactly thirty minutes. Summing per-entry
     // rounded-up units would give ten units (one hour) instead of five.
     let durations = List.replicate 10 (minutes 3)
-    Assert.Equal(1800, Duration.sum durations)
+    Assert.Equal(1800000L, Duration.sum durations)
 
-    let total = seconds (Duration.sum durations)
+    let total = millis (Duration.sum durations)
     Assert.Equal(5, BillableUnits.units (BillableUnits.ofDuration RoundUp total))
+
+// --- DF-TE-0009: sub-second precision survives ----------------------------
+
+[<Fact>]
+let ``sub-second time is preserved rather than truncated`` () =
+    // The existing persistence contract records exact_duration_ms, so a
+    // 1500 ms entry is real recorded time. Storing whole seconds would
+    // silently discard 500 ms of it (TE-R-001).
+    let duration = millis 1500L
+    Assert.Equal(1500L, Duration.milliseconds duration)
+    // The lossy accessor is lossy, which is why it must never guard an
+    // invariant.
+    Assert.Equal(1, Duration.seconds duration)
+
+[<Fact>]
+let ``a sub-second split is possible and exact`` () =
+    // Under whole-second storage both children truncate to 0 ms, which the
+    // constructor rejects, making a legitimate split of real recorded time
+    // impossible. In milliseconds it simply works.
+    let source = millis 1500L
+    let parts = [ millis 750L; millis 750L ]
+    Assert.True(Duration.partsPreserve source parts)
+
+[<Fact>]
+let ``a split losing a single millisecond is refused`` () =
+    Assert.False(Duration.partsPreserve (millis 1500L) [ millis 750L; millis 749L ])

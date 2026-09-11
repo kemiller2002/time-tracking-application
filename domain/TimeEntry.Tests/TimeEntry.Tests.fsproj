@@ -26,6 +26,8 @@
     <Compile Include="Helpers.fs" />
     <Compile Include="DurationTests.fs" />
     <Compile Include="TransitionTests.fs" />
+    <Compile Include="SplitTests.fs" />
+    <Compile Include="MergeTests.fs" />
     <Compile Include="ProjectionTests.fs" />
   </ItemGroup>
 

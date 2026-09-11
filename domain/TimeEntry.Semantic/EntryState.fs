@@ -11,10 +11,10 @@ open TimeEntry.Semantic.Values
 /// `BillableUnits` field: units are projected on demand, so no code path can
 /// let a stored unit count drift from the exact duration.
 ///
-/// `Description` is `option` because OQ-3 (is a description mandatory?) is
-/// unresolved. `Labels` is absent entirely because OQ-2 is unresolved — no
-/// repository document defines a `label` entity distinct from activity type
-/// and project, and inventing one is forbidden.
+/// `Description` is `option` per DF-TE-0005: optional at creation, required
+/// for attestation, which is why a missing one raises an obligation rather
+/// than failing validation. `Labels` is absent per DF-TE-0004: no `label`
+/// entity exists distinct from activity type and project.
 type EntryFacts =
     { Project: ProjectId
       ActivityType: ActivityTypeId
@@ -112,15 +112,16 @@ module TimeEntry =
 
     let countsTowardTotals (entry: TimeEntry) = EntryState.countsTowardTotals entry.State
 
-    /// The duration an entry contributes to a total: zero when it does not
-    /// count. Returning seconds rather than `Duration` is deliberate —
-    /// `Duration` is constrained to be positive, and a non-counting entry
-    /// contributes exactly zero, which is not a valid `Duration`.
-    let contributedSeconds (entry: TimeEntry) =
+    /// The time an entry contributes to a total, in milliseconds: zero when it
+    /// does not count. Returning a raw count rather than `Duration` is
+    /// deliberate — `Duration` is constrained to be positive, and a
+    /// non-counting entry contributes exactly zero, which is not a valid
+    /// `Duration`.
+    let contributedMilliseconds (entry: TimeEntry) : int64 =
         if countsTowardTotals entry then
-            Duration.seconds entry.Effective.Duration
+            Duration.milliseconds entry.Effective.Duration
         else
-            0
+            0L
 
     /// The revision that created the entry (TE-R-052 "original values").
     let originalRevision (entry: TimeEntry) = entry.History |> List.tryLast

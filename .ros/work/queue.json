@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "time-tracking-application",
-  "nextSeq": 24,
+  "nextSeq": 25,
   "items": [
     {
       "id": "WI-0001",
@@ -368,6 +368,20 @@
       "attachments": [],
       "createdAt": "2026-09-11T23:28:02.278Z",
       "updatedAt": "2026-09-11T23:28:02.278Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0024",
+      "title": "TE-023 Duration precision: store milliseconds to match exact_duration_ms contract",
+      "description": null,
+      "tags": [],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T23:35:41.134Z",
+      "updatedAt": "2026-09-11T23:35:41.326Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null

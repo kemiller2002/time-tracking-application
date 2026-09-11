@@ -7,6 +7,7 @@ open TimeEntry.Semantic.Duration
 open TimeEntry.Semantic.Values
 open TimeEntry.Semantic.EntryState
 open TimeEntry.Transitions.Commands
+open TimeEntry.Transitions.Effects
 
 /// Unwrap a smart-constructor Result in test setup. Fails loudly rather than
 /// silently substituting a default, so a broken builder cannot make a test
@@ -26,6 +27,7 @@ let version token = VersionToken.create token |> expect
 let reason text = Reason.create text |> expect
 let description text = Description.create text |> expect
 let seconds n = Duration.ofSeconds n |> expect
+let millis (n: int64) = Duration.ofMilliseconds n |> expect
 let minutes n = Duration.ofMinutes n |> expect
 let onDate year month day = EntryDate.ofYearMonthDay year month day |> expect
 let instant epochSeconds = Instant.ofEpochSeconds epochSeconds
@@ -87,3 +89,52 @@ let splitChild (id: string) (duration: Duration) =
       ActivityType = activityTypeId "research"
       Description = Some(description "Split part.")
       ReassignedEvidence = [] }
+
+// --- outcome assertions ----------------------------------------------------
+// Shared so split/merge/transition suites cannot drift apart on what
+// "accepted" means.
+
+let accepted (outcome: Outcome) =
+    match outcome with
+    | Accepted(entries, effects) -> entries, effects
+    | Rejected rejection -> failwithf "expected Accepted, got Rejected %A" rejection
+
+let rejection (outcome: Outcome) =
+    match outcome with
+    | Rejected r -> r
+    | Accepted _ -> failwith "expected Rejected, got Accepted"
+
+let single (entries: TimeEntry list) =
+    if List.length entries <> 1 then
+        failwithf "expected exactly one entry, got %d" (List.length entries)
+
+    List.head entries
+
+let correctionRequest (entry: TimeEntry) (newDuration: Duration) (versionToken: string) : CorrectEntryRequest =
+    { EntryId = entry.Id
+      ExpectedVersion = version versionToken
+      CorrectedFacts = { entry.Effective with Duration = newDuration }
+      Reason = reason "Forgot to stop timer"
+      Attribution = attribution "e1-r2" }
+
+let voidRequest (entry: TimeEntry) (versionToken: string) : VoidEntryRequest =
+    { EntryId = entry.Id
+      ExpectedVersion = version versionToken
+      Reason = reason "Duplicate of the timer entry"
+      Attribution = attribution "e1-r2" }
+
+let splitRequest (entry: TimeEntry) (versionToken: string) (children: SplitChild list) : SplitEntryRequest =
+    { EntryId = entry.Id
+      ExpectedVersion = version versionToken
+      Children = children
+      Attribution = attribution "e1-r2" }
+
+let mergeRequest (sources: MergeSource list) : MergeEntriesRequest =
+    { NewEntryId = entryId "m1"
+      Sources = sources
+      Project = projectId "echelon-foundry"
+      ActivityType = activityTypeId "research"
+      Description = Some(description "Combined research block.")
+      Evidence = []
+      Reason = reason "Same task split across two timer runs"
+      Attribution = attribution "m1-r1" }

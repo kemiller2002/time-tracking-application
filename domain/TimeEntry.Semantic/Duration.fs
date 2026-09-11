@@ -1,25 +1,26 @@
 /// Tier 1 — Semantic Model. Time measurement.
 ///
-/// Implements DF-TE-0002: `Duration` (exact elapsed seconds) is authoritative;
-/// `BillableUnits` (six-minute units) is a derived projection. Repository
-/// authority requires exact elapsed time to be preserved and forbids
-/// six-minute controls from replacing it (exec-contract §4, TE-R-001/TE-R-002);
-/// the user instruction requires six-minute unit semantics with no fractional
-/// units in authoritative state (TE-R-003/TE-R-004). Carrying both satisfies
-/// both.
+/// Implements DF-TE-0002 (exact elapsed time is authoritative; six-minute
+/// units are a derived projection) and DF-TE-0009 (the unit of storage is
+/// milliseconds, matching the `exact_duration_ms` contract the repository's
+/// existing persistence layer already established).
 ///
 /// No floating-point arithmetic appears anywhere in this module: billable time
-/// must never be authoritatively computed in floats (TE-R-007).
+/// must never be authoritatively computed in floats (TE-R-007). Milliseconds
+/// are held as `int64` because 31 days in milliseconds exceeds `Int32.MaxValue`.
 module TimeEntry.Semantic.Duration
 
 /// Why a supplied duration was refused.
 type DurationError =
     /// A recorded entry must cover a positive span of time.
-    | DurationNotPositive of seconds: int
+    | DurationNotPositive of milliseconds: int64
     /// Guards against overflow and obviously nonsensical spans.
-    | DurationExceedsMaximum of seconds: int * maximumSeconds: int
+    | DurationExceedsMaximum of milliseconds: int64 * maximumMilliseconds: int64
     /// An interval whose end precedes its start.
     | IntervalEndsBeforeStart
+
+[<Literal>]
+let MillisecondsPerSecond = 1000L
 
 [<Literal>]
 let SecondsPerMinute = 60
@@ -28,8 +29,9 @@ let SecondsPerMinute = 60
 [<Literal>]
 let MinutesPerBillableUnit = 6
 
+/// 6 * 60 * 1000.
 [<Literal>]
-let SecondsPerBillableUnit = 360 // MinutesPerBillableUnit * SecondsPerMinute
+let MillisecondsPerBillableUnit = 360000L
 
 /// TE-R-003: ten units is one hour.
 [<Literal>]
@@ -38,16 +40,17 @@ let BillableUnitsPerHour = 10
 /// A single entry may not exceed 31 days. Chosen to bound arithmetic, not to
 /// express a business rule; no repository requirement states a maximum.
 [<Literal>]
-let MaximumDurationSeconds = 2678400
+let MaximumDurationMilliseconds = 2678400000L
 
-/// Exact elapsed time, in whole seconds. THE AUTHORITATIVE QUANTITY
-/// (TE-R-001). Constructed only through the smart constructors below, so a
-/// non-positive or absurd duration cannot be represented (TE-R-096).
+/// Exact elapsed time, in whole milliseconds. THE AUTHORITATIVE QUANTITY
+/// (TE-R-001, DF-TE-0009). Constructed only through the smart constructors
+/// below, so a non-positive or absurd duration cannot be represented
+/// (TE-R-096).
 type Duration =
     private
-    | Duration of seconds: int
+    | Duration of milliseconds: int64
 
-    member this.Seconds = let (Duration s) = this in s
+    member this.Milliseconds = let (Duration ms) = this in ms
 
 /// Six-minute billing units. A DERIVED PROJECTION of `Duration`, never a
 /// store of what happened (DF-TE-0002). Because it is only ever produced by
@@ -75,69 +78,76 @@ type RoundingPolicy =
 
 module Duration =
 
-    /// The only way to build a Duration from seconds.
-    let ofSeconds (seconds: int) : Result<Duration, DurationError> =
-        if seconds <= 0 then Error(DurationNotPositive seconds)
-        elif seconds > MaximumDurationSeconds then
-            Error(DurationExceedsMaximum(seconds, MaximumDurationSeconds))
+    /// The only way to build a Duration from milliseconds.
+    let ofMilliseconds (milliseconds: int64) : Result<Duration, DurationError> =
+        if milliseconds <= 0L then Error(DurationNotPositive milliseconds)
+        elif milliseconds > MaximumDurationMilliseconds then
+            Error(DurationExceedsMaximum(milliseconds, MaximumDurationMilliseconds))
         else
-            Ok(Duration seconds)
+            Ok(Duration milliseconds)
+
+    let ofSeconds (seconds: int) : Result<Duration, DurationError> =
+        // Widen before multiplying so an overflowed product can never be
+        // mistaken for a valid small duration.
+        ofMilliseconds (int64 seconds * MillisecondsPerSecond)
 
     let ofMinutes (minutes: int) : Result<Duration, DurationError> =
-        // Guard before multiplying so an overflowed product can never be
-        // mistaken for a valid small duration.
-        if minutes <= 0 then Error(DurationNotPositive(minutes * SecondsPerMinute))
-        elif minutes > MaximumDurationSeconds / SecondsPerMinute then
-            Error(DurationExceedsMaximum(minutes * SecondsPerMinute, MaximumDurationSeconds))
+        ofMilliseconds (int64 minutes * int64 SecondsPerMinute * MillisecondsPerSecond)
+
+    /// TE-R-005: elapsed = end - start - paused, in epoch milliseconds.
+    /// Callers supply the instants; this module never reads a clock (Tier 1
+    /// performs no effects). Epoch milliseconds match `Date.now()` and the
+    /// existing `started_at`/`paused_ms` arithmetic.
+    let ofInterval
+        (startEpochMilliseconds: int64)
+        (endEpochMilliseconds: int64)
+        (pausedMilliseconds: int64)
+        : Result<Duration, DurationError> =
+        if endEpochMilliseconds < startEpochMilliseconds then Error IntervalEndsBeforeStart
+        elif pausedMilliseconds < 0L then Error(DurationNotPositive pausedMilliseconds)
         else
-            ofSeconds (minutes * SecondsPerMinute)
+            ofMilliseconds (endEpochMilliseconds - startEpochMilliseconds - pausedMilliseconds)
 
-    /// TE-R-005: elapsed = end - start - paused. Callers supply epoch seconds;
-    /// this module never reads a clock (Tier 1 performs no effects).
-    let ofInterval (startEpochSeconds: int64) (endEpochSeconds: int64) (pausedSeconds: int) =
-        if endEpochSeconds < startEpochSeconds then Error IntervalEndsBeforeStart
-        elif pausedSeconds < 0 then Error(DurationNotPositive pausedSeconds)
-        else
-            let span = endEpochSeconds - startEpochSeconds - int64 pausedSeconds
+    /// The authoritative accessor.
+    let milliseconds (Duration ms) = ms
 
-            if span <= 0L then Error(DurationNotPositive(int span))
-            elif span > int64 MaximumDurationSeconds then
-                Error(DurationExceedsMaximum(MaximumDurationSeconds, MaximumDurationSeconds))
-            else
-                ofSeconds (int span)
+    /// Derived whole seconds. **Lossy** — truncates any sub-second remainder.
+    /// Present for display and for comparison with second-granularity data;
+    /// never use it to check an invariant (DF-TE-0009).
+    let seconds (Duration ms) = int (ms / MillisecondsPerSecond)
 
-    let seconds (Duration s) = s
-
-    /// Total of many durations. Used for day and month totals, which are
-    /// therefore exact integer sums (TE-R-007).
-    let sum (durations: Duration list) : int =
-        durations |> List.sumBy seconds
+    /// Total of many durations, in milliseconds. Used for day and month
+    /// totals, which are therefore exact integer sums (TE-R-007).
+    let sum (durations: Duration list) : int64 =
+        durations |> List.sumBy milliseconds
 
     /// Whether a list of parts exactly reproduces a whole. The split invariant
-    /// (TE-R-040) is enforced here, on the authoritative quantity.
+    /// (TE-R-040) is enforced here, on the authoritative quantity, in
+    /// milliseconds — checking truncated seconds would accept a split that
+    /// loses sub-second time (DF-TE-0009).
     let partsPreserve (whole: Duration) (parts: Duration list) : bool =
-        not parts.IsEmpty && sum parts = seconds whole
+        not parts.IsEmpty && sum parts = milliseconds whole
 
 module BillableUnits =
 
     /// Project exact elapsed time onto six-minute units under an explicit
     /// policy. Integer arithmetic only.
     let ofDuration (policy: RoundingPolicy) (duration: Duration) : BillableUnits =
-        let total = Duration.seconds duration
-        let whole = total / SecondsPerBillableUnit
-        let remainder = total % SecondsPerBillableUnit
+        let total = Duration.milliseconds duration
+        let whole = total / MillisecondsPerBillableUnit
+        let remainder = total % MillisecondsPerBillableUnit
 
         let units =
             match policy with
             | RoundDown -> whole
-            | RoundUp -> if remainder > 0 then whole + 1 else whole
+            | RoundUp -> if remainder > 0L then whole + 1L else whole
             | RoundNearest ->
-                if remainder * 2 >= SecondsPerBillableUnit then
-                    whole + 1
+                if remainder * 2L >= MillisecondsPerBillableUnit then
+                    whole + 1L
                 else
                     whole
 
-        BillableUnits units
+        BillableUnits(int units)
 
     let units (BillableUnits u) = u
 

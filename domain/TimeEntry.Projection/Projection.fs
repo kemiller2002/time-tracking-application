@@ -36,8 +36,9 @@ type EntryView =
       ActivityType: ActivityTypeId
       Date: EntryDate
       Description: string option
-      /// Exact seconds, so a caller that needs precision has it.
-      DurationSeconds: int
+      /// Exact milliseconds — the authoritative quantity (DF-TE-0009), so a
+      /// caller that needs precision has it.
+      DurationMilliseconds: int64
       /// Billable units under the projection's rounding policy.
       BillableUnits: int
       /// TE-R-085: presentation-boundary hours/minutes, computed here so the
@@ -53,8 +54,8 @@ type EntryView =
 /// A complete list view with its totals.
 type ListProjection =
     { Entries: EntryView list
-      /// Exact integer sum over counting entries (TE-R-007).
-      TotalSeconds: int
+      /// Exact integer sum of milliseconds over counting entries (TE-R-007).
+      TotalMilliseconds: int64
       TotalBillableUnits: int
       TotalDisplayHours: int
       TotalDisplayMinutes: int
@@ -116,13 +117,13 @@ module Projection =
     let private sortBy (sort: EntrySort) (entries: TimeEntry list) =
         let byId (e: TimeEntry) = EntryId.value e.Id
         let day (e: TimeEntry) = EntryDate.dayNumber e.Effective.Date
-        let seconds (e: TimeEntry) = Duration.seconds e.Effective.Duration
+        let ms (e: TimeEntry) = Duration.milliseconds e.Effective.Duration
 
         match sort with
         | ChronologicalAscending -> entries |> List.sortBy (fun e -> day e, byId e)
         | ChronologicalDescending -> entries |> List.sortBy (fun e -> -(day e), byId e)
-        | LongestFirst -> entries |> List.sortBy (fun e -> -(seconds e), byId e)
-        | ShortestFirst -> entries |> List.sortBy (fun e -> seconds e, byId e)
+        | LongestFirst -> entries |> List.sortBy (fun e -> -(ms e), byId e)
+        | ShortestFirst -> entries |> List.sortBy (fun e -> ms e, byId e)
 
     let private badgesFor (entry: TimeEntry) =
         [ match entry.Effective.Origin with
@@ -159,7 +160,7 @@ module Projection =
           ActivityType = entry.Effective.ActivityType
           Date = entry.Effective.Date
           Description = entry.Effective.Description |> Option.map Description.value
-          DurationSeconds = Duration.seconds entry.Effective.Duration
+          DurationMilliseconds = Duration.milliseconds entry.Effective.Duration
           BillableUnits = BillableUnits.units units
           DisplayHours = hours
           DisplayMinutes = minutes
@@ -170,7 +171,7 @@ module Projection =
 
     /// Build a list view.
     ///
-    /// Totals are summed over *counting* entries only, in whole seconds, and
+    /// Totals are summed over *counting* entries only, in whole milliseconds, and
     /// projected to units once at the end. Summing per-entry rounded units
     /// instead would drift — ten 3-minute entries are 30 minutes (5 units),
     /// not ten rounded-up units.
@@ -184,10 +185,12 @@ module Projection =
         let matched = entries |> List.filter (matches query) |> sortBy query.Sort
         let views = matched |> List.map (fun e -> toView policy (obligationsFor e) e)
         let counting = matched |> List.filter TimeEntry.countsTowardTotals
-        let totalSeconds = counting |> List.sumBy TimeEntry.contributedSeconds
+
+        let totalMilliseconds =
+            counting |> List.sumBy TimeEntry.contributedMilliseconds
 
         let totalUnits, totalHours, totalMinutes =
-            match Duration.ofSeconds totalSeconds with
+            match Duration.ofMilliseconds totalMilliseconds with
             | Ok duration ->
                 let units = BillableUnits.ofDuration policy duration
                 let h, m = BillableUnits.toHoursAndMinutes units
@@ -199,7 +202,7 @@ module Projection =
             | Error _ -> 0, 0, 0
 
         { Entries = views
-          TotalSeconds = totalSeconds
+          TotalMilliseconds = totalMilliseconds
           TotalBillableUnits = totalUnits
           TotalDisplayHours = totalHours
           TotalDisplayMinutes = totalMinutes

@@ -48,13 +48,13 @@ check. Split adds child-count, identity-uniqueness, and total-preservation.
 ## Invariants
 
 1. History only grows; the oldest revision is always `Created`.
-2. `sum(child durations) = source duration`, in whole seconds. The merge
+2. `sum(child durations) = source duration`, in whole milliseconds. The merge
    inverse is structural: the merged duration *is* the sum, never a supplied
    value that could disagree.
 3. Only `Active` entries contribute to totals.
 4. No mutation proceeds without a matching version token.
 5. No transition performs an effect.
-6. No floating-point arithmetic is authoritative.
+6. No floating-point arithmetic is authoritative; time is `int64` milliseconds.
 
 ## Contracts
 
@@ -70,11 +70,11 @@ No other package reference in any tier.
 
 ## Verification
 
-`domain/TimeEntry.Tests` — 81 cases across duration/rounding, transitions
+`domain/TimeEntry.Tests` — 84 cases across duration/rounding, transitions
 legal and illegal (including all six state transitions and merge), and
 projection, including the adversarial cases from execution rule §23.
 
-**Status: passing.** `dotnet test TimeEntry.sln` -> 81/81 in 89 ms;
+**Status: passing.** `dotnet test TimeEntry.sln` -> 84/84 in 116 ms;
 `dotnet build` -> 0 warnings, 0 errors with warnings-as-errors;
 `node tools/check-domain-architecture.mjs` -> 0 tier-boundary violations.
 Every invariant above is demonstrated, not merely designed.

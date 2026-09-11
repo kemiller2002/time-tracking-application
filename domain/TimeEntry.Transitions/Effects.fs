@@ -53,7 +53,7 @@ type Rejection =
     /// offer Review / Apply again / Discard mine (TE-R-071).
     | VersionConflict of expected: VersionToken * actual: VersionToken option
     /// TE-R-040: `sum(children) <> source`.
-    | SplitDoesNotPreserveTotal of sourceSeconds: int * childSeconds: int
+    | SplitDoesNotPreserveTotal of sourceMilliseconds: int64 * childMilliseconds: int64
     /// TE-R-041/TE-R-042 are enforced by `Duration`'s constructor, so a
     /// non-positive child cannot reach a transition. This case covers the
     /// remaining structural failure: too few parts to be a split.
@@ -75,7 +75,7 @@ type Rejection =
     /// The sources' durations sum to something `Duration` cannot represent.
     /// Reachable in principle by merging enough long entries; surfaced rather
     /// than clamped, because clamping would lose recorded time (TE-R-001).
-    | MergeDurationOutOfRange of totalSeconds: int
+    | MergeDurationOutOfRange of totalMilliseconds: int64
     /// A transition whose semantics no repository requirement defines.
     | TransitionUndefined of questionId: string
 

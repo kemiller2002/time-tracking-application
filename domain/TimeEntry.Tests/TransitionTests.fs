@@ -1,5 +1,5 @@
-/// Verifies every legal transition and the important illegal ones, plus the
-/// invariants that must survive an adversarial change (execution rule §23).
+/// Create, correct, void, restore and dispatch transitions.
+/// Split and merge have their own suites (SplitTests, MergeTests).
 module TimeEntry.Tests.TransitionTests
 
 open Xunit
@@ -12,20 +12,6 @@ open TimeEntry.Transitions.Commands
 open TimeEntry.Transitions.Effects
 open TimeEntry.Transitions.Transitions
 open TimeEntry.Tests.Helpers
-
-let private accepted (outcome: Outcome) =
-    match outcome with
-    | Accepted(entries, effects) -> entries, effects
-    | Rejected rejection -> failwithf "expected Accepted, got Rejected %A" rejection
-
-let private rejection (outcome: Outcome) =
-    match outcome with
-    | Rejected r -> r
-    | Accepted _ -> failwith "expected Rejected, got Accepted"
-
-let private single (entries: TimeEntry list) =
-    Assert.Equal(1, List.length entries)
-    List.head entries
 
 // ---------------------------------------------------------------------------
 // Create (TE-R-020)
@@ -60,18 +46,13 @@ let ``a created entry counts toward totals`` () =
 
     let entry = single (fst (accepted (createEntry request)))
     Assert.True(TimeEntry.countsTowardTotals entry)
-    Assert.Equal(1800, TimeEntry.contributedSeconds entry)
+    Assert.Equal(1800000L, TimeEntry.contributedMilliseconds entry)
 
 // ---------------------------------------------------------------------------
 // Correct (TE-R-022, TE-R-050, TE-R-051)
 // ---------------------------------------------------------------------------
 
-let private correctionRequest (entry: TimeEntry) (newDuration: Duration) (versionToken: string) =
-    { EntryId = entry.Id
-      ExpectedVersion = version versionToken
-      CorrectedFacts = { entry.Effective with Duration = newDuration }
-      Reason = reason "Forgot to stop timer"
-      Attribution = attribution "e1-r2" }
+
 
 [<Fact>]
 let ``correcting an entry appends a revision and keeps it active`` () =
@@ -134,11 +115,7 @@ let ``an unpersisted entry cannot be corrected against any version`` () =
 // Void and restore (TE-R-024, TE-R-025, TE-R-060..TE-R-063)
 // ---------------------------------------------------------------------------
 
-let private voidRequest (entry: TimeEntry) (versionToken: string) : VoidEntryRequest =
-    { EntryId = entry.Id
-      ExpectedVersion = version versionToken
-      Reason = reason "Duplicate of the timer entry"
-      Attribution = attribution "e1-r2" }
+
 
 [<Fact>]
 let ``voiding removes the entry from totals but keeps the record`` () =
@@ -150,7 +127,7 @@ let ``voiding removes the entry from totals but keeps the record`` () =
     | other -> failwithf "expected Void, got %A" other
 
     Assert.False(TimeEntry.countsTowardTotals voided)
-    Assert.Equal(0, TimeEntry.contributedSeconds voided)
+    Assert.Equal(0L, TimeEntry.contributedMilliseconds voided)
     // TE-R-063: not a delete — the facts and history survive.
     Assert.Equal(3120, Duration.seconds voided.Effective.Duration)
     Assert.Equal(2, List.length voided.History)
@@ -236,143 +213,6 @@ let ``an active entry cannot be restored`` () =
     | NotPermittedInState(CanRestore, NotVoid) -> ()
     | other -> failwithf "expected NotPermittedInState(CanRestore, NotVoid), got %A" other
 
-// ---------------------------------------------------------------------------
-// Split (TE-R-023, TE-R-040..TE-R-046)
-// ---------------------------------------------------------------------------
-
-let private splitRequest (entry: TimeEntry) (versionToken: string) (children: SplitChild list) =
-    { EntryId = entry.Id
-      ExpectedVersion = version versionToken
-      Children = children
-      Attribution = attribution "e1-r2" }
-
-[<Fact>]
-let ``a two way split supersedes the source and creates active children`` () =
-    // The worked example from system-prompt §8.10: 60 -> 36 + 24.
-    let entry = persistedEntry "e1" (minutes 60) "sha-1"
-    let children = [ splitChild "c1" (minutes 36); splitChild "c2" (minutes 24) ]
-    let entries, effects = accepted (splitEntry (splitRequest entry "sha-1" children) entry)
-
-    Assert.Equal(3, List.length entries)
-
-    let source = entries |> List.find (fun e -> e.Id = entryId "e1")
-
-    match source.State with
-    | Superseded(SupersededBySplit ids) -> Assert.Equal<EntryId list>([ entryId "c1"; entryId "c2" ], ids)
-    | other -> failwithf "expected Superseded by split, got %A" other
-
-    // TE-R-040 at the level that matters: no time is created or destroyed.
-    let counted = entries |> List.sumBy TimeEntry.contributedSeconds
-    Assert.Equal(3600, counted)
-    Assert.False(TimeEntry.countsTowardTotals source)
-
-    match List.exactlyOne effects with
-    | PersistSplit(sourcePersist, childPersists) ->
-        Assert.Equal(Some(version "sha-1"), sourcePersist.ExpectedVersion)
-        Assert.Equal(2, List.length childPersists)
-        Assert.True(childPersists |> List.forall (fun p -> p.ExpectedVersion = None))
-    | other -> failwithf "expected PersistSplit, got %A" other
-
-[<Fact>]
-let ``a split child records its lineage to the source`` () =
-    // TE-R-043: no detached children, no ambiguous source.
-    let entry = persistedEntry "e1" (minutes 60) "sha-1"
-    let children = [ splitChild "c1" (minutes 36); splitChild "c2" (minutes 24) ]
-    let entries, _ = accepted (splitEntry (splitRequest entry "sha-1" children) entry)
-    let child = entries |> List.find (fun e -> e.Id = entryId "c1")
-
-    match (List.head child.History).Change with
-    | CreatedBySplitOf source -> Assert.Equal(entryId "e1", source)
-    | other -> failwithf "expected CreatedBySplitOf, got %A" other
-
-[<Fact>]
-let ``an under allocated split is refused`` () =
-    let entry = persistedEntry "e1" (minutes 60) "sha-1"
-    let children = [ splitChild "c1" (minutes 36); splitChild "c2" (minutes 23) ]
-
-    match rejection (splitEntry (splitRequest entry "sha-1" children) entry) with
-    | SplitDoesNotPreserveTotal(source, child) ->
-        Assert.Equal(3600, source)
-        Assert.Equal(3540, child)
-    | other -> failwithf "expected SplitDoesNotPreserveTotal, got %A" other
-
-[<Fact>]
-let ``an over allocated split is refused`` () =
-    let entry = persistedEntry "e1" (minutes 60) "sha-1"
-    let children = [ splitChild "c1" (minutes 36); splitChild "c2" (minutes 25) ]
-
-    match rejection (splitEntry (splitRequest entry "sha-1" children) entry) with
-    | SplitDoesNotPreserveTotal _ -> ()
-    | other -> failwithf "expected SplitDoesNotPreserveTotal, got %A" other
-
-[<Fact>]
-let ``a split needs at least two children`` () =
-    let entry = persistedEntry "e1" (minutes 60) "sha-1"
-    let children = [ splitChild "c1" (minutes 60) ]
-
-    match rejection (splitEntry (splitRequest entry "sha-1" children) entry) with
-    | SplitNeedsAtLeastTwoChildren 1 -> ()
-    | other -> failwithf "expected SplitNeedsAtLeastTwoChildren, got %A" other
-
-[<Fact>]
-let ``split children must have distinct identities`` () =
-    let entry = persistedEntry "e1" (minutes 60) "sha-1"
-    let children = [ splitChild "c1" (minutes 36); splitChild "c1" (minutes 24) ]
-
-    match rejection (splitEntry (splitRequest entry "sha-1" children) entry) with
-    | SplitChildIdentityNotUnique duplicated -> Assert.Equal(entryId "c1", duplicated)
-    | other -> failwithf "expected SplitChildIdentityNotUnique, got %A" other
-
-[<Fact>]
-let ``a split child may not reuse the source identity`` () =
-    let entry = persistedEntry "e1" (minutes 60) "sha-1"
-    let children = [ splitChild "e1" (minutes 36); splitChild "c2" (minutes 24) ]
-
-    match rejection (splitEntry (splitRequest entry "sha-1" children) entry) with
-    | SplitChildIdentityNotUnique duplicated -> Assert.Equal(entryId "e1", duplicated)
-    | other -> failwithf "expected SplitChildIdentityNotUnique, got %A" other
-
-[<Fact>]
-let ``a split against a stale source version is refused`` () =
-    // TE-R-046: "a split uses an outdated activity version".
-    let entry = persistedEntry "e1" (minutes 60) "sha-2"
-    let children = [ splitChild "c1" (minutes 36); splitChild "c2" (minutes 24) ]
-
-    match rejection (splitEntry (splitRequest entry "sha-1" children) entry) with
-    | VersionConflict _ -> ()
-    | other -> failwithf "expected VersionConflict, got %A" other
-
-[<Fact>]
-let ``an already split entry cannot be split again`` () =
-    let entry = persistedEntry "e1" (minutes 60) "sha-1"
-    let children = [ splitChild "c1" (minutes 36); splitChild "c2" (minutes 24) ]
-    let entries, _ = accepted (splitEntry (splitRequest entry "sha-1" children) entry)
-
-    let source =
-        entries
-        |> List.find (fun e -> e.Id = entryId "e1")
-        |> fun e -> { e with Version = Some(version "sha-2") }
-
-    let again = [ splitChild "c3" (minutes 30); splitChild "c4" (minutes 30) ]
-
-    match rejection (splitEntry (splitRequest source "sha-2" again) source) with
-    | NotPermittedInState(CanSplit, AlreadySuperseded _) -> ()
-    | other -> failwithf "expected AlreadySuperseded, got %A" other
-
-[<Fact>]
-let ``a split of many children preserves the total`` () =
-    let entry = persistedEntry "e1" (minutes 60) "sha-1"
-
-    let children =
-        [ splitChild "c1" (minutes 6)
-          splitChild "c2" (minutes 12)
-          splitChild "c3" (minutes 18)
-          splitChild "c4" (minutes 24) ]
-
-    let entries, _ = accepted (splitEntry (splitRequest entry "sha-1" children) entry)
-    Assert.Equal(3600, entries |> List.sumBy TimeEntry.contributedSeconds)
-
-// ---------------------------------------------------------------------------
 // Dispatch and capability surface
 // ---------------------------------------------------------------------------
 
@@ -391,249 +231,3 @@ let ``a command naming an unloaded entry is refused`` () =
     | other -> failwithf "expected EntryNotLoaded, got %A" other
 
 // ---------------------------------------------------------------------------
-// Merge (TE-R-026, DF-TE-0006)
-// ---------------------------------------------------------------------------
-
-let private mergeRequest (sources: MergeSource list) : MergeEntriesRequest =
-    { NewEntryId = entryId "m1"
-      Sources = sources
-      Project = projectId "echelon-foundry"
-      ActivityType = activityTypeId "research"
-      Description = Some(description "Combined research block.")
-      Evidence = []
-      Reason = reason "Same task split across two timer runs"
-      Attribution = attribution "m1-r1" }
-
-[<Fact>]
-let ``merge is offered on an active entry and withheld elsewhere`` () =
-    // DF-TE-0006 resolved OQ-4, so merge is now a real capability.
-    Assert.True(Capabilities.has CanMerge Active)
-    Assert.False(Capabilities.has CanMerge (Void(reason "r", instant 1L)))
-    Assert.False(Capabilities.has CanMerge (Superseded(SupersededBySplit [ entryId "c1" ])))
-
-[<Fact>]
-let ``merging two entries supersedes both into one active entry`` () =
-    let a = persistedEntry "e1" (minutes 36) "sha-a"
-    let b = persistedEntry "e2" (minutes 24) "sha-b"
-    let request = mergeRequest [ mergeSource "e1" "sha-a"; mergeSource "e2" "sha-b" ]
-
-    let entries, effects = accepted (mergeEntries request [ a; b ])
-
-    Assert.Equal(3, List.length entries)
-
-    let target = entries |> List.find (fun e -> e.Id = entryId "m1")
-    Assert.Equal(Active, target.State)
-    // The merged duration is the exact integer sum: 36m + 24m = 60m.
-    Assert.Equal(3600, Duration.seconds target.Effective.Duration)
-
-    for id in [ "e1"; "e2" ] do
-        let source = entries |> List.find (fun e -> e.Id = entryId id)
-
-        match source.State with
-        | Superseded(SupersededByMerge into) -> Assert.Equal(entryId "m1", into)
-        | other -> failwithf "expected SupersededByMerge, got %A" other
-
-    match List.exactlyOne effects with
-    | PersistMerge(targetPersist, sourcePersists) ->
-        Assert.Equal(None, targetPersist.ExpectedVersion)
-        Assert.Equal(2, List.length sourcePersists)
-        // Each source is written against the version its caller read.
-        Assert.Equal<VersionToken option list>(
-            [ Some(version "sha-a"); Some(version "sha-b") ],
-            sourcePersists |> List.map (fun p -> p.ExpectedVersion)
-        )
-    | other -> failwithf "expected PersistMerge, got %A" other
-
-[<Fact>]
-let ``merging preserves the total and never double counts`` () =
-    let a = persistedEntry "e1" (minutes 36) "sha-a"
-    let b = persistedEntry "e2" (minutes 24) "sha-b"
-    let request = mergeRequest [ mergeSource "e1" "sha-a"; mergeSource "e2" "sha-b" ]
-    let entries, _ = accepted (mergeEntries request [ a; b ])
-
-    // Only the merged entry counts; the sources contribute zero.
-    Assert.Equal(3600, entries |> List.sumBy TimeEntry.contributedSeconds)
-
-[<Fact>]
-let ``a merged source can never be restored back into totals`` () =
-    // This is the reason DF-TE-0006 chose Superseded over Void: a restorable
-    // source would return its time to totals while the merged entry still
-    // carries it.
-    let a = persistedEntry "e1" (minutes 36) "sha-a"
-    let b = persistedEntry "e2" (minutes 24) "sha-b"
-    let request = mergeRequest [ mergeSource "e1" "sha-a"; mergeSource "e2" "sha-b" ]
-    let entries, _ = accepted (mergeEntries request [ a; b ])
-
-    let source =
-        entries
-        |> List.find (fun e -> e.Id = entryId "e1")
-        |> fun e -> { e with Version = Some(version "sha-a2") }
-
-    Assert.Empty(Capabilities.available source.State)
-
-    let restore: RestoreEntryRequest =
-        { EntryId = source.Id
-          ExpectedVersion = version "sha-a2"
-          Reason = reason "changed my mind"
-          Attribution = attribution "e1-r9" }
-
-    match rejection (restoreEntry restore source) with
-    | NotPermittedInState(CanRestore, AlreadySuperseded(SupersededByMerge _)) -> ()
-    | other -> failwithf "expected restore to be refused as superseded, got %A" other
-
-[<Fact>]
-let ``merge records lineage in both directions`` () =
-    let a = persistedEntry "e1" (minutes 36) "sha-a"
-    let b = persistedEntry "e2" (minutes 24) "sha-b"
-    let request = mergeRequest [ mergeSource "e1" "sha-a"; mergeSource "e2" "sha-b" ]
-    let entries, _ = accepted (mergeEntries request [ a; b ])
-
-    let target = entries |> List.find (fun e -> e.Id = entryId "m1")
-
-    match (List.head target.History).Change with
-    | CreatedByMergeOf sources -> Assert.Equal<EntryId list>([ entryId "e1"; entryId "e2" ], sources)
-    | other -> failwithf "expected CreatedByMergeOf, got %A" other
-
-    let source = entries |> List.find (fun e -> e.Id = entryId "e1")
-
-    match (List.head source.History).Change with
-    | MergedInto target -> Assert.Equal(entryId "m1", target)
-    | other -> failwithf "expected MergedInto, got %A" other
-
-    // The source's own original revision survives (TE-R-030).
-    Assert.Equal(2, List.length source.History)
-
-[<Fact>]
-let ``merge requires a reason and marks the result as manual`` () =
-    let a = persistedEntry "e1" (minutes 36) "sha-a"
-    let b = persistedEntry "e2" (minutes 24) "sha-b"
-    let request = mergeRequest [ mergeSource "e1" "sha-a"; mergeSource "e2" "sha-b" ]
-    let entries, _ = accepted (mergeEntries request [ a; b ])
-    let target = entries |> List.find (fun e -> e.Id = entryId "m1")
-
-    match target.Effective.Origin with
-    | Manual r -> Assert.Equal("Same task split across two timer runs", Reason.value r)
-    | Timed -> failwith "a merged entry is a deliberate manual act, not a timed record"
-
-[<Fact>]
-let ``a merge needs at least two sources`` () =
-    let a = persistedEntry "e1" (minutes 36) "sha-a"
-
-    match rejection (mergeEntries (mergeRequest [ mergeSource "e1" "sha-a" ]) [ a ]) with
-    | MergeNeedsAtLeastTwoSources 1 -> ()
-    | other -> failwithf "expected MergeNeedsAtLeastTwoSources, got %A" other
-
-[<Fact>]
-let ``merge sources must have distinct identities`` () =
-    let a = persistedEntry "e1" (minutes 36) "sha-a"
-
-    let request = mergeRequest [ mergeSource "e1" "sha-a"; mergeSource "e1" "sha-a" ]
-
-    match rejection (mergeEntries request [ a ]) with
-    | MergeSourceIdentityNotUnique duplicated -> Assert.Equal(entryId "e1", duplicated)
-    | other -> failwithf "expected MergeSourceIdentityNotUnique, got %A" other
-
-[<Fact>]
-let ``the merged entry may not reuse a source identity`` () =
-    let a = persistedEntry "e1" (minutes 36) "sha-a"
-    let b = persistedEntry "m1" (minutes 24) "sha-b"
-
-    let request = mergeRequest [ mergeSource "e1" "sha-a"; mergeSource "m1" "sha-b" ]
-
-    match rejection (mergeEntries request [ a; b ]) with
-    | MergeSourceIdentityNotUnique duplicated -> Assert.Equal(entryId "m1", duplicated)
-    | other -> failwithf "expected MergeSourceIdentityNotUnique, got %A" other
-
-[<Fact>]
-let ``a merge with one stale source is refused entirely`` () =
-    // TE-R-074 "offline edits overlap": each source is version-checked, and one
-    // stale source rejects the whole merge rather than merging the rest.
-    let a = persistedEntry "e1" (minutes 36) "sha-a"
-    let b = persistedEntry "e2" (minutes 24) "sha-b-newer"
-    let request = mergeRequest [ mergeSource "e1" "sha-a"; mergeSource "e2" "sha-b" ]
-
-    match mergeEntries request [ a; b ] with
-    | Rejected(VersionConflict(expected, actual)) ->
-        Assert.Equal("sha-b", VersionToken.value expected)
-        Assert.Equal("sha-b-newer", VersionToken.value (Option.get actual))
-    | other -> failwithf "expected VersionConflict, got %A" other
-
-[<Fact>]
-let ``a voided source cannot be merged`` () =
-    let a = persistedEntry "e1" (minutes 36) "sha-a"
-
-    let b =
-        { persistedEntry "e2" (minutes 24) "sha-b" with State = Void(reason "dup", instant 1L) }
-
-    let request = mergeRequest [ mergeSource "e1" "sha-a"; mergeSource "e2" "sha-b" ]
-
-    match rejection (mergeEntries request [ a; b ]) with
-    | NotPermittedInState(CanMerge, AlreadyVoid) -> ()
-    | other -> failwithf "expected NotPermittedInState(CanMerge, AlreadyVoid), got %A" other
-
-[<Fact>]
-let ``a merge may not span multiple ledger days`` () =
-    // Refused rather than silently resolved: the ledger is day-oriented, so
-    // this would move time between two days and change both days' totals.
-    let a = persistedEntry "e1" (minutes 36) "sha-a"
-    let b = persistedEntryOn "e2" (minutes 24) "sha-b" (onDate 2026 9 11)
-    let request = mergeRequest [ mergeSource "e1" "sha-a"; mergeSource "e2" "sha-b" ]
-
-    match rejection (mergeEntries request [ a; b ]) with
-    | MergeSpansMultipleDays 2 -> ()
-    | other -> failwithf "expected MergeSpansMultipleDays 2, got %A" other
-
-[<Fact>]
-let ``a merge naming an unloaded source is refused`` () =
-    let a = persistedEntry "e1" (minutes 36) "sha-a"
-    let request = mergeRequest [ mergeSource "e1" "sha-a"; mergeSource "missing" "sha-x" ]
-
-    match rejection (mergeEntries request [ a ]) with
-    | EntryNotLoaded id -> Assert.Equal(entryId "missing", id)
-    | other -> failwithf "expected EntryNotLoaded, got %A" other
-
-[<Fact>]
-let ``merge dispatches through apply`` () =
-    let a = persistedEntry "e1" (minutes 36) "sha-a"
-    let b = persistedEntry "e2" (minutes 24) "sha-b"
-    let request = mergeRequest [ mergeSource "e1" "sha-a"; mergeSource "e2" "sha-b" ]
-
-    let entries, _ = accepted (apply [ a; b ] (MergeEntries request))
-    Assert.Equal(3, List.length entries)
-
-[<Fact>]
-let ``merging three entries sums all of them`` () =
-    let a = persistedEntry "e1" (minutes 6) "sha-a"
-    let b = persistedEntry "e2" (minutes 12) "sha-b"
-    let c = persistedEntry "e3" (minutes 18) "sha-c"
-
-    let request =
-        mergeRequest [ mergeSource "e1" "sha-a"; mergeSource "e2" "sha-b"; mergeSource "e3" "sha-c" ]
-
-    let entries, _ = accepted (mergeEntries request [ a; b; c ])
-    Assert.Equal(2160, entries |> List.sumBy TimeEntry.contributedSeconds)
-
-[<Fact>]
-let ``a superseded entry offers no capabilities`` () =
-    Assert.Empty(Capabilities.available (Superseded(SupersededBySplit [ entryId "c1" ])))
-
-[<Fact>]
-let ``every transition only ever grows history`` () =
-    // Adversarial: the one property that must hold across all transitions.
-    let entry = persistedEntry "e1" (minutes 60) "sha-1"
-    let before = List.length entry.History
-
-    let outcomes =
-        [ correctEntry (correctionRequest entry (minutes 30) "sha-1") entry
-          voidEntry (voidRequest entry "sha-1") entry
-          splitEntry (splitRequest entry "sha-1" [ splitChild "c1" (minutes 36); splitChild "c2" (minutes 24) ]) entry ]
-
-    for outcome in outcomes do
-        let entries, _ = accepted outcome
-
-        let source = entries |> List.find (fun e -> e.Id = entryId "e1")
-
-        Assert.True(
-            List.length source.History > before,
-            sprintf "history shrank or stalled: %d -> %d" before (List.length source.History)
-        )
