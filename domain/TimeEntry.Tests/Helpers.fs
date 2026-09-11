@@ -30,7 +30,7 @@ let seconds n = Duration.ofSeconds n |> expect
 let millis (n: int64) = Duration.ofMilliseconds n |> expect
 let minutes n = Duration.ofMinutes n |> expect
 let onDate year month day = EntryDate.ofYearMonthDay year month day |> expect
-let instant epochSeconds = Instant.ofEpochSeconds epochSeconds
+let instant epochMilliseconds = Instant.ofEpochMilliseconds epochMilliseconds
 
 let defaultDate = onDate 2026 9 10
 

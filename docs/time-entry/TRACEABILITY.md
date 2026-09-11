@@ -103,7 +103,7 @@ marking work complete merely because code exists.
 | TE-R-081 | Deterministic projections | Id tie-break; order-independent | WI-0011 | `Projection.sortBy` | `ProjectionTests` "sorting is deterministic regardless of input order" | **VERIFIED** |
 | TE-R-082 | Chronological display | `ChronologicalAscending`/`Descending` | WI-0011 | `Query.EntrySort` | `ProjectionTests` sort cases | **VERIFIED** |
 | TE-R-083 | Empty states | `IsEmpty`; void-only day is not empty | WI-0011 | `ListProjection.IsEmpty` | `ProjectionTests` 2 cases | **VERIFIED** |
-| TE-R-084 | Invalid records handled | `PersistedRecordUnreadable` obligation | WI-0011 | `Capabilities.Obligation` | — | **VERIFIED** (needs Tier 4 to raise) |
+| TE-R-084 | Invalid records handled | Typed `DocumentError`/`DecodeError`, never an exception | WI-0006 | `Persistence.Mapping`, `Serialization` | `PersistenceTests` 12 corruption cases | **VERIFIED** |
 | TE-R-085 | Unit→display at the boundary | Projection computes hours/minutes | WI-0011 | `BillableUnits.toHoursAndMinutes` | `DurationTests` + `ProjectionTests` 23-unit cases | **VERIFIED** |
 
 ## H. Boundary and architecture
@@ -114,7 +114,7 @@ marking work complete merely because code exists.
 | TE-R-091 | No domain logic in TS/JS | No TS authored; JS prototype not extended | WI-0007 | — | structural: `domain/` has no JS | HOLDS (nothing added) |
 | TE-R-092 | TS limited to plumbing | — | WI-0007 | — | — | NOT IMPLEMENTED (blocked) |
 | TE-R-093 | No effects in transitions | Effects returned as data | WI-0004 | `Effects.Effect` | `TransitionTests` effect assertions | **VERIFIED** |
-| TE-R-094 | No GitHub shapes in domain | `VersionToken` opaque; no URL/verb in `Effect` | WI-0006 | `Values.VersionToken`, `Effects` | structural | **VERIFIED** |
+| TE-R-094 | No GitHub shapes in domain | Anti-corruption layer in Tier 4 only; round-trip identity holds | WI-0006 | `Persistence.Documents`, `Mapping`, `Layout` | `PersistenceTests` 9 round-trip + 6 layout cases; tier check | **VERIFIED** |
 | TE-R-095 | Tier 1 infra-free | `netstandard2.0`, FSharp.Core only | WI-0004 | `TimeEntry.Semantic.fsproj` | structural: no PackageReference | **VERIFIED** |
 | TE-R-096 | Illegal states unrepresentable | Private ctors; state-specific DUs | WI-0004 | `Identifiers`, `Duration`, `Values`, `EntryState` | `DurationTests` + `TransitionTests` refusal cases | **VERIFIED** |
 | TE-R-097 | Capabilities from state | Rows carry capabilities | WI-0004 | `Capabilities.available` | `ProjectionTests` "a row carries the capabilities of its state" | **VERIFIED** |
@@ -139,7 +139,7 @@ marking work complete merely because code exists.
 | Awaiting Tier 4 — GitHub adapter, WASM host, UI | 9 |
 | Blocked by an open question | **0** — all five resolved as `DF-TE-0004..0008` |
 
-Test suite: 84 cases, 0 failures, 116 ms. Tier-boundary check: 14 F# files,
+Test suite: 122 cases, 0 failures, 176 ms. Tier-boundary check: 14 F# files,
 0 violations, adversarially validated against three injected violations.
 
 ## Orphan check

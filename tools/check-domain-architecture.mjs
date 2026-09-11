@@ -7,10 +7,11 @@
 // Tier 1 boundary structural rather than aspirational. This is that mechanism
 // for this repository.
 //
-// It is deliberately a *static text and project-reference* check, not a build:
-// it therefore runs in an environment with no .NET SDK, which is currently the
-// only way any architectural claim about this domain can be verified at all
-// (docs/time-entry/TOOLCHAIN-BLOCKER.md).
+// It is deliberately a *static text and project-reference* check, not a build.
+// That keeps it runnable with no .NET SDK present, and it catches boundary
+// violations the compiler cannot: referencing a forbidden type is legal F#,
+// it is just architecturally wrong here. It complements `dotnet build`, it
+// does not replace it.
 //
 // Written in a functional style: pure rule functions over file contents, one
 // reduction into a findings list, and a single side effect at the end.
@@ -25,6 +26,9 @@ const TIERS = {
   'TimeEntry.Semantic': 1,
   'TimeEntry.Transitions': 2,
   'TimeEntry.Projection': 3,
+  // Tier 4 is the only tier permitted to know about serialization, transport
+  // and infrastructure. Everything below it is checked against that.
+  'TimeEntry.Persistence': 4,
   'TimeEntry.Tests': 4
 };
 
@@ -57,8 +61,14 @@ const FLOAT_TYPES = [
   { pattern: /\bSystem\.Double\b/, what: 'System.Double' }
 ];
 
+// Build output is generated, not authored: it contains AssemblyInfo.fs and
+// friends, which would inflate the counts and could report a "violation" in
+// code nobody wrote.
+const GENERATED = new Set(['bin', 'obj']);
+
 const listFiles = (dir) =>
   readdirSync(dir).flatMap((name) => {
+    if (GENERATED.has(name)) return [];
     const full = join(dir, name);
     return statSync(full).isDirectory() ? listFiles(full) : [full];
   });
@@ -166,7 +176,7 @@ const tierCounts = sources.reduce((counts, path) => {
 console.log(
   `domain architecture check: ${sources.length} F# files ` +
     `(tier 1: ${tierCounts[1] ?? 0}, tier 2: ${tierCounts[2] ?? 0}, ` +
-    `tier 3: ${tierCounts[3] ?? 0}, tests: ${tierCounts[4] ?? 0})`
+    `tier 3: ${tierCounts[3] ?? 0}, tier 4 + tests: ${tierCounts[4] ?? 0})`
 );
 
 if (findings.length > 0) {
@@ -177,6 +187,6 @@ if (findings.length > 0) {
 
 console.log('no tier-boundary violations');
 console.log(
-  'NOTE: this is a static check. It does not compile the F# domain and is not ' +
-    'a substitute for dotnet build/test (see docs/time-entry/TOOLCHAIN-BLOCKER.md).'
+  'NOTE: static check only — it does not compile the domain, so it complements ' +
+    'dotnet build/test rather than replacing it.'
 );

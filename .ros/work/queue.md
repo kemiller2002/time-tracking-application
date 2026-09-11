@@ -26,4 +26,5 @@
 | WI-0021 | TE-020 Implement archived-project policy per DF-TE-0007: reject new time, keep existing entries | captured | domain | medium |
 | WI-0022 | TE-021 Rebuild app shell on static-ui-screens design system per DF-TE-0008 | captured | ui | medium |
 | WI-0023 | TE-022 BLOCKED: wasm-tools workload unavailable via apt - only remaining toolchain gap | captured | blocker | high |
-| WI-0024 | TE-023 Duration precision: store milliseconds to match exact_duration_ms contract | ready |  | medium |
+| WI-0024 | TE-023 Duration precision: store milliseconds to match exact_duration_ms contract | complete |  | medium |
+| WI-0025 | TE-025 GitHub API adapter and effect interpreter: Git Data API for atomic multi-file split/merge writes | captured |  | medium |

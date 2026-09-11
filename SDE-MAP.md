@@ -21,7 +21,7 @@ Navigation metadata only — it points at authorities, it is not one.
 | Time Entry transitions | `domain/TimeEntry.Transitions/` | 2 | `domain/manifest.md` | Commands, requested effects, pure transitions |
 | Time Entry projection | `domain/TimeEntry.Projection/` | 3 | `domain/manifest.md` | Queries, list projection, totals |
 | Domain verification | `domain/TimeEntry.Tests/` | — | `domain/manifest.md` | Behavioural + adversarial domain tests |
-| GitHub persistence boundary | *not yet implemented* | 4 | — | TE-005; blocked, see below |
+| GitHub persistence boundary | `domain/TimeEntry.Persistence/` | 4 | `domain/manifest.md` | Document shape, mapping, layout, JSON. API adapter still outstanding (WI-0025) |
 | WASM / browser bridge | *not yet implemented* | 4 | — | TE-006; blocked, see below |
 | Browser UI (design authority) | `static-ui-screens/` | 4 | `docs/time-entry/UI-PROVENANCE.md` | 18 screens; authoritative per `DF-TE-0003` |
 | Browser UI (delivery shell) | `index.html`, `src/`, `service-worker.js` | 4 | `docs/time-entry/UI-PROVENANCE.md` | PWA shell; current JS prototype |
@@ -49,10 +49,12 @@ Ubuntu archive (`apt-get install dotnet-sdk-8.0`); the earlier claim that no
 SDK was obtainable was wrong and is corrected in
 `docs/time-entry/TOOLCHAIN-BLOCKER.md`.
 
-Tier 4 is outstanding. The GitHub persistence boundary is now *implementable*
-(WI-0006, active). The WASM host remains blocked: the `wasm-tools` workload is
-not in the Ubuntu archive and ships only from the blocked vendor CDN
-(WI-0007).
+Tier 4 is partially implemented. The persistence *boundary* is done and
+verified — document shape, domain mapping with round-trip identity, repository
+layout, and JSON encoding (WI-0006). The GitHub *API adapter* and effect
+interpreter are not (WI-0025). The WASM host remains blocked: the `wasm-tools`
+workload is not in the Ubuntu archive and ships only from the blocked vendor
+CDN (WI-0007).
 
 The JavaScript prototype in `src/` remains the only runnable application. It
 is **not** the domain authority (TE-R-090) and is retained as working

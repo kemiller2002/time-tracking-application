@@ -9,12 +9,12 @@ type TextError =
 
 /// Free text describing work performed (TE-R-027).
 ///
-/// OQ-3 is unresolved: no repository document states whether a description is
-/// mandatory, nor any length, whitespace, or encoding constraint. This type
-/// therefore does the minimum the evidence supports — rejects whitespace-only
-/// text and bounds length to prevent unbounded payloads — and requiredness is
-/// expressed at the *use site* as `Description option`, so resolving OQ-3
-/// later does not require changing this type.
+/// Per DF-TE-0005 a description is optional at creation and required for
+/// attestation, so requiredness lives at the use site (`Description option`)
+/// rather than in this type. The constraints here are the minimum the evidence
+/// supports: reject whitespace-only text, and bound length to prevent
+/// unbounded payloads. No repository requirement states a length, so 4000 is
+/// an engineering bound, not a rule.
 type Description =
     private
     | Description of string
@@ -83,19 +83,37 @@ module EntryDate =
 
     let dayNumber (EntryDate d) = d
 
+    /// Rebuild a date from a previously persisted day number. Guards the range
+    /// so a corrupt record cannot produce an out-of-range date.
+    let ofDayNumber (day: int) : Result<EntryDate, DateError> =
+        if day < 0 || day > 3652058 then Error(DateOutOfRange day) else Ok(EntryDate day)
+
+    /// The inverse of `ofYearMonthDay`, so a date can be persisted in a
+    /// human-readable form and read back exactly. The ledger's files are meant
+    /// to be reviewable in GitHub, so the stored form is a calendar date
+    /// rather than an opaque integer.
+    let toYearMonthDay (EntryDate d) : int * int * int =
+        let date = DateTime(int64 d * TimeSpan.TicksPerDay)
+        date.Year, date.Month, date.Day
+
     let compare (a: EntryDate) (b: EntryDate) = compare (dayNumber a) (dayNumber b)
 
-/// An instant, as epoch seconds. Tier 1 never reads a clock; instants are
-/// always supplied by a caller that has one (Tier 3/4).
+/// An instant, as epoch **milliseconds**. Tier 1 never reads a clock; instants
+/// are always supplied by a caller that has one (Tier 3/4).
+///
+/// Milliseconds for the same reason as `Duration` (DF-TE-0009): the browser and
+/// the existing persistence layer both work in `Date.now()` milliseconds, and a
+/// seconds/milliseconds mismatch at the boundary is exactly the silent-defect
+/// class that decision exists to remove.
 type Instant =
     private
-    | Instant of epochSeconds: int64
+    | Instant of epochMilliseconds: int64
 
-    member this.EpochSeconds = let (Instant s) = this in s
+    member this.EpochMilliseconds = let (Instant ms) = this in ms
 
 module Instant =
-    let ofEpochSeconds (s: int64) = Instant s
-    let epochSeconds (Instant s) = s
+    let ofEpochMilliseconds (ms: int64) = Instant ms
+    let epochMilliseconds (Instant ms) = ms
 
 /// Opaque external concurrency evidence (TE-R-073).
 ///

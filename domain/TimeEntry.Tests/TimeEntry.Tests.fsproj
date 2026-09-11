@@ -29,6 +29,7 @@
     <Compile Include="SplitTests.fs" />
     <Compile Include="MergeTests.fs" />
     <Compile Include="ProjectionTests.fs" />
+    <Compile Include="PersistenceTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -41,6 +42,7 @@
     <ProjectReference Include="../TimeEntry.Semantic/TimeEntry.Semantic.fsproj" />
     <ProjectReference Include="../TimeEntry.Transitions/TimeEntry.Transitions.fsproj" />
     <ProjectReference Include="../TimeEntry.Projection/TimeEntry.Projection.fsproj" />
+    <ProjectReference Include="../TimeEntry.Persistence/TimeEntry.Persistence.fsproj" />
   </ItemGroup>
 
 </Project>

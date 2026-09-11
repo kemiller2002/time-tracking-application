@@ -4,7 +4,7 @@
   "repository": "time-tracking-application",
   "actor": "claude",
   "startedAt": "2026-09-11T22:44:26.239Z",
-  "updatedAt": "2026-09-11T23:39:11.491Z",
+  "updatedAt": "2026-09-11T23:48:30.538Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -454,14 +454,24 @@
     {
       "id": "WI-0006",
       "type": "default",
-      "state": "active",
-      "semanticState": "active",
-      "evidence": [],
-      "updatedAt": "2026-09-11T23:27:41.381Z",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Persistence/Mapping.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/PersistenceTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T23:48:30.538Z",
       "telemetryExecutionIds": [
         "EXE-20260911T231852202Z-82d7245c"
       ],
-      "blockReason": "Tier 4 not implementable: requires F# WASM build and a compiled domain to adapt. Blocked by toolchain (docs/time-entry/TOOLCHAIN-BLOCKER.md)."
+      "blockReason": "Tier 4 not implementable: requires F# WASM build and a compiled domain to adapt. Blocked by toolchain (docs/time-entry/TOOLCHAIN-BLOCKER.md).",
+      "completedAt": "2026-09-11T23:48:30.538Z"
     },
     {
       "id": "WI-0007",
