@@ -2,11 +2,11 @@
 id: GV-AGENT-001
 title: Agent Operating Manual
 status: canonical
-version: 1.0.0
+version: 1.1.0
 owners:
   - repository-governance
 created: 2026-07-22
-updated: 2026-07-22
+updated: 2026-09-05
 review_cycle: quarterly
 supersedes: []
 superseded_by: []
@@ -14,6 +14,7 @@ related_documents:
   - AI-Repository-Operating-System.md
   - Engineering-Standards.md
   - Research-Execution-Package-Specification.md
+  - ../development-telemetry.md
 tags: [governance, agents, operations]
 ---
 
@@ -24,13 +25,14 @@ tags: [governance, agents, operations]
 1. Read root `AGENTS.md` and the [governance index](README.md).
 2. Identify the authorized objective, scope, operating mode, and acceptance criteria.
 3. Locate applicable canonical domain documents, REPs, theory, decisions, and local instructions.
-4. Inspect repository state, including uncommitted user work; establish a baseline where practical.
+4. Begin the authorized work item so ROS starts an execution record; inspect repository state, including uncommitted user work, and establish a baseline where practical.
 5. Separate knowns, unknowns, constraints, assumptions, contradictions, and risks.
 6. Choose the smallest sufficient process and artifact threshold.
 7. Execute within scope, making reversible decisions where justified.
 8. Validate in proportion to risk.
-9. Update affected code, documentation, decisions, journals, packages, and registries.
-10. Leave a self-contained handoff.
+9. Finalize execution telemetry, preserving runtime limitations, deterministic metrics, scope changes, and evidence links.
+10. Update affected code, documentation, decisions, journals, packages, and registries.
+11. Leave a self-contained handoff.
 
 ## Operating Modes
 
@@ -84,6 +86,12 @@ For each material hypothesis record: statement; evidence for; evidence against; 
 
 Never say a file was read when it was not; a command succeeded when it failed; a test passed when it did not run and pass; a user approved what they did not; or evidence exists when it does not. Distinguish observed output, inference, and assumption. Capture enough command/test identity and outcome for a successor to verify important claims.
 
+## Execution Telemetry
+
+Every newly begun ROS work item receives one or more provider-neutral execution records. At execution start, discover provider/model/runtime/session identity and capability state, classify the work, and capture a deterministic repository baseline. During work, ingest runtime/tool events and record R&D facts, scope discoveries, correction signals, and evidence links when they are trustworthy. At completion, finalize all active records and validate them.
+
+Use normalized metrics only when their semantics, unit, scope, and aggregation are understood. Preserve legitimate unmapped provider fields through the bounded, sanitized raw layer. A supported but unavailable metric is not zero; an estimate is not observed; an agent report is not a Git- or tool-derived fact. Do not collect prompts, responses, commands, file contents, credentials, or personal data merely to increase metric coverage. Detailed commands, adapters, classification vocabulary, and aggregation rules are canonical in `docs/development-telemetry.md`.
+
 ## Artifact Thresholds
 
 | Threshold | Use when | Required artifact |
@@ -99,4 +107,3 @@ A partial REP is appropriate when full-REP conditions apply but research stops e
 ## Handoff Standard
 
 Every substantial task records: objective and acceptance criteria; work completed; files changed; decisions and assumptions; tests/checks run and results; evidence/records added or updated; unresolved questions; known risks; blockers; and next recommended action. Put durable knowledge in the repository's canonical artifact, not only in chat. A successor should not need conversation history to resume.
-

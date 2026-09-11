@@ -141,3 +141,6 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# ROS transient lock state (Repository Operating System 2.0.1)
+.ros/locks/

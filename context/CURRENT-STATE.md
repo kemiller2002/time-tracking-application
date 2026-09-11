@@ -2,7 +2,7 @@
 
 ## Repository status
 
-Newly initialized with Repository Operating System 1.0.0.
+Newly initialized with Repository Operating System 2.0.1.
 
 ## Observed facts
 

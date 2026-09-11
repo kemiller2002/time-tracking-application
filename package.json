@@ -16,5 +16,8 @@
     "build": "node tools/build.mjs",
     "validate:schemas": "node tools/validate-schemas.mjs",
     "check": "npm run typecheck && npm run validate:schemas && node --test tests/*.test.js"
+  },
+  "dependencies": {
+    "@echelon-foundry/typescript-wasm-kernel": "^0.4.1"
   }
 }

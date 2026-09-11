@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "1.0.0",
+  "repository": "time-tracking-application",
+  "nextSeq": 1,
+  "items": [
+    {
+      "id": "WI-0001",
+      "title": "Install and upgrade Echelon Foundry dependencies (ROS 2.0.1 greenfield, SDE 1.1.1, typescript-wasm-kernel 0.4.1)",
+      "description": null,
+      "tags": [
+        "dependencies",
+        "mechanical"
+      ],
+      "priority": "high",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-11T22:44:57Z",
+      "updatedAt": "2026-09-11T22:45:00Z",
+      "createdBy": "claude",
+      "source": "manual",
+      "sourceReference": null
+    }
+  ]
+}
