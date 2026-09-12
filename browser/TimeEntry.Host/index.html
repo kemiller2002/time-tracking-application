@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<!--
+  The live page. Its markup is ADOPTED from the screens already in this
+  repository, not written fresh: the shell, sidebar, bottom nav, day summary
+  and record structure come from `static-ui-screens/today.html`, and the form
+  below comes from `static-ui-screens/manual-entry.html`. Class names, ids and
+  element structure are kept as those files wrote them, so the design stays in
+  one place (DF-TE-0008) and a change there is a change here.
+
+  Two differences from the static screens, both mechanical:
+
+  1. Every list of DATA is empty. The static screens carry four sample records,
+     a sample project list and the minute labels 6..60 hard-coded in markup.
+     Those are filled by the F# kernel at run time instead (TE-R-080). Leaving
+     the sample values in place would mean the page could display a number the
+     domain never computed.
+
+  2. Elements the projection cannot yet fill are removed rather than filled
+     with plausible text — the start/end times in `record-time`, the "Day
+     status" panel's derived figures, and the running-timer chip. An invented
+     value is worse than an absent one.
+-->
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="Daily activity timeline for Echelon Ledger.">
+  <title>Today · Echelon Ledger</title>
+  <!-- An empty data URI suppresses the favicon request outright, rather than
+       serving a placeholder or letting every page load log a 404. -->
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    /* The adopted design system (DF-TE-0008) enforces a 44px minimum on
+       buttons, links and text inputs, but has no rule for a checkbox —
+       none of the eighteen static screens contains one. This page
+       introduced them, for "show removed entries" and for merge selection.
+
+       Extending the design where it is silent, rather than editing
+       styles.css: that file is the shared design authority, linked and not
+       copied, and a rule added there would apply to screens that never
+       asked for it.
+
+       The touch target is the LABEL, which is how a checkbox is reached in
+       practice — the box itself is 13px and no styling makes a native one
+       larger without replacing it, which TE-R-110 forbids. */
+    label:has(> input[type="checkbox"]) {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      min-height: 44px;
+    }
+
+    /* The sidebar is `height: 100vh` with no scroll of its own, which is
+       right for the static screens: each carries one status panel. This page
+       now carries two forms in it — signing in, and the repository — and on a
+       short viewport the lower one was clipped and its buttons could not be
+       reached at all. A control that exists and cannot be operated is worse
+       than one that is absent.
+
+       Extended here rather than in styles.css for the same reason as above:
+       that file is the shared design authority and a rule added there would
+       apply to eighteen screens that never asked for it. */
+    .sidebar {
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Primary navigation"><a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true">E</span><span class="brand-name">Echelon Ledger</span></a><nav class="nav-group"><a class="nav-link" aria-current="page" href="index.html"><span class="nav-mark" aria-hidden="true">TD</span>Today</a></nav><div class="sidebar-status"><div class="status-line"><span class="status-dot" aria-hidden="true"></span><strong id="sync-status">Not signed in</strong></div><p class="sidebar-meta" id="sync-meta">Changes are held in this page only.</p></div>
+      <!-- Signing in (DF-TE-0016, resolving OQ-6). The actor on every
+           revision is whoever signed in, and an unattributed change is
+           refused rather than recorded against a placeholder.
+
+           static-ui-screens/sign-in.html shows an email-and-password form.
+           That is NOT adopted: the user chose Google and Apple, so the
+           screen's layout carries over and its fields do not. The client ids
+           are configuration, not secrets, and are supplied here for the same
+           reason the repository is — nothing in this repository can hold an
+           account that belongs to somebody else. -->
+      <form class="sidebar-status" id="identity-form" novalidate>
+        <div class="status-line"><span class="status-dot" aria-hidden="true"></span><strong id="identity-status">Not signed in</strong></div>
+        <div class="field"><label for="google-client-id">Google client id</label><input id="google-client-id" type="text" autocomplete="off"></div>
+        <div class="field"><label for="apple-client-id">Apple services id</label><input id="apple-client-id" type="text" autocomplete="off"></div>
+        <div class="form-actions">
+          <button class="button button-secondary" type="button" id="sign-in-google">Sign in with Google</button>
+          <button class="button button-secondary" type="button" id="sign-in-apple">Sign in with Apple</button>
+          <button class="button" type="button" id="sign-out">Sign out</button>
+        </div>
+        <p class="field-help" id="identity-help"></p>
+      </form>
+      <!-- The device clock against the repository's (TE-R-008). Hidden unless
+           the difference is material: a permanent "clocks agree" line would
+           be a reassurance nothing checked until a load has happened. The
+           sentence is the kernel's. -->
+      <p class="notice notice-warning" id="clock-warning" role="status" aria-live="polite" hidden></p>
+      <!-- Where the ledger lives, and the token that may write to it
+           (DF-TE-0011). The token is held for this tab only — sessionStorage,
+           not localStorage — and is never rendered back into the page. The
+           mechanism is one implementation of a port, so a device flow or a
+           same-origin proxy would replace this form without the transport
+           changing. -->
+      <form class="sidebar-status" id="repo-form" novalidate>
+        <div class="field"><label for="repo-owner">Owner</label><input id="repo-owner" type="text" autocomplete="off"></div>
+        <div class="field"><label for="repo-name">Repository</label><input id="repo-name" type="text" autocomplete="off"></div>
+        <div class="field"><label for="repo-branch">Branch</label><input id="repo-branch" type="text" value="main" autocomplete="off"></div>
+        <div class="field"><label for="repo-api-root">API root</label><input id="repo-api-root" type="text" placeholder="https://api.github.com" autocomplete="off"></div>
+        <div class="field"><label for="repo-token">Token</label><input id="repo-token" type="password" autocomplete="off"></div>
+        <div class="form-actions"><button class="button button-secondary" type="submit">Use this repository</button><button class="button" type="button" id="repo-forget">Forget</button></div>
+      </form></aside>
+    <main class="page" id="main">
+      <div class="page-heading"><p class="eyebrow">Today</p><h1 class="page-title">Thursday, September 10</h1></div>
+
+      <div class="layout-two">
+        <section class="surface surface-pad" aria-labelledby="ledger-title">
+          <div class="day-summary"><div><p class="summary-label" id="ledger-title">Recorded work</p><p class="summary-value" id="daily-total">—</p></div><span class="summary-count" id="activity-count">—</span></div>
+          <!-- Removed entries are excluded from totals but never deleted
+               (TE-R-030). The count of them comes from the projection, and
+               ticking this asks the KERNEL for a different view — it is not a
+               filter applied to a list the page already has. -->
+          <p class="field-help"><label for="show-removed"><input type="checkbox" id="show-removed"> Show removed entries<span id="excluded-count"></span></label></p>
+          <!-- One `article.record` per projected entry, built by the bridge in
+               the shape today.html defines. -->
+          <div class="timeline" id="timeline"></div>
+        </section>
+
+        <aside class="stack">
+          <form class="surface surface-pad" id="create-form" novalidate>
+            <fieldset class="form-section"><legend class="form-legend">Add time</legend>
+              <div class="form-grid"><div class="field"><label for="manual-date">Date <span class="required">*</span></label><input id="manual-date" name="date" type="date" value="2026-09-10" required></div><div class="field"><label for="manual-type">Activity type <span class="required">*</span></label><select id="manual-type" name="type" required></select></div><div class="field"><label for="manual-project">Project <span class="required">*</span></label><select id="manual-project" name="project" required></select></div><div class="field field-full"><label for="manual-description">What did you do?</label><textarea id="manual-description" name="description"></textarea></div></div>
+              <p class="field-label section">Quick duration</p>
+              <!-- manual-entry.html hard-codes the labels 6..60 here. They are
+                   generated by the kernel instead: each button carries a unit
+                   COUNT, and the bridge never converts it to minutes. -->
+              <div class="duration-grid" id="duration-grid" aria-label="Quick duration options"></div>
+              <p class="field-help">Your selected duration is stored exactly.</p>
+            </fieldset>
+            <div class="form-actions"><button class="button button-primary" type="submit">Save entry</button></div>
+            <!-- Rejections and errors are rendered here verbatim from the
+                 kernel. aria-live so a refusal is announced, not just drawn. -->
+            <p class="notice notice-warning" id="create-message" role="status" aria-live="polite" hidden></p>
+            <!-- What the domain asked the host to do next. Named, never
+                 performed in the browser (TE-R-093). -->
+            <p class="field-help" id="create-effects" hidden></p>
+          </form>
+        </aside>
+      </div>
+      <!-- A stale write. TE-R-070/072: the entry moved under us, nothing was
+           saved, and the person decides what happens next — never an
+           automatic re-read-and-overwrite. -->
+      <section class="notice notice-warning" id="conflict-panel" hidden role="alert">
+        <p class="notice-title">This entry changed somewhere else</p>
+        <p class="notice-copy" id="conflict-detail"></p>
+        <!-- What the repository actually holds for this entry, read on its
+             own so the list the person is still deciding about is untouched.
+             Rendered in today.html's record shape, because it is the same
+             kind of thing. -->
+        <div class="timeline" id="conflict-saved"></div>
+        <div class="form-actions">
+          <button class="button button-primary" type="button" id="conflict-retry">Reload and apply my change again</button>
+          <button class="button" type="button" id="conflict-discard">Reload and discard my change</button>
+        </div>
+      </section>
+      <!-- Merging needs more than one entry, so it cannot live inside a
+           record the way correct, split and remove do. It appears only once
+           the kernel says the selection is worth merging. -->
+      <section class="surface surface-pad" id="merge-panel" hidden aria-labelledby="merge-title">
+        <h2 class="section-title" id="merge-title">Merge selected entries</h2>
+        <p class="field-help" id="merge-summary" role="status" aria-live="polite"></p>
+        <form id="merge-form" novalidate>
+          <div class="form-grid">
+            <div class="field"><label for="merge-project">Project <span class="required">*</span></label><select id="merge-project" required></select></div>
+            <div class="field"><label for="merge-activity">Activity type <span class="required">*</span></label><select id="merge-activity" required></select></div>
+            <div class="field field-full"><label for="merge-description">Combined description</label><textarea id="merge-description"></textarea></div>
+            <div class="field field-full"><label for="merge-reason">Reason <span class="required">*</span></label><input id="merge-reason" type="text" required placeholder="Why are these being merged?"></div>
+          </div>
+          <div class="form-actions"><button class="button button-primary" type="submit">Merge entries</button></div>
+        </form>
+      </section>
+      <!-- Daily review, adopted from static-ui-screens/review.html: the
+           checks list and its "needs attention" badge. One check on that
+           screen is absent — "No overlapping time" — because the domain
+           models an entry's duration, not its interval, so overlap is not
+           computable from what is stored and a tick beside it would be an
+           assurance nothing checked (OQ-10). -->
+      <section class="surface surface-pad" id="review-panel" aria-labelledby="review-title">
+        <div class="section-head"><div><h2 class="section-title" id="review-title">Review checks</h2><p class="section-kicker">Checks use the current effective day.</p></div><span class="badge" id="review-badge"></span></div>
+        <div class="review-list" id="review-checks"></div>
+        <p class="field-help" id="review-attest"></p>
+      </section>
+      <!-- The month, adopted from static-ui-screens/month.html: the metric
+           row, the metric cards, the progress bar and the daily-rhythm bars.
+           The bar is present but starts hidden: the person using the ledger
+           sets the target (DF-TE-0015), and until one is set there is nothing
+           to draw a bar against. month.html's "80h" is not adopted as a
+           default — no document says where 80 comes from. -->
+      <section class="surface surface-pad" id="month-panel" aria-labelledby="month-title">
+        <div class="section-head"><div><h2 class="section-title" id="month-title">September 2026</h2><p class="section-kicker">A factual summary of recorded business activity.</p></div></div>
+        <div class="metric-row"><div><p class="summary-label">Recorded this month</p><p class="summary-value" id="month-total">—</p></div><div><p class="summary-label">Decimal hours</p><p class="summary-value" id="month-decimal">—</p></div></div>
+        <div class="section" id="month-target" hidden>
+          <div class="progress-track" role="img" id="month-progress" aria-label="">
+            <div class="progress-bar" id="month-progress-bar"></div>
+          </div>
+          <div class="progress-labels"><span id="month-progress-recorded"></span><span id="month-progress-target"></span></div>
+          <div class="notice notice-warning section">
+            <p class="notice-title" id="month-target-headline"></p>
+            <p class="notice-copy" id="month-target-detail"></p>
+          </div>
+        </div>
+        <form class="section" id="target-form">
+          <div class="field">
+            <label for="target-hours">Monthly tracking target, in whole hours</label>
+            <input id="target-hours" name="hours" type="number" inputmode="numeric" min="1" step="1" autocomplete="off">
+            <p class="field-help" id="target-help">Nobody has set a target for this ledger.</p>
+          </div>
+          <button class="button button-secondary button-small" type="submit" id="target-set">Set target</button>
+          <button class="button button-secondary button-small" type="button" id="target-clear">Remove target</button>
+        </form>
+        <div class="metrics-grid section">
+          <section class="metric-card"><p class="metric-label">Active days</p><p class="metric-value" id="month-days">—</p><p class="metric-detail" id="month-entries"></p></section>
+          <section class="metric-card"><p class="metric-label">Evidence coverage</p><p class="metric-value" id="month-evidence">—</p><p class="metric-detail" id="month-evidence-detail"></p></section>
+          <section class="metric-card"><p class="metric-label">Timer / manual</p><p class="metric-value" id="month-origin">—</p><p class="metric-detail">Exact time, not billed</p></section>
+          <section class="metric-card"><p class="metric-label">Record changes</p><p class="metric-value" id="month-changes">—</p><p class="metric-detail">Corrections / removals</p></section>
+        </div>
+        <p class="field-label section">Daily rhythm</p>
+        <div class="week-grid" id="month-days-grid" aria-label="Exact daily totals"></div>
+      </section>
+      <footer class="page-footer">Effective records lead. Originals, corrections, and evidence remain available from each activity.</footer>
+    </main>
+  </div>
+  <nav class="bottom-nav" aria-label="Primary navigation"><a class="bottom-link" data-mark="TD" aria-current="page" href="index.html">Today</a></nav>
+  <script type="module" src="main.js"></script>
+</body>
+</html>

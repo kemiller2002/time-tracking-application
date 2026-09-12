@@ -1,0 +1,1109 @@
+/// The browser kernel's command surface, exercised without a browser.
+///
+/// `check:browser` proves the whole path — HTML to WASM to DOM — but it needs
+/// a published bundle and a real Chromium, so it stays coarse. These tests
+/// cover the part that has the most ways to be quietly wrong: the translation
+/// from a JSON request into a domain command.
+///
+/// What they deliberately do NOT do is re-test the transitions. Whether an
+/// archived project may take new time, or a stale version must be refused, is
+/// settled in `TransitionTests`. Here the question is only whether a request
+/// spelled a particular way reaches the right transition with the right
+/// values — and whether a malformed one is refused rather than defaulted.
+module TimeEntry.Tests.KernelTests
+
+open System.Text.Json.Nodes
+open Xunit
+open TimeEntry.Semantic.Identifiers
+open TimeEntry.Semantic.Values
+open TimeEntry.Semantic.EntryState
+open TimeEntry.Persistence
+open TimeEntry.Tests.Helpers
+
+// ---------------------------------------------------------------------------
+// Building a request the way the page builds one
+// ---------------------------------------------------------------------------
+
+/// Serialize entries the way the transport does — stored documents, with
+/// version tokens carried BESIDE them rather than inside.
+let private requestFor (entries: TimeEntry list) (command: string) =
+    let node = JsonObject()
+
+    node.Add("catalogue", JsonNode.Parse(Serialization.writeCatalogue (Mapping.catalogueToDocument catalogue)))
+
+    let documents = JsonArray()
+
+    for entry in entries do
+        documents.Add(JsonNode.Parse(Serialization.write (Mapping.toDocument entry)))
+
+    node.Add("entries", documents)
+
+    let versions = JsonObject()
+
+    for entry in entries do
+        match entry.Version with
+        | Some token -> versions.Add(EntryId.value entry.Id, JsonValue.Create<string>(VersionToken.value token))
+        | None -> ()
+
+    node.Add("versions", versions)
+
+    // Every command carries a signed-in identity, because the kernel refuses
+    // one that does not (DF-TE-0016). Injected here rather than repeated in
+    // each command literal so the cases below read as the behaviour under
+    // test; the refusal itself is asserted directly further down.
+    let commandNode = JsonNode.Parse command
+
+    if isNull commandNode.["identity"] then
+        let identity = JsonObject()
+        identity.Add("provider", JsonValue.Create<string> "google")
+        identity.Add("audience", JsonValue.Create<string> testAudience)
+        identity.Add("idToken", JsonValue.Create<string> signedIn)
+        commandNode.AsObject().Add("identity", identity)
+
+    node.Add("command", commandNode)
+    node.ToJsonString()
+
+let private answer (entries: TimeEntry list) (command: string) =
+    TimeEntry.Kernel.dispatch (requestFor entries command) |> JsonNode.Parse
+
+let private field (node: JsonNode) (name: string) = node.[name].ToString()
+
+let private isAccepted (node: JsonNode) =
+    node.["ok"].ToString() = "true" && node.["accepted"] <> null && node.["accepted"].ToString() = "true"
+
+/// The effects the domain requested, as names. Never performed here — that is
+/// the interpreter's job (TE-R-093).
+let private effects (node: JsonNode) =
+    match node.["effects"] with
+    | :? JsonArray as items -> items |> Seq.map (fun i -> i.ToString()) |> List.ofSeq
+    | _ -> []
+
+let private storedEntries (node: JsonNode) =
+    match node.["entries"] with
+    | :? JsonArray as items -> items |> Seq.map (fun i -> i.ToJsonString()) |> List.ofSeq
+    | _ -> []
+
+/// The one entry every mutation test starts from: 30 minutes, persisted, so
+/// it has a version and can be the target of a command.
+let private existing = persistedEntry "e1" (minutes 30) "sha-1"
+
+// ---------------------------------------------------------------------------
+// create
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``a create in billable units is converted by the kernel, not the caller`` () =
+    let result =
+        answer
+            []
+            """{ "kind": "create", "entryId": "e9", "projectId": "echelon-foundry",
+                 "activityTypeId": "research", "date": "2026-09-10",
+                 "durationUnits": 5, "occurredAtMs": 1789000000 }"""
+
+    Assert.True(isAccepted result)
+    // 5 units is 30 exact minutes. The request never named a millisecond.
+    Assert.Contains("\"exact_duration_ms\":1800000", List.head (storedEntries result))
+    Assert.Equal<string list>([ "PersistNewEntry" ], effects result)
+
+[<Fact>]
+let ``a create with neither duration form is refused rather than defaulted`` () =
+    let result =
+        answer
+            []
+            """{ "kind": "create", "entryId": "e9", "projectId": "echelon-foundry",
+                 "activityTypeId": "research", "date": "2026-09-10",
+                 "occurredAtMs": 1789000000 }"""
+
+    Assert.Equal("false", field result "ok")
+    Assert.Equal("missing 'durationMs' or 'durationUnits'", field result "error")
+
+[<Fact>]
+let ``a create with no occurredAtMs is refused rather than stamped with zero`` () =
+    // A change with no time is not a change the history can honestly record
+    // (TE-R-052). Defaulting to the epoch would produce a plausible-looking
+    // revision that is simply false.
+    let result =
+        answer
+            []
+            """{ "kind": "create", "entryId": "e9", "projectId": "echelon-foundry",
+                 "activityTypeId": "research", "date": "2026-09-10", "durationUnits": 5 }"""
+
+    Assert.Equal("false", field result "ok")
+    Assert.Equal("missing 'occurredAtMs'", field result "error")
+
+[<Fact>]
+let ``an entry is manual exactly when it carries a reason for being manual`` () =
+    let result =
+        answer
+            []
+            """{ "kind": "create", "entryId": "e9", "projectId": "echelon-foundry",
+                 "activityTypeId": "research", "date": "2026-09-10", "durationUnits": 5,
+                 "manualReason": "Worked from notes while the timer was off.",
+                 "occurredAtMs": 1789000000 }"""
+
+    Assert.True(isAccepted result)
+    let stored = List.head (storedEntries result)
+    Assert.Contains("\"origin_kind\":\"manual\"", stored)
+    Assert.Contains("Worked from notes", stored)
+
+// ---------------------------------------------------------------------------
+// correct
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``a correction replaces the entry in place rather than appending a second`` () =
+    // This is `mergeById`'s replace branch. Without it the page would show
+    // the same entry twice and double its own total.
+    let result =
+        answer
+            [ existing ]
+            """{ "kind": "correct", "entryId": "e1", "expectedVersion": "sha-1",
+                 "projectId": "northline", "activityTypeId": "research",
+                 "date": "2026-09-10", "durationUnits": 10,
+                 "reason": "Logged against the wrong client.",
+                 "occurredAtMs": 1789000000 }"""
+
+    Assert.True(isAccepted result)
+    Assert.Equal(1, List.length (storedEntries result))
+    let stored = List.head (storedEntries result)
+    Assert.Contains("\"exact_duration_ms\":3600000", stored)
+    Assert.Contains("\"project_id\":\"northline\"", stored)
+    // The prior revision survives: correction is supersession, not mutation.
+    Assert.Contains("\"change_kind\":\"created\"", stored)
+    Assert.Equal<string list>([ "PersistCorrection" ], effects result)
+
+[<Fact>]
+let ``a correction without a reason is refused`` () =
+    let result =
+        answer
+            [ existing ]
+            """{ "kind": "correct", "entryId": "e1", "expectedVersion": "sha-1",
+                 "projectId": "northline", "activityTypeId": "research",
+                 "date": "2026-09-10", "durationUnits": 10, "occurredAtMs": 1789000000 }"""
+
+    Assert.Equal("false", field result "ok")
+    Assert.Equal("missing 'reason'", field result "error")
+
+[<Fact>]
+let ``a mutation that names no version is refused before any transition sees it`` () =
+    // Not a VersionConflict — the command is malformed. A caller that cannot
+    // say which version it read must not reach a transition at all
+    // (TE-R-070).
+    let result =
+        answer
+            [ existing ]
+            """{ "kind": "void", "entryId": "e1", "reason": "Recorded twice.",
+                 "occurredAtMs": 1789000000 }"""
+
+    Assert.Equal("false", field result "ok")
+    Assert.Equal("missing 'expectedVersion'", field result "error")
+
+// ---------------------------------------------------------------------------
+// void and restore
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``void and restore are distinct commands against the same fields`` () =
+    // `VoidEntryRequest` and `RestoreEntryRequest` have identical field sets,
+    // which once cost 13 compile errors. This asserts they reach DIFFERENT
+    // transitions, which a wrong annotation would silently break.
+    let voided =
+        answer
+            [ existing ]
+            """{ "kind": "void", "entryId": "e1", "expectedVersion": "sha-1",
+                 "reason": "Recorded twice.", "occurredAtMs": 1789000000 }"""
+
+    Assert.True(isAccepted voided)
+    Assert.Equal<string list>([ "PersistVoid" ], effects voided)
+    Assert.Contains("\"state_kind\":\"void\"", List.head (storedEntries voided))
+
+    let restored =
+        answer
+            [ { existing with State = Void(reason "Recorded twice.", instant 1789000000L) } ]
+            """{ "kind": "restore", "entryId": "e1", "expectedVersion": "sha-1",
+                 "reason": "Removed in error.", "occurredAtMs": 1789000000 }"""
+
+    Assert.True(isAccepted restored)
+    Assert.Equal<string list>([ "PersistRestore" ], effects restored)
+    Assert.Contains("\"state_kind\":\"active\"", List.head (storedEntries restored))
+
+// ---------------------------------------------------------------------------
+// split
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``a split returns the source and every child together`` () =
+    let result =
+        answer
+            [ existing ]
+            """{ "kind": "split", "entryId": "e1", "expectedVersion": "sha-1",
+                 "occurredAtMs": 1789000000,
+                 "children": [
+                   { "entryId": "e1a", "durationUnits": 2, "projectId": "echelon-foundry",
+                     "activityTypeId": "research", "description": "First half" },
+                   { "entryId": "e1b", "durationUnits": 3, "projectId": "northline",
+                     "activityTypeId": "research" } ] }"""
+
+    Assert.True(isAccepted result)
+    // The source plus two children, all in one answer, because they must be
+    // persisted together or not at all (TE-R-035).
+    Assert.Equal(3, List.length (storedEntries result))
+    Assert.Equal<string list>([ "PersistSplit" ], effects result)
+
+[<Fact>]
+let ``a split whose children lose time is refused by the domain`` () =
+    // 2 + 2 units is 24 minutes against a 30-minute source. The kernel does
+    // not check this; it hands the command over and the transition refuses.
+    let result =
+        answer
+            [ existing ]
+            """{ "kind": "split", "entryId": "e1", "expectedVersion": "sha-1",
+                 "occurredAtMs": 1789000000,
+                 "children": [
+                   { "entryId": "e1a", "durationUnits": 2, "projectId": "echelon-foundry",
+                     "activityTypeId": "research" },
+                   { "entryId": "e1b", "durationUnits": 2, "projectId": "echelon-foundry",
+                     "activityTypeId": "research" } ] }"""
+
+    Assert.Equal("true", field result "ok")
+    Assert.Equal("false", field result "accepted")
+    // The refusal says what was lost, in the words a person reads. It used to
+    // assert `SplitDoesNotPreserveTotal (1800000L, 1440000L)` — the F# union
+    // dumped by `%A`, which is exactly the technical vocabulary TE-R-053
+    // forbids in the interface.
+    Assert.Equal(
+        "The parts add up to 24m, which leaves 6m unaccounted for.",
+        field result "rejection"
+    )
+
+[<Fact>]
+let ``a child that will not parse fails the whole split rather than being dropped`` () =
+    // Dropping it would change the total silently, which is precisely what
+    // split exists to make impossible (TE-R-040).
+    let result =
+        answer
+            [ existing ]
+            """{ "kind": "split", "entryId": "e1", "expectedVersion": "sha-1",
+                 "occurredAtMs": 1789000000,
+                 "children": [
+                   { "entryId": "e1a", "durationUnits": 2, "projectId": "echelon-foundry",
+                     "activityTypeId": "research" },
+                   { "entryId": "e1b", "projectId": "echelon-foundry",
+                     "activityTypeId": "research" } ] }"""
+
+    Assert.Equal("false", field result "ok")
+    Assert.Equal("missing 'durationMs' or 'durationUnits'", field result "error")
+
+// ---------------------------------------------------------------------------
+// merge
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``a merge computes its own total from the sources`` () =
+    let other = persistedEntry "e2" (minutes 12) "sha-2"
+
+    let result =
+        answer
+            [ existing; other ]
+            """{ "kind": "merge", "newEntryId": "m1", "projectId": "echelon-foundry",
+                 "activityTypeId": "research", "reason": "Same task, two timers.",
+                 "occurredAtMs": 1789000000,
+                 "sources": [
+                   { "entryId": "e1", "expectedVersion": "sha-1" },
+                   { "entryId": "e2", "expectedVersion": "sha-2" } ] }"""
+
+    Assert.True(isAccepted result)
+    // The request carried no duration at all. 30 + 12 minutes = 2_520_000 ms,
+    // computed by the transition, so it cannot disagree with its sources.
+    let merged =
+        storedEntries result |> List.filter (fun s -> s.Contains "\"entry_id\":\"m1\"")
+
+    Assert.Equal(1, List.length merged)
+    Assert.Contains("\"exact_duration_ms\":2520000", List.head merged)
+    Assert.Equal<string list>([ "PersistMerge" ], effects result)
+
+[<Fact>]
+let ``merge sources are superseded, so their time stops counting once`` () =
+    let other = persistedEntry "e2" (minutes 12) "sha-2"
+
+    let result =
+        answer
+            [ existing; other ]
+            """{ "kind": "merge", "newEntryId": "m1", "projectId": "echelon-foundry",
+                 "activityTypeId": "research", "reason": "Same task, two timers.",
+                 "occurredAtMs": 1789000000,
+                 "sources": [
+                   { "entryId": "e1", "expectedVersion": "sha-1" },
+                   { "entryId": "e2", "expectedVersion": "sha-2" } ] }"""
+
+    // Both sources and the new entry: the loaded set with the delta folded in.
+    Assert.Equal(3, List.length (storedEntries result))
+
+    let superseded =
+        storedEntries result
+        |> List.filter (fun s -> s.Contains "\"state_kind\":\"superseded_by_merge\"")
+
+    // Superseded rather than void, because void is restorable — restoring a
+    // merged source would return its time to the totals while the merged
+    // entry still carries it (DF-TE-0006).
+    Assert.Equal(2, List.length superseded)
+
+// ---------------------------------------------------------------------------
+// attach evidence
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``attaching evidence records it against the entry`` () =
+    let result =
+        answer
+            [ existing ]
+            """{ "kind": "attachEvidence", "entryId": "e1", "expectedVersion": "sha-1",
+                 "uri": "https://example.invalid/spec.pdf", "label": "The brief",
+                 "occurredAtMs": 1789000000 }"""
+
+    Assert.True(isAccepted result)
+    let stored = List.head (storedEntries result)
+    Assert.Contains("https://example.invalid/spec.pdf", stored)
+    Assert.Contains("The brief", stored)
+    Assert.Equal<string list>([ "PersistEvidenceAttachment" ], effects result)
+
+[<Fact>]
+let ``evidence is stamped with the moment the command says it occurred`` () =
+    // So the evidence's timestamp and its revision's agree by construction
+    // rather than by a second clock read.
+    let result =
+        answer
+            [ existing ]
+            """{ "kind": "attachEvidence", "entryId": "e1", "expectedVersion": "sha-1",
+                 "uri": "https://example.invalid/spec.pdf", "occurredAtMs": 1789000000 }"""
+
+    Assert.True(isAccepted result)
+    Assert.Contains("\"attached_at_ms\":1789000000", List.head (storedEntries result))
+
+// ---------------------------------------------------------------------------
+// The vocabulary itself
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``an unknown command kind is named rather than ignored`` () =
+    // A page and a kernel that have drifted apart should say so, not silently
+    // do nothing.
+    let result = answer [] """{ "kind": "teleport", "occurredAtMs": 1 }"""
+
+    Assert.Equal("false", field result "ok")
+    Assert.Equal("unsupported command kind 'teleport'", field result "error")
+
+[<Fact>]
+let ``every command kind the page can send reaches a transition`` () =
+    // A guard against adding a `Command` case and forgetting the wire name.
+    // Each of these is well formed, so none may fail with a PARSE error; a
+    // domain rejection would still be a pass for this test's question.
+    let cases =
+        [ """{ "kind": "create", "entryId": "e9", "projectId": "echelon-foundry",
+               "activityTypeId": "research", "date": "2026-09-10", "durationUnits": 5,
+               "occurredAtMs": 1789000000 }"""
+          """{ "kind": "correct", "entryId": "e1", "expectedVersion": "sha-1",
+               "projectId": "echelon-foundry", "activityTypeId": "research",
+               "date": "2026-09-10", "durationUnits": 5, "reason": "r",
+               "occurredAtMs": 1789000000 }"""
+          """{ "kind": "void", "entryId": "e1", "expectedVersion": "sha-1", "reason": "r",
+               "occurredAtMs": 1789000000 }"""
+          """{ "kind": "restore", "entryId": "e1", "expectedVersion": "sha-1", "reason": "r",
+               "occurredAtMs": 1789000000 }"""
+          """{ "kind": "split", "entryId": "e1", "expectedVersion": "sha-1",
+               "occurredAtMs": 1789000000,
+               "children": [ { "entryId": "e1a", "durationUnits": 5,
+                               "projectId": "echelon-foundry", "activityTypeId": "research" } ] }"""
+          """{ "kind": "merge", "newEntryId": "m1", "projectId": "echelon-foundry",
+               "activityTypeId": "research", "reason": "r", "occurredAtMs": 1789000000,
+               "sources": [ { "entryId": "e1", "expectedVersion": "sha-1" } ] }"""
+          """{ "kind": "attachEvidence", "entryId": "e1", "expectedVersion": "sha-1",
+               "uri": "https://example.invalid/x", "occurredAtMs": 1789000000 }""" ]
+
+    for case in cases do
+        let result = answer [ existing ] case
+        Assert.Equal("true", field result "ok")
+
+// ---------------------------------------------------------------------------
+// Split preview
+// ---------------------------------------------------------------------------
+//
+// The preview exists because TE-R-044 asks for one before saving, and because
+// the arithmetic it needs is exactly what the browser may not do. These cases
+// pin the arithmetic and, as much, the wording: the page renders `summary`
+// verbatim, so a wrong string there is a wrong statement to a user.
+
+let private preview (request: string) =
+    TimeEntry.Kernel.splitPreview request |> JsonNode.Parse
+
+[<Fact>]
+let ``a split preview reports what is still unallocated`` () =
+    // A 30-minute source with 2 and 1 units allocated: 18 minutes placed,
+    // 12 left.
+    let result =
+        preview
+            """{ "sourceMilliseconds": 1800000,
+                 "children": [ { "durationUnits": 2 }, { "durationUnits": 1 } ] }"""
+
+    Assert.Equal("1080000", field result "allocatedMilliseconds")
+    Assert.Equal("720000", field result "remainingMilliseconds")
+    Assert.Equal("false", field result "balances")
+    Assert.Equal("12m is still unallocated.", field result "summary")
+
+[<Fact>]
+let ``a split preview says so when the parts exceed the entry`` () =
+    let result =
+        preview
+            """{ "sourceMilliseconds": 1800000,
+                 "children": [ { "durationUnits": 4 }, { "durationUnits": 4 } ] }"""
+
+    // Negative, and reported as an overage rather than as a strange negative
+    // remainder the page would have to interpret.
+    Assert.Equal("-1080000", field result "remainingMilliseconds")
+    Assert.Equal("The parts exceed the entry by 18m.", field result "summary")
+    Assert.Equal("false", field result "balances")
+
+[<Fact>]
+let ``a balanced split preview says so, and only when every part is complete`` () =
+    let balanced =
+        preview
+            """{ "sourceMilliseconds": 1800000,
+                 "children": [ { "durationUnits": 2 }, { "durationUnits": 3 } ] }"""
+
+    Assert.Equal("0", field balanced "remainingMilliseconds")
+    Assert.Equal("true", field balanced "balances")
+    Assert.Equal("The parts account for all of the time.", field balanced "summary")
+
+    // The same total, but with an empty third part. The remainder is zero and
+    // the split is still not ready — a zero-duration child is refused by the
+    // domain (TE-R-041), so a preview that called this balanced would be
+    // inviting a rejection.
+    let withEmpty =
+        preview
+            """{ "sourceMilliseconds": 1800000,
+                 "children": [ { "durationUnits": 2 }, { "durationUnits": 3 }, { } ] }"""
+
+    Assert.Equal("0", field withEmpty "remainingMilliseconds")
+    Assert.Equal("false", field withEmpty "balances")
+    Assert.Equal("1 part(s) still need a duration.", field withEmpty "summary")
+
+[<Fact>]
+let ``one part is not a split`` () =
+    let result = preview """{ "sourceMilliseconds": 1800000, "children": [ { "durationUnits": 5 } ] }"""
+
+    Assert.Equal("false", field result "balances")
+    Assert.Equal("A split needs at least two parts.", field result "summary")
+
+[<Fact>]
+let ``a preview shows exact time, not billed time`` () =
+    // 52 exact minutes bills as 54 under RoundUp. A split must be balanced
+    // against the exact figure, so showing 54 here would ask someone to
+    // balance one quantity while displaying another (DF-TE-0002).
+    let result = preview """{ "sourceMilliseconds": 3120000, "children": [] }"""
+
+    Assert.Equal("52m", field result "displaySource")
+
+[<Fact>]
+let ``a preview agrees with the transition that follows it`` () =
+    // The preview and the domain must not be able to disagree: whatever the
+    // preview calls balanced, the transition must accept. 30 minutes split
+    // 2 + 3 units.
+    let balanced =
+        preview
+            """{ "sourceMilliseconds": 1800000,
+                 "children": [ { "durationUnits": 2 }, { "durationUnits": 3 } ] }"""
+
+    Assert.Equal("true", field balanced "balances")
+
+    let applied =
+        answer
+            [ existing ]
+            """{ "kind": "split", "entryId": "e1", "expectedVersion": "sha-1",
+                 "occurredAtMs": 1789000000,
+                 "children": [
+                   { "entryId": "e1a", "durationUnits": 2, "projectId": "echelon-foundry",
+                     "activityTypeId": "research" },
+                   { "entryId": "e1b", "durationUnits": 3, "projectId": "echelon-foundry",
+                     "activityTypeId": "research" } ] }"""
+
+    Assert.True(isAccepted applied)
+
+// ---------------------------------------------------------------------------
+// Merge preview
+// ---------------------------------------------------------------------------
+//
+// §8.11 asks the merge screen to preview merged time. The preview states
+// facts and does not judge: whether a merge is LEGAL is `mergeEntries`'
+// decision, and re-deciding it here would put the same rules in two places.
+
+let private mergePreviewOf (entries: TimeEntry list) (sourceIds: string list) =
+    let node = JsonObject()
+    let documents = JsonArray()
+
+    for entry in entries do
+        documents.Add(JsonNode.Parse(Serialization.write (Mapping.toDocument entry)))
+
+    node.Add("entries", documents)
+    let ids = JsonArray()
+
+    for id in sourceIds do
+        ids.Add(JsonValue.Create<string> id)
+
+    node.Add("sourceIds", ids)
+    TimeEntry.Kernel.mergePreview (node.ToJsonString()) |> JsonNode.Parse
+
+[<Fact>]
+let ``a merge preview totals the chosen entries exactly`` () =
+    let a = persistedEntry "e1" (minutes 30) "sha-1"
+    let b = persistedEntry "e2" (minutes 12) "sha-2"
+
+    let result = mergePreviewOf [ a; b ] [ "e1"; "e2" ]
+
+    Assert.Equal("2520000", field result "combinedMilliseconds")
+    Assert.Equal("42m", field result "displayCombined")
+    Assert.Equal("2 entries totalling 42m.", field result "summary")
+
+[<Fact>]
+let ``a merge preview counts only the entries that were chosen`` () =
+    let a = persistedEntry "e1" (minutes 30) "sha-1"
+    let b = persistedEntry "e2" (minutes 12) "sha-2"
+    let c = persistedEntry "e3" (minutes 60) "sha-3"
+
+    // e3 is loaded but not selected. A preview that summed everything loaded
+    // would quote a number the merge would never produce.
+    let result = mergePreviewOf [ a; b; c ] [ "e1"; "e2" ]
+
+    Assert.Equal("2", field result "sourceCount")
+    Assert.Equal("2520000", field result "combinedMilliseconds")
+
+[<Fact>]
+let ``a merge preview reports a cross-day selection as a fact, not a verdict`` () =
+    let a = persistedEntry "e1" (minutes 30) "sha-1"
+    let b = persistedEntryOn "e2" (minutes 12) "sha-2" (onDate 2026 9 11)
+
+    let result = mergePreviewOf [ a; b ] [ "e1"; "e2" ]
+
+    // It says what the selection IS. Whether that may be merged is the
+    // transition's to say, and it does say so — see below.
+    Assert.Equal("These entries fall on 2 different days.", field result "summary")
+
+[<Fact>]
+let ``and the transition is what actually refuses a cross-day merge`` () =
+    let a = persistedEntry "e1" (minutes 30) "sha-1"
+    let b = persistedEntryOn "e2" (minutes 12) "sha-2" (onDate 2026 9 11)
+
+    let result =
+        answer
+            [ a; b ]
+            """{ "kind": "merge", "newEntryId": "m1", "projectId": "echelon-foundry",
+                 "activityTypeId": "research", "reason": "Same task.",
+                 "occurredAtMs": 1789000000,
+                 "sources": [
+                   { "entryId": "e1", "expectedVersion": "sha-1" },
+                   { "entryId": "e2", "expectedVersion": "sha-2" } ] }"""
+
+    Assert.Equal("false", field result "accepted")
+    // And says WHY, because this refusal surprises people: the ledger is
+    // day-oriented, so merging across days would change two days' totals.
+    Assert.Equal(
+        "These entries fall on 2 different days. Merging them would move time between days and change both days' totals.",
+        field result "rejection"
+    )
+
+[<Fact>]
+let ``one entry is not a merge`` () =
+    let a = persistedEntry "e1" (minutes 30) "sha-1"
+
+    let result = mergePreviewOf [ a ] [ "e1" ]
+
+    Assert.Equal("Choose at least two entries to merge.", field result "summary")
+
+[<Fact>]
+let ``a merge preview and the merge it precedes agree on the total`` () =
+    let a = persistedEntry "e1" (minutes 30) "sha-1"
+    let b = persistedEntry "e2" (minutes 12) "sha-2"
+
+    let previewed = mergePreviewOf [ a; b ] [ "e1"; "e2" ]
+
+    let applied =
+        answer
+            [ a; b ]
+            """{ "kind": "merge", "newEntryId": "m1", "projectId": "echelon-foundry",
+                 "activityTypeId": "research", "reason": "Same task, two timers.",
+                 "occurredAtMs": 1789000000,
+                 "sources": [
+                   { "entryId": "e1", "expectedVersion": "sha-1" },
+                   { "entryId": "e2", "expectedVersion": "sha-2" } ] }"""
+
+    let merged =
+        storedEntries applied |> List.filter (fun s -> s.Contains "\"entry_id\":\"m1\"")
+
+    // The number the person was shown is the number that got stored.
+    Assert.Contains(
+        sprintf "\"exact_duration_ms\":%s" (field previewed "combinedMilliseconds"),
+        List.head merged
+    )
+
+// ---------------------------------------------------------------------------
+// Performing the effects
+// ---------------------------------------------------------------------------
+//
+// `dispatch` names effects and performs none. `persist` performs them through
+// the interpreter. These run against a store double, so the wiring — dispatch,
+// interpret, collect the new versions — is covered without a network. A real
+// GitHub write is NOT exercised here and is not claimed to be.
+
+let private persistRequest (entries: TimeEntry list) (command: string) =
+    let node = JsonNode.Parse(requestFor entries command)
+    let repository = JsonObject()
+    repository.Add("owner", JsonValue.Create<string> "owner")
+    repository.Add("repo", JsonValue.Create<string> "repo")
+    repository.Add("branch", JsonValue.Create<string> "main")
+    node.["repository"] <- repository
+    node.["token"] <- JsonValue.Create<string> "ghp_example"
+    node.ToJsonString()
+
+/// Run `persist` against a fake store rather than the network.
+let private persisted (fake: FakeStore.Fake) (entries: TimeEntry list) (command: string) =
+    TimeEntry.Kernel.persistWith
+        (fun _ _ -> fake.Store)
+        (persistRequest entries command)
+    |> Async.RunSynchronously
+    |> JsonNode.Parse
+
+let private performed (node: JsonNode) =
+    match node.["performed"] with
+    | :? JsonArray as items -> items |> List.ofSeq
+    | _ -> []
+
+[<Fact>]
+let ``persist writes the entry and returns its new version`` () =
+    let fake = FakeStore.Fake([])
+
+    let result =
+        persisted
+            fake
+            []
+            """{ "kind": "create", "entryId": "e9", "projectId": "echelon-foundry",
+                 "activityTypeId": "research", "date": "2026-09-10",
+                 "durationUnits": 5, "occurredAtMs": 1789000000 }"""
+
+    Assert.True(isAccepted result)
+    Assert.Equal(1, fake.CommitCount)
+
+    let one = List.head (performed result)
+    Assert.Equal("PersistNewEntry", field one "effect")
+    Assert.Equal("persisted", field one "outcome")
+
+    // The new blob SHA comes back as a version token. This is what closes the
+    // gap that existed while effects were only named: without it, anything
+    // created in the browser could never be corrected or removed, because it
+    // could not say which version it was acting on (TE-R-070).
+    let version = result.["versions"].["e9"]
+    Assert.NotNull version
+    Assert.Equal(fake.ShaOf("ledger/entries/e9/e9.json"), Some(version.ToString()))
+
+[<Fact>]
+let ``a rejected command performs nothing at all`` () =
+    // Effects exist only inside an `Accepted`, so there is no path that writes
+    // on a refusal. Asserted on the STORE, not on the answer: an answer-only
+    // assertion would pass even if a write had happened.
+    let fake = FakeStore.Fake([])
+
+    let result =
+        persisted
+            fake
+            []
+            """{ "kind": "create", "entryId": "e9", "projectId": "retired-client",
+                 "activityTypeId": "research", "date": "2026-09-10",
+                 "durationUnits": 5, "occurredAtMs": 1789000000 }"""
+
+    Assert.Equal("false", field result "accepted")
+    Assert.Equal(0, fake.CommitCount)
+    Assert.Empty(fake.Paths)
+
+[<Fact>]
+let ``a stale write comes back as a conflict, not a failure`` () =
+    // TE-R-072: the domain reconciles a stale write; it is not retried and not
+    // reported as an error. The page is told which entry and which versions
+    // disagreed so it can re-read and decide (TE-R-071).
+    let entry = persistedEntry "e1" (minutes 30) "sha-1"
+    let stored = Serialization.write (Mapping.toDocument entry)
+    let path = "ledger/entries/e1/e1.json"
+
+    // The store holds this content, so its real SHA is whatever the content
+    // hashes to — not the "sha-1" the command will claim to have read.
+    let fake = FakeStore.Fake([ path, stored ])
+
+    let result =
+        persisted
+            fake
+            [ entry ]
+            """{ "kind": "void", "entryId": "e1", "expectedVersion": "sha-1",
+                 "reason": "Recorded twice.", "occurredAtMs": 1789000000 }"""
+
+    let one = List.head (performed result)
+    Assert.Equal("conflicted", field one "outcome")
+    Assert.Equal("e1", field one "entryId")
+    Assert.Equal(0, fake.CommitCount)
+
+[<Fact>]
+let ``a split persists its source and children in one commit`` () =
+    // TE-R-035: together or not at all. Three files, one commit — a store
+    // double is the only place this can be observed, because the count is
+    // invisible from the answer.
+    let entry = persistedEntry "e1" (minutes 30) "sha-1"
+    let stored = Serialization.write (Mapping.toDocument entry)
+    let path = "ledger/entries/e1/e1.json"
+    let fake = FakeStore.Fake([ path, stored ])
+    let actualSha = (fake.ShaOf path).Value
+
+    let result =
+        persisted
+            fake
+            [ { entry with Version = Some(version actualSha) } ]
+            (sprintf
+                """{ "kind": "split", "entryId": "e1", "expectedVersion": "%s",
+                     "occurredAtMs": 1789000000,
+                     "children": [
+                       { "entryId": "e1a", "durationUnits": 2, "projectId": "echelon-foundry",
+                         "activityTypeId": "research" },
+                       { "entryId": "e1b", "durationUnits": 3, "projectId": "echelon-foundry",
+                         "activityTypeId": "research" } ] }"""
+                actualSha)
+
+    Assert.True(isAccepted result)
+    Assert.Equal("persisted", field (List.head (performed result)) "outcome")
+    Assert.Equal(1, fake.CommitCount)
+    Assert.Equal(3, List.length fake.Paths)
+
+[<Fact>]
+let ``persist reports which credential mechanism was used, and not the secret`` () =
+    let fake = FakeStore.Fake([])
+
+    let result =
+        persisted
+            fake
+            []
+            """{ "kind": "create", "entryId": "e9", "projectId": "echelon-foundry",
+                 "activityTypeId": "research", "date": "2026-09-10",
+                 "durationUnits": 5, "occurredAtMs": 1789000000 }"""
+
+    Assert.Equal("token", field result "credential")
+    Assert.DoesNotContain("ghp_example", result.ToJsonString())
+
+[<Fact>]
+let ``persist without a repository is refused before anything is applied`` () =
+    let answer =
+        TimeEntry.Kernel.persistWith
+            (fun _ _ -> FakeStore.Fake([]).Store)
+            """{ "command": { "kind": "create" } }"""
+        |> Async.RunSynchronously
+        |> JsonNode.Parse
+
+    Assert.Equal("false", field answer "ok")
+    Assert.Equal("missing 'repository'", field answer "error")
+
+// ---------------------------------------------------------------------------
+// Reading the ledger
+// ---------------------------------------------------------------------------
+
+let private loadRequest =
+    """{ "repository": { "owner": "owner", "repo": "repo", "branch": "main" },
+         "token": "ghp_example", "date": "2026-09-10" }"""
+
+let private loaded (fake: FakeStore.Fake) (request: string) =
+    TimeEntry.Kernel.loadLedgerWith (fun _ _ -> fake.Store) request
+    |> Async.RunSynchronously
+    |> JsonNode.Parse
+
+let private ledgerWith (entries: (string * TimeEntry) list) extra =
+    FakeStore.Fake(
+        [ for path, entry in entries -> path, Serialization.write (Mapping.toDocument entry) ]
+        @ extra
+    )
+
+[<Fact>]
+let ``reading the ledger returns each entry with the version it was read at`` () =
+    // The blob SHA the read observed IS the token a later command must name
+    // (TE-R-070). Returning entries without it would force a second read to
+    // learn the version, reopening the window the token exists to close.
+    let path = "ledger/entries/e1/e1.json"
+    let fake = ledgerWith [ path, persistedEntry "e1" (minutes 30) "ignored" ] []
+
+    let result = loaded fake loadRequest
+
+    Assert.Equal("true", field result "ok")
+    Assert.Equal(1, List.length (storedEntries result))
+    Assert.Equal(fake.ShaOf path, Some(result.["versions"].["e1"].ToString()))
+
+[<Fact>]
+let ``a corrupt file becomes one unreadable entry, not a failed load`` () =
+    // TE-R-084. A caller told "1 entry, 1 unreadable" can act; one silently
+    // given a single entry cannot, and would quietly under-report the day.
+    let good = "ledger/entries/e1/e1.json"
+    let bad = "ledger/entries/e2/e2.json"
+
+    let fake =
+        ledgerWith [ good, persistedEntry "e1" (minutes 30) "ignored" ] [ bad, "{ not json" ]
+
+    let result = loaded fake loadRequest
+
+    Assert.Equal("true", field result "ok")
+    Assert.Equal(1, List.length (storedEntries result))
+    Assert.Equal("1", field result "unreadable")
+    Assert.Contains(bad, result.["unreadableDetail"].ToJsonString())
+
+[<Fact>]
+let ``an unreadable catalogue is reported, never returned as an empty one`` () =
+    // An empty catalogue refuses every project, so reporting one would read as
+    // "all your projects were archived" rather than "the catalogue could not
+    // be read". The distinction is the whole reason `CatalogueUnreadable`
+    // exists separately from `Failed`.
+    let fake = ledgerWith [] [ "ledger/catalogue.json", "{ not json" ]
+
+    let result = loaded fake loadRequest
+
+    Assert.Equal("true", field result "ok")
+    // A JSON null reaches JsonNode as a null reference, so this is the direct
+    // check that no catalogue came back — not an empty one.
+    Assert.Null(result.["catalogue"])
+    Assert.NotNull(result.["catalogueError"])
+
+[<Fact>]
+let ``reading a ledger returns the catalogue alongside the entries`` () =
+    let catalogueJson = Serialization.writeCatalogue (Mapping.catalogueToDocument catalogue)
+    let fake = ledgerWith [] [ "ledger/catalogue.json", catalogueJson ]
+
+    let result = loaded fake loadRequest
+
+    Assert.NotNull(result.["catalogue"])
+    Assert.Contains("echelon-foundry", result.["catalogue"].ToJsonString())
+
+[<Fact>]
+let ``reading without a date is refused rather than given an invented one`` () =
+    // `LoadEntries` carries a date the interpreter does not use to narrow the
+    // read. Fabricating one to satisfy the field is how a field stops meaning
+    // anything, so the caller must supply it.
+    let fake = ledgerWith [] []
+
+    let result =
+        loaded fake """{ "repository": { "owner": "o", "repo": "r", "branch": "main" },
+                         "token": "t" }"""
+
+    Assert.Equal("false", field result "ok")
+    Assert.Equal("missing 'date'", field result "error")
+
+// ---------------------------------------------------------------------------
+// Entry history (TE-R-052)
+// ---------------------------------------------------------------------------
+
+let private historyOf (entries: TimeEntry list) (entryId: string) =
+    let node = JsonObject()
+    let documents = JsonArray()
+
+    for entry in entries do
+        documents.Add(JsonNode.Parse(Serialization.write (Mapping.toDocument entry)))
+
+    node.Add("entries", documents)
+    node.Add("entryId", JsonValue.Create<string> entryId)
+    node.Add("catalogue", JsonNode.Parse(Serialization.writeCatalogue (Mapping.catalogueToDocument catalogue)))
+    TimeEntry.Kernel.entryHistory (node.ToJsonString()) |> JsonNode.Parse
+
+/// The entry after a correction: 30 minutes became an hour, on a different
+/// project, with a reason.
+let private corrected =
+    let before = persistedEntry "e1" (minutes 30) "sha-1"
+
+    let correctedFacts =
+        { before.Effective with
+            Duration = minutes 60
+            Project = projectId "northline"
+            Description = Some(description "Reviewed the ledger schema") }
+
+    { before with
+        Effective = correctedFacts
+        History =
+            { Id = revisionId "e1-correct"
+              Change = Corrected(reason "Logged against the wrong client.")
+              Facts = correctedFacts
+              RecordedAt = instant 1789000000000L
+              RecordedBy = userId "km"
+              Device = deviceLabel "iPhone" }
+            :: before.History }
+
+[<Fact>]
+let ``history shows what changed, from what, to what`` () =
+    // TE-R-052's "original values and changed values". Computed by comparing
+    // each revision's facts against the one before it — the facts are already
+    // recorded at every revision precisely so this needs no reconstruction.
+    let result = historyOf [ corrected ] "e1"
+
+    let revisions =
+        match result.["revisions"] with
+        | :? JsonArray as items -> List.ofSeq items
+        | _ -> []
+
+    Assert.Equal(2, List.length revisions)
+
+    // Oldest first: a history read top to bottom is a story, and "what
+    // changed" only means anything against what came before it.
+    Assert.Equal("Recorded", field (List.head revisions) "change")
+    Assert.Empty(
+        match (List.head revisions).["changed"] with
+        | :? JsonArray as items -> List.ofSeq items
+        | _ -> []
+    )
+
+    let correction = List.item 1 revisions
+    Assert.Equal("Corrected", field correction "change")
+    Assert.Equal("Logged against the wrong client.", field correction "detail")
+
+    let changed = correction.["changed"].ToJsonString()
+    Assert.Contains("\"field\":\"Duration\",\"from\":\"30m\",\"to\":\"1h 00m\"", changed)
+    Assert.Contains("\"field\":\"Project\",\"from\":\"echelon-foundry\",\"to\":\"northline\"", changed)
+
+[<Fact>]
+let ``history records who, when and from which device`` () =
+    let result = historyOf [ corrected ] "e1"
+    let correction = (result.["revisions"] :?> JsonArray) |> Seq.item 1
+
+    Assert.Equal("km", field correction "recordedBy")
+    Assert.Equal("iPhone", field correction "device")
+    // UTC, and labelled as such: no offset was supplied, and guessing a zone
+    // would silently misdate every revision by up to a day.
+    Assert.Contains("UTC", field correction "recordedAt")
+
+[<Fact>]
+let ``a supplied time zone offset moves the displayed moment`` () =
+    // The offset is a fact about the reader's environment, supplied by the
+    // host. The kernel reads no clock and knows no zone; it does arithmetic
+    // on what it was told.
+    let node = JsonNode.Parse(historyOf [ corrected ] "e1" |> fun _ ->
+        let n = JsonObject()
+        let documents = JsonArray()
+        documents.Add(JsonNode.Parse(Serialization.write (Mapping.toDocument corrected)))
+        n.Add("entries", documents)
+        n.Add("entryId", JsonValue.Create<string> "e1")
+        n.Add("timeZoneOffsetMinutes", JsonValue.Create 60)
+        n.ToJsonString())
+
+    let shifted =
+        TimeEntry.Kernel.entryHistory (node.ToJsonString())
+        |> JsonNode.Parse
+        |> fun r -> (r.["revisions"] :?> JsonArray) |> Seq.item 1
+
+    // One hour ahead of UTC, and no longer labelled UTC.
+    Assert.DoesNotContain("UTC", field shifted "recordedAt")
+
+[<Fact>]
+let ``history uses a ledger's words, not a database's`` () =
+    // TE-R-053: no event-sourcing vocabulary in the main UI.
+    let removed =
+        let entry = persistedEntry "e2" (minutes 30) "sha-2"
+
+        { entry with
+            State = Void(reason "Recorded twice.", instant 1L)
+            History =
+                { Id = revisionId "e2-void"
+                  Change = Voided(reason "Recorded twice.")
+                  Facts = entry.Effective
+                  RecordedAt = instant 1789000000000L
+                  RecordedBy = userId "km"
+                  Device = deviceLabel "iPhone" }
+                :: entry.History }
+
+    let result = historyOf [ removed ] "e2"
+
+    // Asserted over the WORDS A READER SEES, not over the whole document.
+    // An earlier version of this checked the entire JSON and failed on the
+    // field name "revisions" — which no one reads. The requirement is about
+    // the vocabulary of the interface, not of the wire format.
+    let text (node: JsonNode) (name: string) =
+        match node.[name] with
+        | null -> ""
+        | value -> value.ToString()
+
+    let words =
+        (result.["revisions"] :?> JsonArray)
+        |> Seq.collect (fun r -> [ text r "change"; text r "detail" ])
+        |> String.concat " | "
+
+    Assert.Contains("Removed from totals", words)
+    Assert.DoesNotContain("Voided", words)
+    Assert.DoesNotContain("superseded", words)
+    Assert.DoesNotContain("revision", words)
+    Assert.DoesNotContain("event", words)
+
+[<Fact>]
+let ``history does not expose the stored record by default`` () =
+    // TE-R-054 permits a raw record view for advanced users but forbids
+    // exposing it by default. Every value a reader wants is already rendered.
+    let rendered = (historyOf [ corrected ] "e1").ToJsonString()
+
+    Assert.DoesNotContain("schema_version", rendered)
+    Assert.DoesNotContain("exact_duration_ms", rendered)
+
+[<Fact>]
+let ``asking for an entry that is not loaded says so`` () =
+    let result = historyOf [ corrected ] "nope"
+
+    Assert.Equal("false", field result "ok")
+    Assert.Contains("nope", field result "error")
+
+// ---------------------------------------------------------------------------
+// Wording
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``the two exact-time formatters agree`` () =
+    // `Wording` cannot depend on `Kernel`, which depends on it, so each has
+    // three lines of integer arithmetic over the same constants. This is the
+    // test the duplication is only acceptable because of.
+    //
+    // Exercised through a rejection that embeds a duration, which is the only
+    // route `Wording`'s copy is reachable by.
+    let refused =
+        answer
+            [ persistedEntry "e1" (minutes 30) "sha-1" ]
+            """{ "kind": "split", "entryId": "e1", "expectedVersion": "sha-1",
+                 "occurredAtMs": 1789000000,
+                 "children": [
+                   { "entryId": "e1a", "durationUnits": 1, "projectId": "echelon-foundry",
+                     "activityTypeId": "research" },
+                   { "entryId": "e1b", "durationUnits": 1, "projectId": "echelon-foundry",
+                     "activityTypeId": "research" } ] }"""
+
+    // 2 units is 12 minutes against a 30-minute source, leaving 18.
+    Assert.Equal(
+        "The parts add up to 12m, which leaves 18m unaccounted for.",
+        field refused "rejection"
+    )
+
+    // And the kernel's own formatter, on the same quantity, through the
+    // split preview.
+    let previewed =
+        TimeEntry.Kernel.splitPreview
+            """{ "sourceMilliseconds": 1800000, "children": [ { "durationUnits": 1 }, { "durationUnits": 1 } ] }"""
+        |> JsonNode.Parse
+
+    Assert.Equal("18m is still unallocated.", field previewed "summary")
+
+[<Fact>]
+let ``no user-visible outcome is an F# union dump`` () =
+    // TE-R-053. The shape `%A` produces is unmistakable: a capitalised
+    // constructor followed by a parenthesised tuple. If one ever reappears in
+    // a message, this catches it.
+    let refused =
+        answer
+            []
+            """{ "kind": "create", "entryId": "e9", "projectId": "retired-client",
+                 "activityTypeId": "research", "date": "2026-09-10",
+                 "durationUnits": 5, "occurredAtMs": 1789000000 }"""
+
+    let message = field refused "rejection"
+
+    Assert.DoesNotContain("CatalogueRejected", message)
+    Assert.DoesNotContain("ProjectIsArchived", message)
+    Assert.DoesNotContain("ProjectId", message)
+    Assert.StartsWith("retired-client is archived", message)

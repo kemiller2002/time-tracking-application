@@ -1,0 +1,60 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Domain verification. Runs with no browser and no network: every test
+    exercises a pure transition or projection (execution rule §16, §22).
+
+    Dependencies are deliberately minimal — xunit and the test SDK only. In
+    particular FsCheck is NOT referenced: the repository has no existing
+    property-based testing, and "do not add dependencies simply for
+    convenience" applies. The invariant cases the execution script asks
+    property testing to cover (under-allocation, over-allocation, zero,
+    negative, many children) are covered here as explicit table-driven cases
+    instead.
+  -->
+
+  <PropertyGroup>
+    <!-- net8.0: the SDK available from the Ubuntu 24.04 archive is 8.0.131.
+         Tiers 1-3 target netstandard2.0 and are unaffected. -->
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateProgramFile>true</GenerateProgramFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Helpers.fs" />
+    <Compile Include="FakeStore.fs" />
+    <Compile Include="DurationTests.fs" />
+    <Compile Include="CatalogueTests.fs" />
+    <Compile Include="TransitionTests.fs" />
+    <Compile Include="SplitTests.fs" />
+    <Compile Include="MergeTests.fs" />
+    <Compile Include="ProjectionTests.fs" />
+    <Compile Include="PersistenceTests.fs" />
+    <Compile Include="InterpreterTests.fs" />
+    <Compile Include="TargetTests.fs" />
+    <Compile Include="HttpProtocolTests.fs" />
+    <Compile Include="CredentialTests.fs" />
+    <!-- The browser kernel's command surface, tested without a browser. -->
+    <Compile Include="KernelTests.fs" />
+    <Compile Include="IdentityTests.fs" />
+    <Compile Include="ClockTests.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../TimeEntry.Semantic/TimeEntry.Semantic.fsproj" />
+    <ProjectReference Include="../TimeEntry.Transitions/TimeEntry.Transitions.fsproj" />
+    <ProjectReference Include="../TimeEntry.Projection/TimeEntry.Projection.fsproj" />
+    <ProjectReference Include="../TimeEntry.Persistence/TimeEntry.Persistence.fsproj" />
+    <ProjectReference Include="../TimeEntry.GitHub/TimeEntry.GitHub.fsproj" />
+    <ProjectReference Include="../../browser/TimeEntry.Kernel/TimeEntry.Kernel.fsproj" />
+  </ItemGroup>
+
+</Project>

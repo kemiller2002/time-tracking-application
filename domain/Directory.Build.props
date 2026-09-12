@@ -1,0 +1,19 @@
+<Project>
+
+  <!--
+    Shared build settings for the Time Entry F# domain.
+
+    Warnings are errors across every project: in a domain whose whole purpose
+    is making illegal states unrepresentable, an incomplete pattern match is a
+    defect, not a style note.
+  -->
+
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+</Project>

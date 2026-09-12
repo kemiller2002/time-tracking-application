@@ -1,0 +1,8 @@
+{
+  "note": "Stands in for what the GitHub store returns: entry id -> blob SHA. A version is file metadata, never document content \u2014 storing a hash of a document inside that document would be circular. See domain/TimeEntry.Persistence/Documents.fs. Two entries carry versions because a merge needs at least two sources that were each read at a known version (TE-R-070), and nothing created in the page has one until effects are performed (WI-0033, OQ-8).",
+  "versions": {
+    "e1": "b6fc4c620b67d95f953a5c1c1230aaab5db5a1b0",
+    "e2": "c1b9e07d64a1f8a3d0e2b5c7a9f4e6d8b2c0a1f3",
+    "e3": "d4e8a2c6b0f1937e5a8c2d4f6b9e0a3c7d1f5b8e"
+  }
+}

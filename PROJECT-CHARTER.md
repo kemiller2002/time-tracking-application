@@ -3,8 +3,8 @@ id: PROJECT-CHARTER-time-tracking-application
 title: Time Tracking Application Project Charter
 status: draft
 version: 0.1.0
-created: 2026-08-02
-updated: 2026-08-02
+created: 2026-09-11
+updated: 2026-09-11
 ---
 
 # Time Tracking Application project charter

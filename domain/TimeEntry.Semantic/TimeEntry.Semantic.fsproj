@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Tier 1 — Semantic Model (.sde/architecture/FOUR-TIER-ARCHITECTURE.md).
+
+    Targets netstandard2.0 and references ONLY FSharp.Core, mirroring the
+    HelixNote evidence the SDE doctrine cites. This makes TE-R-095 a
+    STRUCTURAL guarantee rather than a convention: this project cannot
+    reference an HTTP client, a JSON serializer, a GitHub SDK, or a browser
+    API, because none of them are available to it. A reviewer does not have to
+    read the code to know the boundary holds.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningLevel>5</WarningLevel>
+    <!-- Incomplete pattern matches must fail the build: an unhandled state is
+         exactly the class of defect this tier exists to prevent. -->
+    <WarningsNotAsErrors></WarningsNotAsErrors>
+    <OtherFlags>$(OtherFlags) --warnon:1182</OtherFlags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Order is significant in F#. -->
+    <Compile Include="Identifiers.fs" />
+    <Compile Include="Duration.fs" />
+    <Compile Include="Preferences.fs" />
+    <Compile Include="Values.fs" />
+    <Compile Include="Identity.fs" />
+    <Compile Include="Clock.fs" />
+    <Compile Include="Catalogue.fs" />
+    <Compile Include="EntryState.fs" />
+    <Compile Include="Capabilities.fs" />
+  </ItemGroup>
+
+</Project>

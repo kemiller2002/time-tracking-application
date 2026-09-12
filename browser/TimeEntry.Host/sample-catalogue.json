@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0.0",
+  "projects": [
+    {
+      "id": "echelon-foundry",
+      "name": "Echelon Foundry",
+      "active": true,
+      "version": "catalogue-v1"
+    },
+    {
+      "id": "northline",
+      "name": "Northline Studio",
+      "active": true,
+      "version": "catalogue-v1"
+    },
+    {
+      "id": "retired-client",
+      "name": "Retired Client",
+      "active": false,
+      "version": "catalogue-v1"
+    }
+  ],
+  "activity_types": [
+    {
+      "id": "development",
+      "name": "Development",
+      "active": true,
+      "version": "catalogue-v1"
+    },
+    {
+      "id": "research",
+      "name": "Research",
+      "active": true,
+      "version": "catalogue-v1"
+    }
+  ]
+}

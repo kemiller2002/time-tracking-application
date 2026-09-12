@@ -2,11 +2,11 @@
 id: GV-ROS-001
 title: AI Repository Operating System
 status: canonical
-version: 1.0.0
+version: 1.1.0
 owners:
   - repository-governance
 created: 2026-07-22
-updated: 2026-07-22
+updated: 2026-09-05
 review_cycle: quarterly
 supersedes: []
 superseded_by: []
@@ -102,6 +102,8 @@ Changes are classified as research-only, documentation, reversible implementatio
 - Material choices use `DF-`; experiments use `EX-` and link hypotheses and observations.
 - Code changes link a decision, REP, issue, or acceptance criterion when material. Trivial fixes need only a clear change description and tests.
 - Generated artifacts identify source inputs and generation method sufficiently to reproduce or update them.
+- Each newly begun work item links one or more versioned execution records. Measurements preserve source, collection mechanism, time, unit, execution, and observed/derived/estimated quality; unavailable data is never silently represented as zero.
+- Provider-neutral normalized metrics coexist with bounded, privacy-filtered raw runtime telemetry so new provider fields survive until their semantics can be evaluated.
 
 ## Completion and Stopping Rules
 
@@ -126,4 +128,3 @@ Governance documents use semantic versions: major for incompatible policy or sch
 ## Anti-Patterns
 
 Prohibited or actively discouraged: hidden assumptions; unsupported certainty; research theater; endless research without a decision or stopping test; implementation without proportionate traceability; preserving a bad system solely because it exists; rewriting canonical history without migration; duplicate sources of truth; claiming validation without testing; and heavy governance for trivial work.
-

@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.0.0",
+  "entry_id": "e3",
+  "state_kind": "active",
+  "void_reason": null,
+  "voided_at_ms": 0,
+  "superseded_children": null,
+  "superseded_target": null,
+  "effective": {
+    "project_id": "northline",
+    "activity_type_id": "research",
+    "date": "2026-09-10",
+    "exact_duration_ms": 1800000,
+    "description": "Client proposal pricing",
+    "origin_kind": "timed",
+    "manual_reason": null,
+    "evidence": []
+  },
+  "history": [
+    {
+      "revision_id": "e3-r1",
+      "change_kind": "created",
+      "change_reason": null,
+      "change_entry_ids": null,
+      "change_entry_id": null,
+      "change_evidence": null,
+      "facts": {
+        "project_id": "northline",
+        "activity_type_id": "research",
+        "date": "2026-09-10",
+        "exact_duration_ms": 1800000,
+        "description": "Client proposal pricing",
+        "origin_kind": "timed",
+        "manual_reason": null,
+        "evidence": []
+      },
+      "recorded_at_ms": 1789000000000,
+      "recorded_by": "km",
+      "device": "iPhone"
+    }
+  ]
+}

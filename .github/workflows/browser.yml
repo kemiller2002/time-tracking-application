@@ -1,0 +1,54 @@
+name: Browser kernel
+
+# Verifies the full architectural path in a real browser: HTML/CSS -> JS
+# bridge -> C# interop shim -> F# WASM kernel -> projection -> DOM.
+#
+# Separate from the F# domain workflow because it needs the WASM workloads and
+# a browser, which take minutes to provision. Keeping the domain job fast
+# matters more than keeping the job count down.
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  kernel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Show the SDK the build will use
+        # global.json pins the 8.0 line. Printed because the failure it
+        # prevents — a newer preinstalled SDK resolving `wasm-tools` to the
+        # wrong band — is otherwise invisible until publish.
+        run: dotnet --version
+
+      - name: Install WASM workloads
+        run: dotnet workload install wasm-tools wasm-experimental
+
+      - name: Install node dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Publish the WASM host
+        run: dotnet publish browser/TimeEntry.Host/TimeEntry.Host.csproj -c Release
+
+      - name: Verify the browser kernel
+        # The sandbox pins a preinstalled chromium; in CI Playwright manages
+        # its own, so let it resolve normally there.
+        env:
+          PLAYWRIGHT_MANAGED_CHROMIUM: "1"
+        run: node tools/verify-browser-kernel.mjs

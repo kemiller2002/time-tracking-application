@@ -1,0 +1,1338 @@
+{
+  "schemaVersion": "1.0.0",
+  "protocolVersion": "1.0.0",
+  "repository": "time-tracking-application",
+  "actor": "claude",
+  "startedAt": "2026-09-11T22:44:26.239Z",
+  "updatedAt": "2026-09-12T17:57:52Z",
+  "baselineDirtyPaths": [],
+  "workItems": [
+    {
+      "id": "ROS-UPGRADE-2-0-1",
+      "type": "mechanical",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "installation",
+          "path": ".ros/installation.json"
+        }
+      ],
+      "updatedAt": "2026-09-11T22:44:26.239Z",
+      "completedAt": "2026-09-11T22:44:26.239Z"
+    },
+    {
+      "id": "WI-0001",
+      "type": "mechanical",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [],
+      "updatedAt": "2026-09-11T22:45:04Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T224501330Z-c9dbc2ca"
+      ],
+      "completedAt": "2026-09-11T22:45:04Z"
+    },
+    {
+      "id": "WI-0002",
+      "type": "research",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "research-record",
+          "path": "SDE-MAP.md"
+        }
+      ],
+      "updatedAt": "2026-09-11T23:17:40.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T230205376Z-f3f35fb2"
+      ],
+      "completedAt": "2026-09-11T23:17:40.000Z",
+      "conclusion": "Baseline recorded: ROS 2.0.1 greenfield, SDE 1.1.1, kernel 0.4.1; no F# project existed; backend was Cloudflare not GitHub; 18 static screens found. Toolchain gap discovered and recorded separately."
+    },
+    {
+      "id": "WI-0003",
+      "type": "research",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "research-record",
+          "path": "docs/time-entry/REQUIREMENTS.md"
+        },
+        {
+          "type": "research-record",
+          "path": "docs/time-entry/TRACEABILITY.md"
+        }
+      ],
+      "updatedAt": "2026-09-11T23:17:51.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T230205438Z-bc2d085c"
+      ],
+      "completedAt": "2026-09-11T23:17:51.000Z",
+      "conclusion": "62 requirements inventoried with stable TE-R ids and cited sources; traceability chain built; 5 open questions recorded rather than resolved; two authority conflicts resolved as DF-TE-0001 (GitHub supersedes Cloudflare) and DF-TE-0002 (duration authoritative, units derived)."
+    },
+    {
+      "id": "WI-0008",
+      "type": "research",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "research-record",
+          "path": "docs/time-entry/UI-PROVENANCE.md"
+        }
+      ],
+      "updatedAt": "2026-09-11T23:17:52.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T230205454Z-f98f1cfd"
+      ],
+      "completedAt": "2026-09-11T23:17:52.000Z",
+      "conclusion": "Git history proves nothing was ever deleted (sole deletion in 5 commits is tools/ros_cli.mjs from the ROS upgrade); static-ui-screens byte-identical to introducing commit 0270575. No recovery needed. Real finding: two complete divergent design systems; screen inventory authority assigned to the newer static-ui-screens, visual reconciliation left open as OQ-5."
+    },
+    {
+      "id": "WI-0009",
+      "type": "research",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "research-record",
+          "path": "docs/time-entry/TOOLCHAIN-BLOCKER.md"
+        }
+      ],
+      "updatedAt": "2026-09-11T23:17:52.000Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T230205474Z-ac8858b0"
+      ],
+      "completedAt": "2026-09-11T23:17:52.000Z",
+      "conclusion": "Blocker documented with reproducible evidence: proxy denies every Microsoft/.NET distribution host; no npm-vendored SDK is viable; three unblock paths recorded. Three workarounds considered and rejected with reasons."
+    },
+    {
+      "id": "WI-0004",
+      "type": "default",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Semantic/Duration.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Transitions/Transitions.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Projection/Projection.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/TransitionTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/DurationTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/ProjectionTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T23:27:42.711Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T231849093Z-b90753ca"
+      ],
+      "blockReason": "F# source and tests authored; compilation and test execution impossible - no .NET SDK installable (docs/time-entry/TOOLCHAIN-BLOCKER.md). No verification evidence exists, so this cannot be completed.",
+      "completedAt": "2026-09-11T23:27:42.711Z"
+    },
+    {
+      "id": "WI-0005",
+      "type": "default",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Semantic/Duration.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Transitions/Transitions.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Projection/Projection.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/TransitionTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/DurationTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/ProjectionTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T23:27:42.711Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T231849427Z-aa4ba348"
+      ],
+      "blockReason": "F# source and tests authored; compilation and test execution impossible - no .NET SDK installable (docs/time-entry/TOOLCHAIN-BLOCKER.md). No verification evidence exists, so this cannot be completed.",
+      "completedAt": "2026-09-11T23:27:42.711Z"
+    },
+    {
+      "id": "WI-0010",
+      "type": "default",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Semantic/Duration.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Transitions/Transitions.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Projection/Projection.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/TransitionTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/DurationTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/ProjectionTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T23:27:42.711Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T231849759Z-854987d2"
+      ],
+      "blockReason": "F# source and tests authored; compilation and test execution impossible - no .NET SDK installable (docs/time-entry/TOOLCHAIN-BLOCKER.md). No verification evidence exists, so this cannot be completed.",
+      "completedAt": "2026-09-11T23:27:42.711Z"
+    },
+    {
+      "id": "WI-0011",
+      "type": "default",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Semantic/Duration.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Transitions/Transitions.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Projection/Projection.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/TransitionTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/DurationTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/ProjectionTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T23:27:42.711Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T231850123Z-52b762b1"
+      ],
+      "blockReason": "F# source and tests authored; compilation and test execution impossible - no .NET SDK installable (docs/time-entry/TOOLCHAIN-BLOCKER.md). No verification evidence exists, so this cannot be completed.",
+      "completedAt": "2026-09-11T23:27:42.711Z"
+    },
+    {
+      "id": "WI-0012",
+      "type": "default",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Semantic/Duration.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Transitions/Transitions.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Projection/Projection.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/TransitionTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/DurationTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/ProjectionTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T23:27:42.711Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T231850466Z-2bb3baed"
+      ],
+      "blockReason": "F# source and tests authored; compilation and test execution impossible - no .NET SDK installable (docs/time-entry/TOOLCHAIN-BLOCKER.md). No verification evidence exists, so this cannot be completed.",
+      "completedAt": "2026-09-11T23:27:42.711Z"
+    },
+    {
+      "id": "WI-0013",
+      "type": "default",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Semantic/Duration.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Transitions/Transitions.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Projection/Projection.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/TransitionTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/DurationTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/ProjectionTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T23:27:42.711Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T231850804Z-2796b73c"
+      ],
+      "blockReason": "F# source and tests authored; compilation and test execution impossible - no .NET SDK installable (docs/time-entry/TOOLCHAIN-BLOCKER.md). No verification evidence exists, so this cannot be completed.",
+      "completedAt": "2026-09-11T23:27:42.711Z"
+    },
+    {
+      "id": "WI-0014",
+      "type": "default",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Semantic/Duration.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Transitions/Transitions.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Projection/Projection.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/TransitionTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/DurationTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/ProjectionTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T23:27:42.711Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T231851155Z-6c435e2a"
+      ],
+      "blockReason": "F# source and tests authored; compilation and test execution impossible - no .NET SDK installable (docs/time-entry/TOOLCHAIN-BLOCKER.md). No verification evidence exists, so this cannot be completed.",
+      "completedAt": "2026-09-11T23:27:42.711Z"
+    },
+    {
+      "id": "WI-0016",
+      "type": "default",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Semantic/Duration.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Transitions/Transitions.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Projection/Projection.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/TransitionTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/DurationTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/ProjectionTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T23:27:42.711Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T231851504Z-c151c02e"
+      ],
+      "blockReason": "F# source and tests authored; compilation and test execution impossible - no .NET SDK installable (docs/time-entry/TOOLCHAIN-BLOCKER.md). No verification evidence exists, so this cannot be completed.",
+      "completedAt": "2026-09-11T23:27:42.711Z"
+    },
+    {
+      "id": "WI-0018",
+      "type": "default",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Semantic/Duration.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Transitions/Transitions.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Projection/Projection.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/TransitionTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/DurationTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/ProjectionTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T23:27:42.711Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T231851853Z-09f9980d"
+      ],
+      "blockReason": "F# source and tests authored; compilation and test execution impossible - no .NET SDK installable (docs/time-entry/TOOLCHAIN-BLOCKER.md). No verification evidence exists, so this cannot be completed.",
+      "completedAt": "2026-09-11T23:27:42.711Z"
+    },
+    {
+      "id": "WI-0006",
+      "type": "default",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Persistence/Mapping.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/PersistenceTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T23:48:30.538Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T231852202Z-82d7245c"
+      ],
+      "blockReason": "Tier 4 not implementable: requires F# WASM build and a compiled domain to adapt. Blocked by toolchain (docs/time-entry/TOOLCHAIN-BLOCKER.md).",
+      "completedAt": "2026-09-11T23:48:30.538Z"
+    },
+    {
+      "id": "WI-0007",
+      "type": "default",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "browser/TimeEntry.Kernel/Kernel.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tools/verify-browser-kernel.mjs"
+        }
+      ],
+      "updatedAt": "2026-09-12T00:34:35.319Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T231852560Z-4f0e96a2"
+      ],
+      "blockReason": "Tier 4 not implementable: requires F# WASM build and a compiled domain to adapt. Blocked by toolchain (docs/time-entry/TOOLCHAIN-BLOCKER.md).",
+      "completedAt": "2026-09-12T00:34:35.319Z"
+    },
+    {
+      "id": "WI-0015",
+      "type": "default",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Semantic/Catalogue.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/CatalogueTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T02:48:46Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T231852924Z-4c5ccbb6"
+      ],
+      "blockReason": "Blocked by unresolved domain/design questions: OQ-2 (labels undefined as an entity) and OQ-5 (two divergent design systems, no repository evidence selecting one). Resolving either by assumption would invent requirements.",
+      "completedAt": "2026-09-12T02:48:46Z"
+    },
+    {
+      "id": "WI-0017",
+      "type": "default",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "browser/TimeEntry.Host/index.html"
+        },
+        {
+          "type": "tests",
+          "path": "tools/verify-browser-kernel.mjs"
+        }
+      ],
+      "updatedAt": "2026-09-12T02:46:14Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T231853318Z-6fd6313a"
+      ],
+      "blockReason": "Blocked by unresolved domain/design questions: OQ-2 (labels undefined as an entity) and OQ-5 (two divergent design systems, no repository evidence selecting one). Resolving either by assumption would invent requirements.",
+      "completedAt": "2026-09-12T02:46:14Z"
+    },
+    {
+      "id": "WI-0019",
+      "type": "default",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "docs/time-entry/TRACEABILITY.md"
+        },
+        {
+          "type": "tests",
+          "path": "tools/verify-browser-kernel.mjs"
+        }
+      ],
+      "updatedAt": "2026-09-12T02:48:46Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T231853671Z-5e804661"
+      ],
+      "blockReason": "Traceability model authored (docs/time-entry/TRACEABILITY.md) but cannot reach verification: 0 of 62 requirements have execution evidence while the toolchain blocker stands.",
+      "completedAt": "2026-09-12T02:48:46Z"
+    },
+    {
+      "id": "WI-0020",
+      "type": "default",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Transitions/Transitions.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/TransitionTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T23:32:57.591Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T232905256Z-f6ec2883"
+      ],
+      "completedAt": "2026-09-11T23:32:57.591Z"
+    },
+    {
+      "id": "WI-0024",
+      "type": "default",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Semantic/Duration.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/DurationTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T23:39:11.491Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T233541816Z-ef1fc0c9"
+      ],
+      "completedAt": "2026-09-11T23:39:11.491Z"
+    },
+    {
+      "id": "WI-0025",
+      "type": "default",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.GitHub/Interpreter.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/InterpreterTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-11T23:56:30.520Z",
+      "telemetryExecutionIds": [
+        "EXE-20260911T234950099Z-20698716"
+      ],
+      "completedAt": "2026-09-11T23:56:30.520Z"
+    },
+    {
+      "id": "WI-0027",
+      "type": "default",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.GitHub/HttpStore.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/HttpProtocolTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T02:50:18Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T000356360Z-77218920"
+      ],
+      "blockReason": "HTTP transport implemented and compiles under warnings-as-errors; pure parts (URLs, status classification, retry policy, precondition checks) verified by 27 tests; read path verified end-to-end against the real GitHub API via tools/verify-github-transport.fsx. The WRITE path cannot be verified here: the agent proxy answers 403 'Write access to this GitHub API path is not permitted through this proxy' to Git Data API writes, so tree/commit/ref-CAS remain unexercised. Tracked as WI-0028.",
+      "completedAt": "2026-09-12T02:50:18Z"
+    },
+    {
+      "id": "WI-0026",
+      "type": "default",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Semantic/Catalogue.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/CatalogueTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T00:17:37.009Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T001711506Z-c54e8c24"
+      ],
+      "completedAt": "2026-09-12T00:17:37.009Z"
+    },
+    {
+      "id": "WI-0029",
+      "type": "default",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Persistence/Mapping.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/PersistenceTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T00:22:09.780Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T001852515Z-ca34f999"
+      ],
+      "completedAt": "2026-09-12T00:22:09.780Z"
+    },
+    {
+      "id": "WI-0031",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "browser/TimeEntry.Kernel/Kernel.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "browser/TimeEntry.Host/index.html"
+        },
+        {
+          "type": "tests",
+          "path": "tools/verify-browser-kernel.mjs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/ProjectionTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T00:56:42Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T005505433Z-c3318e9b"
+      ],
+      "completedAt": "2026-09-12T00:56:42Z"
+    },
+    {
+      "id": "WI-0032",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "browser/TimeEntry.Kernel/CommandParsing.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/KernelTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T01:08:51Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T010851615Z-cdbbf9b3"
+      ],
+      "completedAt": "2026-09-12T01:08:51Z"
+    },
+    {
+      "id": "WI-0035",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "browser/TimeEntry.Host/main.js"
+        },
+        {
+          "type": "tests",
+          "path": "tools/verify-browser-kernel.mjs"
+        }
+      ],
+      "updatedAt": "2026-09-12T01:15:21Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T011522606Z-82119869"
+      ],
+      "completedAt": "2026-09-12T01:15:21Z"
+    },
+    {
+      "id": "WI-0036",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "browser/TimeEntry.Kernel/Kernel.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/KernelTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T01:20:05Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T012006509Z-8631a4ff"
+      ],
+      "completedAt": "2026-09-12T01:20:05Z"
+    },
+    {
+      "id": "WI-0037",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "browser/TimeEntry.Kernel/Kernel.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tools/verify-browser-kernel.mjs"
+        }
+      ],
+      "updatedAt": "2026-09-12T01:27:05Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T012706461Z-c92b6729"
+      ],
+      "completedAt": "2026-09-12T01:27:05Z"
+    },
+    {
+      "id": "WI-0038",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "browser/TimeEntry.Host/main.js"
+        },
+        {
+          "type": "tests",
+          "path": "tools/verify-browser-kernel.mjs"
+        }
+      ],
+      "updatedAt": "2026-09-12T01:30:16Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T013017516Z-63cde30b"
+      ],
+      "completedAt": "2026-09-12T01:30:16Z"
+    },
+    {
+      "id": "WI-0039",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.GitHub/Credential.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/CredentialTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T01:37:12Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T013713031Z-96aed01d"
+      ],
+      "completedAt": "2026-09-12T01:37:12Z"
+    },
+    {
+      "id": "WI-0033",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "browser/TimeEntry.Kernel/Kernel.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/KernelTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T01:45:25Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T014525670Z-931fb889"
+      ],
+      "completedAt": "2026-09-12T01:45:25Z"
+    },
+    {
+      "id": "WI-0040",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "browser/TimeEntry.Kernel/Kernel.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/KernelTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T01:51:20Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T015121494Z-c951daa5"
+      ],
+      "completedAt": "2026-09-12T01:51:20Z"
+    },
+    {
+      "id": "WI-0041",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.GitHub/HttpProtocol.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tools/verify-browser-kernel.mjs"
+        }
+      ],
+      "updatedAt": "2026-09-12T01:57:49Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T015750062Z-8b093f10"
+      ],
+      "completedAt": "2026-09-12T01:57:49Z"
+    },
+    {
+      "id": "WI-0043",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "browser/TimeEntry.Host/main.js"
+        },
+        {
+          "type": "tests",
+          "path": "tools/verify-browser-kernel.mjs"
+        }
+      ],
+      "updatedAt": "2026-09-12T02:10:05Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T021006549Z-9123bdeb"
+      ],
+      "completedAt": "2026-09-12T02:10:05Z"
+    },
+    {
+      "id": "WI-0042",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "browser/TimeEntry.Kernel/Kernel.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tools/verify-browser-kernel.mjs"
+        }
+      ],
+      "updatedAt": "2026-09-12T02:13:55Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T021356231Z-f4f99265"
+      ],
+      "completedAt": "2026-09-12T02:13:55Z"
+    },
+    {
+      "id": "WI-0044",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Projection/Projection.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/ProjectionTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T02:18:59Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T021900211Z-e3b314bb"
+      ],
+      "completedAt": "2026-09-12T02:18:59Z"
+    },
+    {
+      "id": "WI-0045",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "browser/TimeEntry.Kernel/Kernel.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tools/verify-browser-kernel.mjs"
+        }
+      ],
+      "updatedAt": "2026-09-12T02:23:20Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T022321882Z-353cdc25"
+      ],
+      "completedAt": "2026-09-12T02:23:20Z"
+    },
+    {
+      "id": "WI-0046",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "browser/TimeEntry.Kernel/Kernel.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/KernelTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T02:29:05Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T022906337Z-23037b48"
+      ],
+      "completedAt": "2026-09-12T02:29:05Z"
+    },
+    {
+      "id": "WI-0030",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Persistence/Serialization.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/PersistenceTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T02:35:30Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T023530965Z-51e8958a"
+      ],
+      "completedAt": "2026-09-12T02:35:30Z"
+    },
+    {
+      "id": "WI-0047",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "browser/TimeEntry.Kernel/Wording.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/KernelTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T02:43:00Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T024301342Z-9ef925dc"
+      ],
+      "completedAt": "2026-09-12T02:43:00Z"
+    },
+    {
+      "id": "WI-0021",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Semantic/Catalogue.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/CatalogueTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T02:50:37Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T025038357Z-19dadab4"
+      ],
+      "completedAt": "2026-09-12T02:50:37Z"
+    },
+    {
+      "id": "WI-0022",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "browser/TimeEntry.Host/index.html"
+        },
+        {
+          "type": "tests",
+          "path": "tools/verify-browser-kernel.mjs"
+        }
+      ],
+      "updatedAt": "2026-09-12T02:50:37Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T025039047Z-21682f99"
+      ],
+      "completedAt": "2026-09-12T02:50:37Z"
+    },
+    {
+      "id": "WI-0049",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Transitions/Guards.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/SplitTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T02:56:00Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T025601525Z-d8f05d32"
+      ],
+      "completedAt": "2026-09-12T02:56:00Z"
+    },
+    {
+      "id": "WI-0050",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "tools/validate-branch.mjs"
+        },
+        {
+          "type": "tests",
+          "path": "package.json"
+        }
+      ],
+      "updatedAt": "2026-09-12T02:57:44Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T025745554Z-c1dae1f1"
+      ],
+      "completedAt": "2026-09-12T02:57:44Z"
+    },
+    {
+      "id": "WI-0051",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Transitions/Guards.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "browser/TimeEntry.Kernel/Kernel.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/SplitTests.fs"
+        },
+        {
+          "type": "documentation",
+          "path": "docs/time-entry/DECISIONS.md"
+        },
+        {
+          "type": "documentation",
+          "path": "docs/time-entry/REQUIREMENTS.md"
+        },
+        {
+          "type": "documentation",
+          "path": "docs/time-entry/TRACEABILITY.md"
+        }
+      ],
+      "updatedAt": "2026-09-12T16:29:44Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T162416106Z-64d0ee03"
+      ],
+      "completedAt": "2026-09-12T16:29:44Z"
+    },
+    {
+      "id": "WI-0053",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Semantic/Preferences.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Semantic/Duration.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Projection/Projection.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.GitHub/Interpreter.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "browser/TimeEntry.Kernel/Kernel.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/TargetTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tools/verify-browser-kernel.mjs"
+        },
+        {
+          "type": "documentation",
+          "path": "docs/time-entry/DECISIONS.md"
+        }
+      ],
+      "updatedAt": "2026-09-12T16:47:58Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T163106554Z-14affda2"
+      ],
+      "completedAt": "2026-09-12T16:47:58Z"
+    },
+    {
+      "id": "WI-0034",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Semantic/Identity.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "browser/TimeEntry.Kernel/CommandParsing.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "browser/TimeEntry.Kernel/Kernel.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "browser/TimeEntry.Host/main.js"
+        },
+        {
+          "type": "implementation",
+          "path": "browser/TimeEntry.Host/index.html"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/IdentityTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tools/verify-browser-kernel.mjs"
+        },
+        {
+          "type": "documentation",
+          "path": "docs/time-entry/DECISIONS.md"
+        }
+      ],
+      "updatedAt": "2026-09-12T17:07:27Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T164954732Z-08bd5735"
+      ],
+      "completedAt": "2026-09-12T17:07:27Z"
+    },
+    {
+      "id": "WI-0056",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "worker/src/store.js"
+        },
+        {
+          "type": "implementation",
+          "path": "worker/src/handler.js"
+        },
+        {
+          "type": "tests",
+          "path": "tests/service.test.js"
+        },
+        {
+          "type": "documentation",
+          "path": "docs/DOMAIN-REQUIREMENTS.md"
+        },
+        {
+          "type": "documentation",
+          "path": "docs/time-entry/DECISIONS.md"
+        }
+      ],
+      "updatedAt": "2026-09-12T17:42:49Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T174119968Z-d5df5d73"
+      ],
+      "completedAt": "2026-09-12T17:42:49Z"
+    },
+    {
+      "id": "WI-0048",
+      "type": "task",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Semantic/Clock.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.GitHub/HttpStore.fs"
+        },
+        {
+          "type": "implementation",
+          "path": "browser/TimeEntry.Kernel/Kernel.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/ClockTests.fs"
+        },
+        {
+          "type": "tests",
+          "path": "tools/verify-browser-kernel.mjs"
+        },
+        {
+          "type": "documentation",
+          "path": "docs/time-entry/DECISIONS.md"
+        }
+      ],
+      "updatedAt": "2026-09-12T17:57:52Z",
+      "telemetryExecutionIds": [
+        "EXE-20260912T174907562Z-4e729900"
+      ],
+      "completedAt": "2026-09-12T17:57:52Z"
+    }
+  ]
+}

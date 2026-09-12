@@ -1,0 +1,7 @@
+{
+  "//": "Pins the build to the .NET 8 SDK line. The projects target net8.0 and netstandard2.0, and the WASM workloads are per-SDK-band: an SDK 10 host resolves `wasm-tools` to `wasm-tools-net10`, which cannot build a net8.0 browser-wasm app. Without this file a runner that ships a newer SDK alongside the one CI installs will silently pick the newer one and fail at publish. latestFeature keeps any 8.0.x the machine happens to have.",
+  "sdk": {
+    "version": "8.0.100",
+    "rollForward": "latestFeature"
+  }
+}

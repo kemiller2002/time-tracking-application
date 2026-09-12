@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Tier 4 — Persistence boundary.
+
+    This is the FIRST project permitted to know about serialization. It
+    references Tier 1 for the domain types it translates, and Tier 2 for the
+    `PersistRequest` shape it will be handed, but nothing above it depends on
+    it: the domain has no idea this project exists (TE-R-094).
+
+    Targets net8.0 rather than netstandard2.0 because it uses
+    System.Text.Json. That is the visible cost of crossing the boundary, and
+    it is confined to exactly this project.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningLevel>5</WarningLevel>
+    <OtherFlags>$(OtherFlags) --warnon:1182</OtherFlags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Documents.fs" />
+    <Compile Include="Layout.fs" />
+    <Compile Include="Mapping.fs" />
+    <Compile Include="Serialization.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../TimeEntry.Semantic/TimeEntry.Semantic.fsproj" />
+  </ItemGroup>
+
+</Project>

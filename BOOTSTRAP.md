@@ -27,6 +27,10 @@ the entire repository without a reason.
 
 ## 4. Execute
 
+Before meaningful repository mutation, establish attributable intent with `./ros work begin WORK-ID` and inspect `./ros work context WORK-ID` for allowed actions and required evidence. Use `./ros status` for a compact repository check. Follow `docs/work-protocol.md`.
+
+`work begin` automatically starts a provider-neutral execution record. Discover what the current runtime can expose, classify the work, ingest trustworthy runtime or tool output where available, and leave unavailable metrics unavailable rather than zero. Unknown provider fields belong in sanitized raw telemetry. `work complete` finalizes active records; follow `docs/development-telemetry.md` for adapters, R&D context, provenance, privacy, and aggregation.
+
 - Identify the largest material uncertainty.
 - Form explicit hypotheses.
 - Seek supporting and contradicting evidence.
@@ -34,6 +38,7 @@ the entire repository without a reason.
 - Preserve source traceability.
 - Use deterministic tools before generative inference where practical.
 - Record failures and invalidated assumptions.
+- Record scope discoveries, correction signals, and telemetry provenance when they are knowable; do not ask a model to estimate what Git or a tool can calculate.
 
 ## 5. Record results
 
