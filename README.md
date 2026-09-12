@@ -20,4 +20,4 @@ Open `http://localhost:4173`. Data is synthetic and persists locally for demonst
 
 All production reads and writes are designed to use `/api/v1` through Cloudflare with secure cookies, idempotency keys, version conflicts, timeouts, and actionable errors. No browser code talks to GitHub or contains credentials.
 
-See [UI architecture](docs/UI-ARCHITECTURE.md), [runbook](docs/UI-RUNBOOK.md), and [known limitations](docs/UI-VISUAL-REVIEW.md).
+See [domain requirements](docs/DOMAIN-REQUIREMENTS.md), [UI architecture](docs/UI-ARCHITECTURE.md), [runbook](docs/UI-RUNBOOK.md), and [known limitations](docs/UI-VISUAL-REVIEW.md).

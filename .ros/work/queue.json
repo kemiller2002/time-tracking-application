@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "time-tracking-application",
-  "nextSeq": 56,
+  "nextSeq": 57,
   "items": [
     {
       "id": "WI-0001",
@@ -844,6 +844,20 @@
       "attachments": [],
       "createdAt": "2026-09-12T17:06:15.331Z",
       "updatedAt": "2026-09-12T17:06:15.331Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0056",
+      "title": "TE-056 Merge main (upstream PRs #1-#15) into the branch and attribute the paths it brings",
+      "description": null,
+      "tags": [],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T17:41:19.283Z",
+      "updatedAt": "2026-09-12T17:41:19Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null

@@ -35,11 +35,15 @@ Before creating or modifying UI code:
 1. Locate `.visual-engineering`.
 2. Read every relevant file in that directory.
 3. Read repository-level instructions.
-4. Read the data-layer architecture and schemas.
-5. Read the Cloudflare service/API contract.
-6. Inspect the current implementation, components, tests, workflows, and recent decisions.
-7. Create `docs/UI-RECONNAISSANCE.md`.
-8. Create `docs/UI-IMPLEMENTATION-PLAN.md`.
+4. Read `docs/DOMAIN-REQUIREMENTS.md` — the ledger's business rules. This
+   contract governs *how* to build; that document governs *what must be
+   true* of the result. Where they conflict, the domain requirements win
+   and this contract must be revised.
+5. Read the data-layer architecture and schemas.
+6. Read the Cloudflare service/API contract.
+7. Inspect the current implementation, components, tests, workflows, and recent decisions.
+8. Create `docs/UI-RECONNAISSANCE.md`.
+9. Create `docs/UI-IMPLEMENTATION-PLAN.md`.
 
 `UI-RECONNAISSANCE.md` must include:
 

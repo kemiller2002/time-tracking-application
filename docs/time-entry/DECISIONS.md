@@ -466,7 +466,16 @@ holds — and remove the truncation class of defect entirely.
 
 **Title:** The existing implementation's void-based merge is a defect, not a precedent
 
-**Status:** accepted · **Reinforces:** `DF-TE-0006`
+**Status:** accepted · **Reinforces:** `DF-TE-0006` · **Vindicated by** upstream `#10`
+
+> **Update, after merging `main` (WI-0056).** The defect described below has
+> since been fixed upstream, by the same distinction this record argued for:
+> `worker/src/store.js` now appends `activity.superseded` for split and merge
+> sources, and `restoreActivity` refuses a superseded activity outright. The
+> analysis below is left as written rather than rewritten, because it is now
+> the record of a prediction that was independently confirmed — but the code
+> it quotes is no longer the code in this repository. `DF-TE-0006` and
+> `Superseded` are unchanged.
 
 ### Context
 
@@ -496,7 +505,8 @@ restoreActivity(id, input, actor) {
 }
 ```
 
-`restoreActivity` gates only on `voided`. A merge source *is* voided.
+`restoreActivity` gated only on `voided` at the time of writing. A merge
+source *is* voided.
 Therefore a source of a completed merge can be restored, which sets
 `voided = false` and returns its `exact_duration_ms` to `#summary`'s total —
 while the merged activity still carries that same time. The day's total
