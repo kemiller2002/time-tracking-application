@@ -34,7 +34,7 @@ export async function handleRequest(request,bindings=defaultBindings){
     if(path==='/activity-types'&&request.method==='GET')return success(bindings.activityTypes,requestId);
     if(path==='/tags'&&request.method==='GET')return success(bindings.tags,requestId);
     const body=await parseBody(request);const payload=body.payload??body;const commandId=body.request_id??request.headers.get('idempotency-key')??requestId;
-    if(request.method!=='GET'){const replay=bindings.store.replay(commandId);if(replay)return success({...replay,idempotent_replay:true},requestId);}
+    if(request.method!=='GET'){const replay=bindings.store.replay(commandId);if(replay)return success({...replay.result,idempotent_replay:true},requestId,replay.status);}
     let result;let status=200;
     if(path==='/timers/current'&&request.method==='GET')result={timer:bindings.store.currentTimer(user.user_id)};
     else if(path==='/timers/start'&&request.method==='POST')result=bindings.store.startTimer(user.user_id,payload);
@@ -57,7 +57,7 @@ export async function handleRequest(request,bindings=defaultBindings){
     else if(routeMatch(path,'/reports/daily/:date')&&request.method==='GET'){const {date}=routeMatch(path,'/reports/daily/:date');result={report_id:`daily-${date}-${bindings.store.events.length}`,format:'json',source:bindings.store.day(date)};}
     else if(routeMatch(path,'/reports/monthly/:month')&&request.method==='GET'){const {month}=routeMatch(path,'/reports/monthly/:month');result={report_id:`monthly-${month}-${bindings.store.events.length}`,format:'json',source:bindings.store.month(month)};}
     else throw new ServiceError('not_found','The requested API resource does not exist.',{status:404});
-    if(request.method!=='GET')bindings.store.remember(commandId,result);
+    if(request.method!=='GET')bindings.store.remember(commandId,result,status);
     return success(result,requestId,status);
   }catch(error){return failure(error,requestId);}
 }

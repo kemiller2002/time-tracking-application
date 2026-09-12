@@ -9,9 +9,9 @@ info:
     request body. A request whose id — that `request_id`, or the
     `Idempotency-Key` / `X-Request-Id` header — matches an earlier non-GET
     request returns the earlier result again with `idempotent_replay: true`
-    added, always as HTTP 200 regardless of the original status code (e.g. a
-    replayed `POST /activities` comes back 200, not 201) — an observed quirk
-    of the replay path, documented here rather than modeled per endpoint.
+    added, using the same HTTP status code the original request received
+    (e.g. a replayed `POST /activities` comes back 201, matching the
+    original, not 200).
 servers:
   - url: /api/v1
 paths:
@@ -218,14 +218,16 @@ paths:
               schema: {$ref: '#/components/schemas/ActivityResponse'}
         '400':
           description: >-
-            A required field is missing (validation_failed); ended_at is not
-            after started_at (invalid_time_range); started_at/ended_at fall
-            on different calendar days (crosses_midnight); project_id,
-            activity_type_id, or a tag does not reference an existing record
-            (project_not_found / activity_type_not_found / tag_not_found); or
-            project_id, activity_type_id, or a tag references an archived/
-            inactive record (project_inactive / activity_type_inactive /
-            tag_inactive)
+            A required field is missing, or entry_method is manual (the
+            default) with started_at before today and reconstruction_reason
+            missing (validation_failed; details.field names the field);
+            ended_at is not after started_at (invalid_time_range);
+            started_at/ended_at fall on different calendar days
+            (crosses_midnight); project_id, activity_type_id, or a tag does
+            not reference an existing record (project_not_found /
+            activity_type_not_found / tag_not_found); or project_id,
+            activity_type_id, or a tag references an archived/inactive
+            record (project_inactive / activity_type_inactive / tag_inactive)
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorResponse'}
@@ -421,10 +423,12 @@ paths:
           description: >-
             changes or reason missing (validation_failed); the resulting
             description/business_purpose/activity_type_id/project_id would be
-            blank (validation_failed); the resulting time range is invalid
-            (invalid_time_range); the resulting interval crosses midnight
-            (crosses_midnight); a newly assigned project_id, activity_type_id,
-            or tag does not reference an existing record (project_not_found /
+            blank, or the resulting entry_method is manual with started_at
+            before today and reconstruction_reason blank (validation_failed);
+            the resulting time range is invalid (invalid_time_range); the
+            resulting interval crosses midnight (crosses_midnight); a newly
+            assigned project_id, activity_type_id, or tag does not reference
+            an existing record (project_not_found /
             activity_type_not_found / tag_not_found); or a newly assigned one
             references an archived/inactive record (project_inactive /
             activity_type_inactive / tag_inactive) — an unchanged assignment
@@ -644,7 +648,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/AttachEvidenceResponse'}
         '400':
-          description: type missing (validation_failed)
+          description: type missing (validation_failed), or type is not one of the documented values (invalid_evidence_type; details.allowed)
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorResponse'}
@@ -869,7 +873,12 @@ components:
           items: {type: string}
         reconstruction_reason:
           type: [string, 'null']
-          description: Required by product convention for a manually entered past-dated activity; not enforced server-side today.
+          description: >-
+            Required when entry_method is manual (the default) and
+            started_at falls before today's date on the server clock — a
+            missing value fails with 400 validation_failed
+            (details.field = "reconstruction_reason"). Not required for a
+            same-day entry, or for a timer/split/merge-derived one.
         client_timestamp: {type: [string, 'null'], format: date-time}
     Activity:
       type: object
@@ -1195,13 +1204,7 @@ components:
       properties:
         evidence_link_id: {type: string, minLength: 1}
         type:
-          type: string
-          minLength: 1
-          description: >-
-            Not validated against a fixed set server-side today.
-            DOMAIN-REQUIREMENTS.md expects one of: url, linkedin-post,
-            github-commit, pull-request, issue, calendar-event, document,
-            screenshot, other.
+          enum: [url, linkedin-post, github-commit, pull-request, issue, calendar-event, document, screenshot, other]
         uri: {type: [string, 'null']}
         note: {type: [string, 'null']}
         hash: {type: [string, 'null']}
@@ -1214,7 +1217,7 @@ components:
         base_version:
           type: string
           description: Optimistic-concurrency check; omit to skip it.
-        type: {type: string, minLength: 1}
+        type: {enum: [url, linkedin-post, github-commit, pull-request, issue, calendar-event, document, screenshot, other]}
         uri: {type: [string, 'null']}
         note: {type: [string, 'null']}
         hash: {type: [string, 'null']}
