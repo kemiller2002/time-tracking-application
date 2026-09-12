@@ -14,6 +14,7 @@ open TimeEntry.Semantic.Catalogue
 open TimeEntry.Semantic.Duration
 open TimeEntry.Semantic.Values
 open TimeEntry.Semantic.EntryState
+open TimeEntry.Semantic.Capabilities
 open TimeEntry.Projection.Query
 open TimeEntry.Projection.Projection
 open TimeEntry.Transitions.Commands
@@ -307,6 +308,137 @@ let viewDay (requestJson: string) : string =
     with ex ->
         // The boundary never throws into JS: a malformed request becomes a
         // structured answer the page can render.
+        errorResult (ex.GetType().Name + ": " + ex.Message)
+
+
+/// Whether a day's record is complete enough to stand behind.
+///
+/// `review.html` lists named checks with a tick or a warning. The checks are
+/// built from the domain's own `Obligation`s rather than re-derived here, so
+/// "what must be true before a day can be attested" has one definition —
+/// `Obligation.blocksAttestation` — and this reports it rather than repeating
+/// it.
+///
+/// One check on that screen is NOT here: "No overlapping time". The domain
+/// models an entry's DURATION, not its interval — there is no start or end on
+/// an entry — so overlap is not computable from what is stored, and a tick
+/// beside it would be an assurance nothing checked. OQ-10 records that.
+let reviewDay (requestJson: string) : string =
+    try
+        match JsonNode.Parse requestJson with
+        | null -> errorResult "empty request"
+        | request ->
+            let entries =
+                match request.["entries"] with
+                | :? JsonArray as items ->
+                    items
+                    |> Seq.choose (fun item ->
+                        match item with
+                        | null -> None
+                        | node ->
+                            match Serialization.read (node.ToJsonString()) with
+                            | Error _ -> None
+                            | Ok document ->
+                                match Mapping.fromDocument None document with
+                                | Error _ -> None
+                                | Ok entry -> Some entry)
+                    |> List.ofSeq
+                | _ -> []
+
+            match
+                (match request.["date"] with
+                 | null -> Error "missing 'date'"
+                 | value -> CommandParsing.parseDate (value.ToString()))
+            with
+            | Error detail -> errorResult detail
+            | Ok day ->
+                let onDay =
+                    entries |> List.filter (fun entry -> entry.Effective.Date = day)
+
+                let counting = onDay |> List.filter TimeEntry.countsTowardTotals
+                let summary = PeriodSummary.ofEntries displayPolicy onDay
+
+                let obligations = counting |> List.collect Obligation.intrinsic
+
+                let missingPurpose =
+                    obligations
+                    |> List.filter (fun o ->
+                        match o with
+                        | BusinessPurposeMissing -> true
+                        | _ -> false)
+                    |> List.length
+
+                let node = JsonObject()
+                node.Add("ok", JsonValue.Create true)
+                node.Add("displayTotal", JsonValue.Create(displayTime summary.DisplayHours summary.DisplayMinutes))
+                node.Add("countedEntries", JsonValue.Create summary.CountedEntries)
+                node.Add("displayTimed", JsonValue.Create(displayExact summary.TimedMilliseconds))
+                node.Add("displayManual", JsonValue.Create(displayExact summary.ManualMilliseconds))
+                node.Add("entriesWithEvidence", JsonValue.Create summary.EntriesWithEvidence)
+                node.Add("correctedEntries", JsonValue.Create summary.CorrectedEntries)
+                node.Add("removedEntries", JsonValue.Create summary.RemovedEntries)
+
+                // A day with nothing in it is not "complete" — there is
+                // nothing to attest. Saying so is more useful than a row of
+                // ticks over an empty ledger.
+                let empty = List.isEmpty counting
+
+                let checks = JsonArray()
+
+                let addCheck (title: string) (note: string) (ok: bool) =
+                    let item = JsonObject()
+                    item.Add("title", JsonValue.Create title)
+                    item.Add("note", JsonValue.Create note)
+                    item.Add("status", JsonValue.Create(if ok then "complete" else "attention"))
+                    checks.Add item
+
+                addCheck
+                    "Every record describes the work performed"
+                    (if missingPurpose = 0 then
+                         sprintf "%d of %d records describe the work." summary.CountedEntries summary.CountedEntries
+                     else
+                         sprintf
+                             "%d of %d records still need a description."
+                             missingPurpose
+                             summary.CountedEntries)
+                    (missingPurpose = 0)
+
+                addCheck
+                    "Manual records state why they were entered by hand"
+                    // Structural rather than checked: `Manual` cannot be
+                    // constructed without a `Reason`, so a manual record
+                    // without one does not exist to be found.
+                    (if summary.ManualMilliseconds = 0L then
+                         "No manual records today."
+                     else
+                         sprintf "%s entered by hand, each with a stated reason." (displayExact summary.ManualMilliseconds))
+                    true
+
+                addCheck
+                    "Removed time is excluded but retained"
+                    (if summary.RemovedEntries = 0 then
+                         "Nothing was removed today."
+                     else
+                         sprintf
+                             "%d record(s) removed from totals; their history is kept."
+                             summary.RemovedEntries)
+                    true
+
+                node.Add("checks", checks)
+                node.Add("needsAttention", JsonValue.Create missingPurpose)
+                node.Add("isEmpty", JsonValue.Create empty)
+
+                // The single question the screen exists to answer. Decided by
+                // the domain's own rule, not by counting ticks above.
+                node.Add(
+                    "canAttest",
+                    JsonValue.Create(
+                        not empty && not (obligations |> List.exists Obligation.blocksAttestation)
+                    )
+                )
+
+                node.ToJsonString(jsonOptions)
+    with ex ->
         errorResult (ex.GetType().Name + ": " + ex.Message)
 
 

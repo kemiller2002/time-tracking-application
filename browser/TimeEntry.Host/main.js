@@ -702,6 +702,50 @@ const renderConflict = () => {
   saved.replaceChildren(article)
 }
 
+// The daily review. Whether the day can be attested is the kernel's answer,
+// from the domain's own `Obligation.blocksAttestation` — the page does not
+// decide it by counting ticks.
+const renderReview = () => {
+  const review = ask(kernel.ReviewDay, { entries: state.entries, date: DATE })
+  if (review.ok !== true) return
+
+  const badge = document.getElementById('review-badge')
+  if (badge) {
+    badge.textContent =
+      review.needsAttention === 0 ? 'Complete' : `${review.needsAttention} needs attention`
+    badge.className = `badge ${review.needsAttention === 0 ? 'badge-good' : 'badge-warn'}`
+  }
+
+  const list = document.getElementById('review-checks')
+  if (list) {
+    list.replaceChildren(
+      ...review.checks.map((item) => {
+        const rowEl = el('div', 'review-row')
+        const complete = item.status === 'complete'
+        rowEl.append(
+          el('span', complete ? 'review-mark' : 'review-mark warn', complete ? '✓' : '!'),
+          (() => {
+            const body = el('div')
+            body.append(el('p', 'review-title', item.title), el('p', 'review-note', item.note))
+            return body
+          })(),
+          el('span', 'review-value', complete ? 'Complete' : 'Needs attention')
+        )
+        return rowEl
+      })
+    )
+  }
+
+  setText(
+    'review-attest',
+    review.isEmpty
+      ? 'Nothing is recorded for this day yet.'
+      : review.canAttest
+        ? 'This day is complete and can be attested.'
+        : 'This day cannot be attested until the items above are resolved.'
+  )
+}
+
 // The month. Recomputed from the same entries the day view reads, so the two
 // cannot disagree about what is recorded.
 const renderMonth = () => {
@@ -742,6 +786,7 @@ const renderMonth = () => {
 
 const render = () => {
   renderDay(state.view)
+  renderReview()
   renderMonth()
   renderMerge()
   renderConflict()

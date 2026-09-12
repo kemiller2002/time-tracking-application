@@ -27,6 +27,12 @@ public static partial class Interop
     internal static string Dispatch(string requestJson) => TimeEntry.Kernel.dispatch(requestJson);
 
     /// <summary>
+    /// Forwards a daily review request.
+    /// </summary>
+    [JSExport]
+    internal static string ReviewDay(string requestJson) => TimeEntry.Kernel.reviewDay(requestJson);
+
+    /// <summary>
     /// Forwards a month summary request.
     /// </summary>
     [JSExport]

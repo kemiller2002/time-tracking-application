@@ -46,4 +46,5 @@
 | WI-0041 | TE-041 Make the GitHub API base URL configurable so the browser check need not reach api.github.com | complete |  | medium |
 | WI-0042 | TE-042 Conflict review: show the saved entry's values beside the proposed ones (TE-R-071's review step) | complete |  | medium |
 | WI-0043 | TE-043 Conflict reconciliation on the today screen, and a stale-bundle guard for the browser harness | complete |  | medium |
-| WI-0044 | TE-044 Month view: period summary in Tier 3, wired on the today screen | ready |  | medium |
+| WI-0044 | TE-044 Month view: period summary in Tier 3, wired on the today screen | complete |  | medium |
+| WI-0045 | TE-045 Daily review screen wired against the domain's obligations | ready |  | medium |

@@ -278,6 +278,35 @@ if (ready) {
   check('the page renders one row per projected entry', rows === 3, `${rows} rows`)
 
   // -------------------------------------------------------------------------
+  // Daily review
+  // -------------------------------------------------------------------------
+
+  // All three fixture entries carry descriptions, so nothing needs attention
+  // and the day can be attested.
+  check(
+    'a complete day says so',
+    (await page.textContent('#review-badge'))?.trim() === 'Complete',
+    (await page.textContent('#review-badge'))?.trim()
+  )
+  check(
+    'and whether it can be attested is stated plainly',
+    (await page.textContent('#review-attest'))?.trim() ===
+      'This day is complete and can be attested.',
+    (await page.textContent('#review-attest'))?.trim()
+  )
+  check(
+    'the checks are the kernel\'s, and there are three of them',
+    (await page.locator('#review-checks .review-row').count()) === 3
+  )
+  // The check that is NOT there. Overlap needs an entry's interval, and the
+  // domain models duration only — a tick beside "no overlapping time" would
+  // be an assurance nothing checked (OQ-10).
+  check(
+    'no overlap check is claimed, because it cannot be computed',
+    !(await page.textContent('#review-checks'))?.includes('overlap')
+  )
+
+  // -------------------------------------------------------------------------
   // The month
   // -------------------------------------------------------------------------
 
@@ -413,6 +442,15 @@ if (ready) {
   // it. The effect is named, and no request left the page.
   const effects = (await page.textContent('#create-effects'))?.trim()
   check('the requested effect is named, not performed', effects === 'Requested: PersistNewEntry', effects)
+
+  // The review is recomputed from the same entries the timeline shows, so it
+  // cannot lag behind them. The created entry carries a description, so the
+  // day stays complete — at four records rather than three.
+  check(
+    'the review recomputes after a command',
+    (await page.textContent('#review-checks'))?.includes('4 of 4 records describe the work.'),
+    (await page.textContent('#review-checks'))?.slice(0, 70)
+  )
 
   // -------------------------------------------------------------------------
   // A domain rejection reaches the page as text

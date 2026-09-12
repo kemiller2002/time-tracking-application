@@ -118,6 +118,17 @@
           <div class="form-actions"><button class="button button-primary" type="submit">Merge entries</button></div>
         </form>
       </section>
+      <!-- Daily review, adopted from static-ui-screens/review.html: the
+           checks list and its "needs attention" badge. One check on that
+           screen is absent — "No overlapping time" — because the domain
+           models an entry's duration, not its interval, so overlap is not
+           computable from what is stored and a tick beside it would be an
+           assurance nothing checked (OQ-10). -->
+      <section class="surface surface-pad" id="review-panel" aria-labelledby="review-title">
+        <div class="section-head"><div><h2 class="section-title" id="review-title">Review checks</h2><p class="section-kicker">Checks use the current effective day.</p></div><span class="badge" id="review-badge"></span></div>
+        <div class="review-list" id="review-checks"></div>
+        <p class="field-help" id="review-attest"></p>
+      </section>
       <!-- The month, adopted from static-ui-screens/month.html: the metric
            row, the metric cards, and the daily-rhythm bars. What is NOT here
            is the progress bar against an "80h target" — no repository
