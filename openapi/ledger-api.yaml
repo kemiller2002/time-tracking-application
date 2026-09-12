@@ -368,13 +368,14 @@ paths:
       operationId: amendActivity
       description: >-
         Corrects fields on a Recorded activity, preserving its identity and
-        history. activity_id and entry_method may not be changed even if
-        present in changes — they are silently stripped. The resulting
-        activity (current fields merged with changes) is re-validated by the
-        same rules as creation: required fields, valid time range, no
-        midnight crossing, and no overlap with any other Recorded activity on
-        the same date (the activity's own prior interval is excluded from
-        that check).
+        history. Only a Recorded activity can be amended — a Voided or
+        Superseded one cannot. activity_id and entry_method may not be
+        changed even if present in changes — they are silently stripped. The
+        resulting activity (current fields merged with changes) is
+        re-validated by the same rules as creation: required fields, valid
+        time range, no midnight crossing, and no overlap with any other
+        Recorded activity on the same date (the activity's own prior
+        interval is excluded from that check).
       parameters:
         - name: activityId
           in: path
@@ -410,8 +411,10 @@ paths:
           description: >-
             base_version no longer matches the activity's current version
             (stale_projection; details.current carries the current activity),
-            or the resulting interval overlaps another Recorded activity on
-            the same date (overlapping_activity; details.conflicting_activity_id)
+            the resulting interval overlaps another Recorded activity on
+            the same date (overlapping_activity; details.conflicting_activity_id),
+            or the activity is not currently Recorded — it is Voided or
+            Superseded (activity_not_recorded; details.superseded)
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorResponse'}
@@ -502,7 +505,8 @@ paths:
         Splits a Recorded activity into two or more replacement activities
         that exactly cover its original time span; the source becomes
         Superseded (represented here as voided, with relationships.split_into
-        listing the replacements).
+        listing the replacements). Only a Recorded activity can be split — a
+        Voided or already-Superseded one cannot.
       parameters:
         - name: activityId
           in: path
@@ -535,7 +539,10 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorResponse'}
         '409':
-          description: base_version stale (stale_projection)
+          description: >-
+            base_version stale (stale_projection), or the activity is not
+            currently Recorded — it is Voided or Superseded
+            (activity_not_recorded; details.superseded)
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorResponse'}
@@ -547,8 +554,10 @@ paths:
       description: >-
         Merges two or more Recorded source activities into one new activity;
         each source becomes Superseded (voided, with relationships.merged_from
-        on the result listing them). The store does not itself check that
-        sources are contiguous or share a date — see DOMAIN-REQUIREMENTS.md.
+        on the result listing them). Every source must currently be Recorded
+        — a Voided or already-Superseded source is rejected. The store does
+        not itself check that sources are contiguous or share a date — see
+        DOMAIN-REQUIREMENTS.md.
       requestBody:
         required: true
         content:
@@ -571,7 +580,10 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorResponse'}
         '409':
-          description: A source's base_versions entry is stale (stale_projection)
+          description: >-
+            A source's base_versions entry is stale (stale_projection), or a
+            source is not currently Recorded — it is Voided or Superseded
+            (activity_not_recorded; details.superseded)
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorResponse'}
@@ -580,6 +592,11 @@ paths:
   /activities/{activityId}/evidence:
     post:
       operationId: attachEvidence
+      description: >-
+        Attaches evidence to an activity. Legal on a Recorded or a
+        merely-Voided activity; a Superseded one rejects it — per the
+        capabilities table, being replaced by a split or merge blocks new
+        evidence, but a direct void does not.
       parameters:
         - name: activityId
           in: path
@@ -607,7 +624,10 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorResponse'}
         '409':
-          description: base_version stale (stale_projection)
+          description: >-
+            base_version stale (stale_projection), or the activity is
+            Superseded (activity_superseded) — a merely-Voided activity is
+            still allowed
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorResponse'}
@@ -616,7 +636,11 @@ paths:
   /activities/{activityId}/evidence/{evidenceLinkId}:
     delete:
       operationId: detachEvidence
-      description: A DELETE request that requires a JSON body carrying reason, matching the implemented service contract.
+      description: >-
+        A DELETE request that requires a JSON body carrying reason, matching
+        the implemented service contract. Unlike attaching evidence, this
+        requires the activity to be Recorded — unlinking is not legal on a
+        Voided or Superseded activity.
       parameters:
         - name: activityId
           in: path
@@ -648,7 +672,10 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorResponse'}
         '409':
-          description: base_version stale (stale_projection)
+          description: >-
+            base_version stale (stale_projection), or the activity is not
+            currently Recorded — it is Voided or Superseded
+            (activity_not_recorded; details.superseded)
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorResponse'}
