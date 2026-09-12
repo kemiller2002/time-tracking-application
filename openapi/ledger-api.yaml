@@ -485,7 +485,11 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorResponse'}
         '409':
-          description: base_version stale (stale_projection), or the activity is not currently voided (not_voided)
+          description: >-
+            base_version stale (stale_projection), the activity is not
+            currently voided (not_voided), or the activity is Superseded —
+            replaced by a split or merge, not directly voided
+            (activity_superseded)
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorResponse'}
@@ -820,6 +824,7 @@ components:
         - client_timestamp
         - server_received_at
         - voided
+        - superseded
         - evidence
         - history
         - relationships
@@ -843,6 +848,13 @@ components:
         client_timestamp: {type: [string, 'null'], format: date-time}
         server_received_at: {type: string, format: date-time}
         voided: {type: boolean}
+        superseded:
+          type: boolean
+          description: >-
+            True when this activity was replaced by a split or merge rather
+            than directly voided. A Superseded activity is always also
+            voided, but cannot be restored — only a directly-voided
+            (superseded: false) activity can be.
         evidence:
           type: array
           items: {$ref: '#/components/schemas/EvidenceLink'}
@@ -852,7 +864,11 @@ components:
           description: Raw ledger events behind this projection (audit trail).
         relationships:
           type: object
-          description: e.g. split_into or merged_from activity ids, present only when applicable.
+          description: >-
+            Present only when applicable: split_into (replacement activity
+            ids, on a split source), merged_from (source activity ids, on a
+            merge result), or merged_into (the resulting activity id, on a
+            merge source).
         version: {type: string, minLength: 1}
         updated_at: {type: string, format: date-time}
     ActivityResponse:
