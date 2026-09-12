@@ -16,11 +16,12 @@
 // Written in a functional style: pure rule functions over file contents, one
 // reduction into a findings list, and a single side effect at the end.
 
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, extname } from 'node:path';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const DOMAIN = join(ROOT, 'domain');
+const BROWSER = join(ROOT, 'browser');
 
 const TIERS = {
   'TimeEntry.Semantic': 1,
@@ -167,7 +168,47 @@ const fileFindings = sources
   }))
   .flatMap((file) => RULES.flatMap((rule) => rule(file)));
 
-const findings = [...projectRules(), ...fileFindings];
+// --- browser boundary rules (TE-R-091, TE-R-092) ----------------------------
+
+// The C# shim exists only to carry [JSExport], which is inert in F#. It must
+// forward strings and nothing else, so it may reference the F# kernel and no
+// domain assembly: a shim that can see a domain type can start deciding
+// things about one.
+const shimRules = () => {
+  const shim = join(BROWSER, 'TimeEntry.Host', 'Program.cs');
+  if (!existsSync(shim)) return [];
+  const text = stripComments(readFileSync(shim, 'utf8'));
+
+  return ['TimeEntry.Semantic', 'TimeEntry.Transitions', 'TimeEntry.Projection', 'TimeEntry.Persistence']
+    .filter((assembly) => text.includes(assembly))
+    .map(
+      (assembly) =>
+        `browser/TimeEntry.Host/Program.cs: the interop shim must not reference ${assembly} — ` +
+        'it forwards strings to TimeEntry.Kernel and makes no decisions (TE-R-091)'
+    );
+};
+
+// TE-R-091 forbids the browser from computing totals, sorting, filtering or
+// converting units. These are the mechanical signatures of doing so.
+const bridgeRules = () => {
+  const bridge = join(BROWSER, 'TimeEntry.Host', 'main.js');
+  if (!existsSync(bridge)) return [];
+  const text = stripComments(readFileSync(bridge, 'utf8'));
+
+  const forbidden = [
+    { pattern: /\.reduce\s*\(/, what: 'summing (.reduce) — totals are the kernel\'s (TE-R-080)' },
+    { pattern: /\.sort\s*\(/, what: 'sorting — ordering is the kernel\'s (TE-R-080)' },
+    { pattern: /\.filter\s*\(/, what: 'filtering — the kernel decides visibility (TE-R-080)' },
+    { pattern: /\bMath\./, what: 'arithmetic on domain values (TE-R-085)' },
+    { pattern: /[*/]\s*(?:60|1000|360000)\b/, what: 'time-unit conversion (TE-R-085)' }
+  ];
+
+  return forbidden
+    .filter(({ pattern }) => pattern.test(text))
+    .map(({ what }) => `browser/TimeEntry.Host/main.js: the bridge must not perform ${what}`);
+};
+
+const findings = [...projectRules(), ...shimRules(), ...bridgeRules(), ...fileFindings];
 
 const tierCounts = sources.reduce((counts, path) => {
   const tier = tierOf(path);

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "time-tracking-application",
-  "nextSeq": 30,
+  "nextSeq": 31,
   "items": [
     {
       "id": "WI-0001",
@@ -452,6 +452,20 @@
       "attachments": [],
       "createdAt": "2026-09-12T00:14:19.836Z",
       "updatedAt": "2026-09-12T00:18:51.989Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0030",
+      "title": "TE-030 Source-generated JSON serialization so the WASM host can be trimmed (reflection-based System.Text.Json blocks IL trimming)",
+      "description": null,
+      "tags": [],
+      "priority": "medium",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-12T00:29:51.618Z",
+      "updatedAt": "2026-09-12T00:29:51.618Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null

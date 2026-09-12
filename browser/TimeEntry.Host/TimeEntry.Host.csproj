@@ -1,0 +1,55 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Tier 4 — WASM host. The ONLY C# in the repository.
+
+    It exists for one mechanical reason: the WebAssembly JS-interop
+    attributes are consumed by a Roslyn source generator, so [JSExport] is
+    inert in an F# assembly — verified by publishing an F# module with
+    [<JSExport>] and probing it in Chromium, where getAssemblyExports
+    returned an empty object.
+
+    It must stay pure marshalling: every method forwards a string to the F#
+    kernel and returns a string, so it cannot inspect or decide anything
+    about a command (TE-R-091). If a method here ever needs to know what a
+    command means, the boundary has been breached.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RuntimeIdentifier>browser-wasm</RuntimeIdentifier>
+    <OutputType>Exe</OutputType>
+    <WasmMainJSPath>main.js</WasmMainJSPath>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Nullable>enable</Nullable>
+    <!--
+      Trimming is off deliberately, not as a convenience.
+
+      TimeEntry.Persistence uses reflection-based System.Text.Json, which the
+      trim analyser correctly reports as unsafe (IL2026), and FSharp.Core
+      itself produces trim warnings (IL2104). Trimming with those present
+      risks removing types the serializer needs only at runtime, which would
+      fail in the browser and nowhere else.
+
+      The cost is bundle size. The fix is source-generated serialization
+      (WI-0030); until then this stays false rather than suppressed, so the
+      reason is visible.
+    -->
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Served alongside the app bundle. styles.css is the adopted design
+         system from static-ui-screens (DF-TE-0008), linked rather than
+         copied so the design authority stays in one place. -->
+    <WasmExtraFilesToDeploy Include="index.html" />
+    <WasmExtraFilesToDeploy Include="sample-entry.json" />
+    <WasmExtraFilesToDeploy Include="../../static-ui-screens/styles.css" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../TimeEntry.Kernel/TimeEntry.Kernel.fsproj" />
+  </ItemGroup>
+
+</Project>

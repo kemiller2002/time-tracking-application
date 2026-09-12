@@ -33,7 +33,7 @@ marking work complete merely because code exists.
 | TE-R-003 | 1 unit = 6 min; 10 units = 1 hour | Constants assert it | WI-0005 | `Duration.fs` literals | `DurationTests` "one unit is six minutes and ten units is one hour" | **VERIFIED** |
 | TE-R-004 | No fractional units in authoritative state | `BillableUnits` only constructible by projection | WI-0005 | `Duration.fs` private ctor | `DurationTests` rounding theories | **VERIFIED** |
 | TE-R-005 | elapsed = end − start − paused | Paused intervals subtract | WI-0005 | `Duration.ofInterval` | `DurationTests` "elapsed time subtracts paused intervals" | **VERIFIED** |
-| TE-R-006 | No JS-interval time | Timer not implemented in JS domain | WI-0007 | — | — | NOT IMPLEMENTED (Tier 4 blocked) |
+| TE-R-006 | No JS-interval time | The bridge is forbidden arithmetic; a check enforces it | WI-0007 | `check-domain-architecture` bridge rules | adversarially verified (`.reduce` injection caught) | **VERIFIED** (structurally) |
 | TE-R-007 | No authoritative floating point | No `float` in Tiers 1–3; integer `int64` ms | WI-0005 | `Duration.fs`, `Projection.fs` | `ProjectionTests` "totals sum exact seconds rather than per entry rounded units" | **VERIFIED** |
 | TE-R-008 | Warn on device/server clock skew | — | WI-0016 | — | — | NOT IMPLEMENTED (Tier 4 blocked) |
 | TE-R-009 | Quick durations 6..60 | — | WI-0017 | — | — | NOT IMPLEMENTED (UI, blocked by OQ-5) |
@@ -104,15 +104,15 @@ marking work complete merely because code exists.
 | TE-R-082 | Chronological display | `ChronologicalAscending`/`Descending` | WI-0011 | `Query.EntrySort` | `ProjectionTests` sort cases | **VERIFIED** |
 | TE-R-083 | Empty states | `IsEmpty`; void-only day is not empty | WI-0011 | `ListProjection.IsEmpty` | `ProjectionTests` 2 cases | **VERIFIED** |
 | TE-R-084 | Invalid records handled | Typed `DocumentError`/`DecodeError`, never an exception | WI-0006 | `Persistence.Mapping`, `Serialization` | `PersistenceTests` 12 corruption cases | **VERIFIED** |
-| TE-R-085 | Unit→display at the boundary | Projection computes hours/minutes | WI-0011 | `BillableUnits.toHoursAndMinutes` | `DurationTests` + `ProjectionTests` 23-unit cases | **VERIFIED** |
+| TE-R-085 | Unit→display at the boundary | Projection computes hours/minutes; browser renders verbatim | WI-0011, WI-0007 | `BillableUnits.toHoursAndMinutes`, `Kernel.viewDay` | `DurationTests`, `ProjectionTests`, and `verify-browser-kernel` (52 exact min renders as 0h 54m in Chromium) | **VERIFIED** |
 
 ## H. Boundary and architecture
 
 | Req | Rule | Acceptance criterion | WI | Code | Test | Evidence |
 |---|---|---|---|---|---|---|
 | TE-R-090 | Domain in F# | Tiers 1–3 are F# | WI-0004 | `domain/` | — | **VERIFIED** |
-| TE-R-091 | No domain logic in TS/JS | No TS authored; JS prototype not extended | WI-0007 | — | structural: `domain/` has no JS | HOLDS (nothing added) |
-| TE-R-092 | TS limited to plumbing | — | WI-0007 | — | — | NOT IMPLEMENTED (blocked) |
+| TE-R-091 | No domain logic in TS/JS | Bridge and C# shim both forbidden domain knowledge | WI-0007 | `main.js`, `TimeEntry.Host/Program.cs` | `check-domain-architecture` shim + bridge rules, both adversarially verified | **VERIFIED** |
+| TE-R-092 | TS/JS limited to plumbing | Bridge may not sum, sort, filter, or convert units | WI-0007 | `browser/TimeEntry.Host/main.js` | `check-domain-architecture` bridge rules, adversarially verified | **VERIFIED** |
 | TE-R-093 | No effects in transitions | Effects returned as data | WI-0004 | `Effects.Effect` | `TransitionTests` effect assertions | **VERIFIED** |
 | TE-R-094 | No GitHub shapes in domain | Anti-corruption layer in Tier 4 only; round-trip identity holds | WI-0006 | `Persistence.Documents`, `Mapping`, `Layout` | `PersistenceTests` 9 round-trip + 6 layout cases; tier check | **VERIFIED** |
 | TE-R-095 | Tier 1 infra-free | `netstandard2.0`, FSharp.Core only | WI-0004 | `TimeEntry.Semantic.fsproj` | structural: no PackageReference | **VERIFIED** |
@@ -136,7 +136,7 @@ marking work complete merely because code exists.
 | Verified by build/structure only (no behavioural test yet) | 2 |
 | Holds by construction (nothing to execute) | 2 |
 | Partially verified (Tier 4 half outstanding) | 1 |
-| Awaiting the WASM host and UI integration | 9 |
+| Awaiting full UI integration — 17 screens not yet wired | 6 |
 | Partially verified — transport write path unexercised | 1 (TE-R-099) |
 | Blocked by an open question | **0** — all five resolved as `DF-TE-0004..0008` |
 

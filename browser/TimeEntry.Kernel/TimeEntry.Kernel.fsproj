@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Tier 3/4 — the browser kernel, in F#.
+    A plain library: it holds the logic, and the C# host carries the interop
+    attributes it cannot (see TimeEntry.Host).
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningLevel>5</WarningLevel>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Kernel.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../domain/TimeEntry.Semantic/TimeEntry.Semantic.fsproj" />
+    <ProjectReference Include="../../domain/TimeEntry.Transitions/TimeEntry.Transitions.fsproj" />
+    <ProjectReference Include="../../domain/TimeEntry.Projection/TimeEntry.Projection.fsproj" />
+    <ProjectReference Include="../../domain/TimeEntry.Persistence/TimeEntry.Persistence.fsproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,22 @@
+{
+  "structuralReview": {
+    "excludePaths": [
+      "browser/TimeEntry.Host/bin",
+      "browser/TimeEntry.Host/obj",
+      "browser/TimeEntry.Kernel/bin",
+      "browser/TimeEntry.Kernel/obj",
+      "domain/TimeEntry.Semantic/bin",
+      "domain/TimeEntry.Semantic/obj",
+      "domain/TimeEntry.Transitions/bin",
+      "domain/TimeEntry.Transitions/obj",
+      "domain/TimeEntry.Projection/bin",
+      "domain/TimeEntry.Projection/obj",
+      "domain/TimeEntry.Persistence/bin",
+      "domain/TimeEntry.Persistence/obj",
+      "domain/TimeEntry.GitHub/bin",
+      "domain/TimeEntry.GitHub/obj",
+      "domain/TimeEntry.Tests/bin",
+      "domain/TimeEntry.Tests/obj"
+    ]
+  }
+}

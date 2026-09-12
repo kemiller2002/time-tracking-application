@@ -31,4 +31,5 @@
 | WI-0026 | TE-026 Project domain type with Active/Archived status and project storage per DF-TE-0007 | complete |  | medium |
 | WI-0027 | TE-027 HTTP implementation of the GitHubStore port: Git Data API trees/commits/refs, auth, rate-limit and retry | blocked |  | medium |
 | WI-0028 | TE-028 Verify the GitHub transport write path against a scratch branch (needs a write-capable token; agent proxy denies API writes) | captured |  | medium |
-| WI-0029 | TE-029 Persist the project/activity catalogue and implement LoadProjects in the interpreter | ready |  | medium |
+| WI-0029 | TE-029 Persist the project/activity catalogue and implement LoadProjects in the interpreter | complete |  | medium |
+| WI-0030 | TE-030 Source-generated JSON serialization so the WASM host can be trimmed (reflection-based System.Text.Json blocks IL trimming) | captured |  | medium |

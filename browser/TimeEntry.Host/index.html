@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Today · Echelon Ledger</title>
+  <!-- An empty data URI suppresses the favicon request outright, rather than
+       serving a placeholder or letting every page load log a 404. -->
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <main class="page" id="main">
+    <div class="page-heading">
+      <p class="eyebrow">Today</p>
+      <h1 class="page-title">Thursday, September 10</h1>
+    </div>
+    <section class="surface surface-pad" aria-labelledby="ledger-title">
+      <div class="day-summary">
+        <div>
+          <p class="summary-label" id="ledger-title">Recorded work</p>
+          <p class="summary-value" id="daily-total">—</p>
+        </div>
+        <span class="summary-count" id="activity-count">—</span>
+      </div>
+      <ol class="timeline" id="timeline"></ol>
+    </section>
+  </main>
+  <script type="module" src="main.js"></script>
+</body>
+</html>
