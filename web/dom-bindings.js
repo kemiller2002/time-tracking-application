@@ -38,6 +38,7 @@ export class DomBindings {
   async start() {
     await this.#transport.start();
     this.#bindDelegatedListeners();
+    this.#bindConnectivityRetry();
     const response = await this.#transport.dispatch({ kind: "Initialize", protocolVersion: 1, capabilities: ["Storage"] });
     await this.#apply(response);
   }
@@ -148,6 +149,25 @@ export class DomBindings {
     for (const on of ["submit", "change", "click"]) {
       this.#root.addEventListener(on, (domEvent) => this.#handleDomEvent(on, domEvent));
     }
+  }
+
+  /**
+   * Re-attempts a sync that failed while the browser was offline, without
+   * waiting for the user to notice and click "Sync now" themselves. This
+   * inspects only the engine's own last-rendered `view` (already-public
+   * projection state, same as every `data-if`/`data-text` binding reads) —
+   * never a raw request/response — to decide *whether* to re-dispatch the
+   * exact event the Sync-now button already fires; it never decides *what*
+   * to sync, that stays the engine's call. GitHub sync being unconfigured,
+   * or having failed for a reason unrelated to connectivity, is left alone:
+   * only a sync that's actually in an "error" state gets retried.
+   */
+  #bindConnectivityRetry() {
+    window.addEventListener("online", () => {
+      if (truthy(this.#view.gitHubSyncConfigured) && this.#view.gitHubSyncStatus === "error") {
+        this.dispatch("PushToGitHub", null, null);
+      }
+    });
   }
 
   #handleDomEvent(on, domEvent) {

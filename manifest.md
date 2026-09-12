@@ -94,6 +94,13 @@ cannot import Tier 3/4 even by accident).
   — the only external network call this app makes is to `api.github.com`,
   directly from the browser, using a token the user pastes into the More
   screen's GitHub sync settings; there is no server component).
+- **Offline**: `web/service-worker.js` (registered from `main.js`) keeps the
+  static shell loadable without a network connection, and `web/manifest.webmanifest`
+  makes the app installable; see `docs/UI-OFFLINE-BEHAVIOR.md` for why no
+  offline command queue is needed beyond that (every core command already
+  writes straight to `localStorage`) and how a failed GitHub push retries
+  itself on reconnect (`dom-bindings.js`'s `online`-event listener
+  re-dispatching `PushToGitHub`).
 
 ## Tests and verification
 

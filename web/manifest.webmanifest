@@ -1,0 +1,11 @@
+{
+  "name": "Business Activity Ledger",
+  "short_name": "Ledger",
+  "description": "Record and report on business activities — an F# domain compiled to WebAssembly, running entirely in this browser tab.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#e8e4dc",
+  "theme_color": "#215d57",
+  "icons": [{ "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
