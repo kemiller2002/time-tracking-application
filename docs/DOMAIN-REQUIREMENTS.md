@@ -39,12 +39,9 @@ multi-person.
 
 ## Entities
 
-- **Project**: a stable id, a name, an active/archived status, and a
-  version (`schemas/domain/project.schema.json`).
-- **Activity Type**: a stable id, a name, an active/inactive status, and a
-  version (`schemas/domain/activity-type.schema.json`).
-- **Tag**: a stable id, a name, and an active/inactive status, and a
-  version (`schemas/domain/tag.schema.json`).
+- **Project**, **Activity Type**, and **Tag**: each a stable id, a name, an
+  active/archived status, and a version — one shared `ReferenceItem` shape
+  in `f-sharp/src/Ledger.Domain/Model.fs`.
 - **Activity**: one record of the owner's time — a start time, a duration,
   a project, an activity type, a description, a business purpose, zero or
   more tags, zero or more evidence links, a lifecycle status, a revision,
@@ -241,3 +238,37 @@ GitHub-backed ledger reached only through the Cloudflare service
   stable request IDs (execution contract, Capability 16) are the mechanism
   for this reconciliation and must be designed to support it, not just
   safe retries.
+
+## Implementation
+
+This application's business logic is implemented in F#, compiled to
+WebAssembly, and runs entirely in the browser — not as a server-side API.
+
+- `f-sharp/src/Ledger.Domain/` — the pure domain: `Diagnostics.fs`
+  (the stable failure-reason codes this document's Diagnostics section
+  requires), `Model.fs` (entities, billing, capabilities, the timer state
+  machine), `Summary.fs` (day/month aggregation), `Commands.fs` (every rule
+  above — create, amend, void, restore, split, merge, evidence, attest —
+  behind one shared field-validator), and `Services.fs` (the persistence
+  port a future real backend will implement).
+- `f-sharp/src/Ledger.Engine/` — the wire protocol, session state, view
+  projection, and report rendering that sit between the domain and the
+  browser bridge (`Dispatch.fs`'s `handle` is the sole function the WASM
+  export calls).
+- `f-sharp/src/Ledger.Wasm/` — the marshalling shim compiled to
+  `browser-wasm`.
+- `web/` — a thin JavaScript bridge (`wasm-engine-transport.js`,
+  `dom-bindings.js`) that renders the engine's view and dispatches DOM
+  events back into it; it makes no business decisions of its own.
+
+All three of this document's rules that were not yet enforced by an
+earlier, since-retired server implementation — the derived six-minute
+billing figure, restore re-validating against current state, and merge
+requiring same-date contiguous sources — are implemented as described
+above and covered by `f-sharp/tests/Ledger.Domain.Specs`.
+
+Persistence currently targets this browser's local storage only, via the
+engine's `Storage` effect (see `Dispatch.fs`); the GitHub-backed ledger
+described in the Persistence contract section above is the intended real
+backend and has an extension point named for it (`Ledger.Domain/Services.fs`'s
+`LedgerStore`), but is not yet built.

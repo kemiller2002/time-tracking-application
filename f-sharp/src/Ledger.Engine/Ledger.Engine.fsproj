@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Protocol.fs" />
+    <Compile Include="DocumentCodec.fs" />
+    <Compile Include="Session.fs" />
+    <Compile Include="Reports.fs" />
+    <Compile Include="Projections.fs" />
+    <Compile Include="Dispatch.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ledger.Domain/Ledger.Domain.fsproj" />
+  </ItemGroup>
+</Project>

@@ -1,3 +1,7 @@
+# .NET build output
+bin/
+obj/
+
 # Logs
 logs
 *.log

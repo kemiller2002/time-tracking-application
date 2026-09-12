@@ -1,23 +1,37 @@
 # Echelon Business Activity Ledger
 
-A mobile-first, audit-friendly business activity tracker. The current repository contains a functional frontend prototype and a Cloudflare-only API boundary; it does not contain a production Cloudflare service.
+A mobile-first, audit-friendly business activity tracker. The business logic
+is an F# domain compiled to WebAssembly, running entirely in the browser; a
+thin JavaScript bridge (`web/dom-bindings.js`, `web/wasm-engine-transport.js`)
+renders its view and forwards DOM events into it, but makes no business
+decisions of its own — see [domain requirements](docs/DOMAIN-REQUIREMENTS.md)
+for the rules and where each lives in the code.
 
 ```bash
-npm run dev
-npm test
-npm run check
+npm run test:fsharp   # dotnet-run the F# spec suites
+npm start              # dotnet publish the WASM engine, then serve statically
 ```
 
-Open `http://localhost:4173`. Data is synthetic and persists locally for demonstration. Use browser storage reset to restore the sample day.
+Open `http://localhost:4321/web/index.html`. Activities persist to this
+browser's local storage through the engine's `Storage` effect — they survive
+a reload, but are not synced anywhere else yet (a real backend is a planned
+fast-follow; see the Persistence contract and Implementation sections of the
+domain requirements doc).
 
-## Implemented prototype flows
+## Implemented flows
 
-- Persistent start, pause, resume, and stop timer using authoritative timestamps
-- One-tap favorites and six-minute manual entry
-- Daily ledger, effective activity detail, correction, void/restore, split validation, evidence, and history
-- Daily review/attestation, monthly summary, synchronization and stale-conflict demonstrations
-- Installable offline shell and Shortcut-friendly endpoint guide
+- Persistent start, pause, resume, and stop timer with a 30-second discard
+  threshold
+- Manual activity entry, amendment, void/restore (with re-validation), split,
+  and merge (same-date, contiguous sources only)
+- Evidence attach/detach
+- Daily ledger with a derived six-minute billing figure shown alongside the
+  exact recorded time
+- Daily review/attestation, with "amended after review" flagging
+- Monthly summary and daily/monthly reports in JSON, Markdown, and CSV
 
-All production reads and writes are designed to use `/api/v1` through Cloudflare with secure cookies, idempotency keys, version conflicts, timeouts, and actionable errors. No browser code talks to GitHub or contains credentials.
+## Requirements to run
 
-See [domain requirements](docs/DOMAIN-REQUIREMENTS.md), [UI architecture](docs/UI-ARCHITECTURE.md), [runbook](docs/UI-RUNBOOK.md), and [known limitations](docs/UI-VISUAL-REVIEW.md).
+- .NET SDK 10 with the `wasm-tools` workload (`dotnet workload install
+  wasm-tools`)
+- Python 3 (for the static file server `npm run serve` uses)

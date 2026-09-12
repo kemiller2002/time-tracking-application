@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- This project is a marshalling shim only: the sole [JSExport] method
+         forwards a JSON string into Ledger.Engine.Dispatch.handle and returns
+         its JSON result. It must never contain a business decision. -->
+    <RootNamespace>Ledger.Wasm</RootNamespace>
+    <!-- CA1416 flags JSExportAttribute as browser-only even though this
+         project's sole purpose and only ever build target is browser-wasm
+         (Microsoft.NET.Sdk.WebAssembly); the platform guard has no other
+         caller to protect. -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ledger.Engine/Ledger.Engine.fsproj" />
+    <SupportedPlatform Include="browser" />
+  </ItemGroup>
+</Project>
