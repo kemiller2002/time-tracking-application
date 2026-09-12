@@ -20,6 +20,13 @@ module Session =
         let empty =
             { DurationText = None; ActivityTypeId = None; ProjectId = None; Description = None; BusinessPurpose = None; Outcome = None }
 
+    /// Saved GitHub sync settings. `Token` is a fine-grained personal access
+    /// token the user pastes in directly — per the explicit decision to keep
+    /// this a browser-embedded app with no server component, it is sent
+    /// straight from the browser to the GitHub REST API and never echoed
+    /// back into the view (see Projections.fs).
+    type GitHubSyncConfig = { Owner: string; Repo: string; Path: string; Branch: string; Token: string }
+
     /// Accumulates one field at a time as the browser flushes each changed form
     /// control before the form's own submit event arrives.
     type Draft =
@@ -39,14 +46,20 @@ module Session =
           EvidenceLabel: string option
           SplitParts: Map<int, SplitPartDraft>
           MergeSourceIds: Set<string>
-          AttestationStatement: string option }
+          AttestationStatement: string option
+          GitHubOwner: string option
+          GitHubRepo: string option
+          GitHubPath: string option
+          GitHubBranch: string option
+          GitHubToken: string option }
 
     module Draft =
         let empty =
             { ActivityTypeId = None; ProjectId = None; Description = None; BusinessPurpose = None; Outcome = None
               StartedAt = None; EndedAt = None; ReconstructionReason = None; TagIds = Set.empty; Reason = None
               EvidenceType = None; EvidenceUri = None; EvidenceNote = None; EvidenceLabel = None
-              SplitParts = Map.empty; MergeSourceIds = Set.empty; AttestationStatement = None }
+              SplitParts = Map.empty; MergeSourceIds = Set.empty; AttestationStatement = None
+              GitHubOwner = None; GitHubRepo = None; GitHubPath = None; GitHubBranch = None; GitHubToken = None }
 
     type State =
         { Environment: Environment
@@ -62,9 +75,22 @@ module Session =
           /// decision; see `.sde/architecture/FOUR-TIER-ARCHITECTURE.md`'s
           /// note that presentation-only routing is still Tier 3's to own.
           CurrentScreen: string
-          /// Keyed "create"/"amend"/"void"/"restore"/"split"/"merge"/"evidence"/"timer"/"attest".
+          /// Keyed "create"/"amend"/"void"/"restore"/"split"/"merge"/"evidence"/"timer"/"attest"/"githubConfig"/"githubSync".
           Errors: Map<string, string>
-          PersistenceError: string option }
+          PersistenceError: string option
+          /// None until `SaveGitHubConfig` succeeds. Persisted to its own
+          /// localStorage key (never the synced document) so it survives a
+          /// reload without the token ever entering GitHub-tracked content.
+          GitHubSync: GitHubSyncConfig option
+          /// The Contents API blob `sha` from the last successful pull or
+          /// push — GitHub's own optimistic-concurrency token, reused as the
+          /// next write's `sha` exactly the way `docs/DOMAIN-REQUIREMENTS.md`'s
+          /// persistence contract asks a caller to state the version it last
+          /// read. `None` means "never synced" (the next push creates the file).
+          GitHubDocumentSha: string option
+          /// "idle" | "pulling" | "pushing" | "synced" | "conflict" | "unknown" | "error"
+          GitHubSyncStatus: string
+          GitHubLastSyncedAt: DateTimeOffset option }
 
     /// Seed data mirrors `worker/src/handler.js`'s `defaultBindings` fixtures —
     /// real project/activity-type/tag loading is a fast-follow once a real
@@ -114,6 +140,10 @@ module Session =
           ReportFormat = "json"
           CurrentScreen = "today"
           Errors = Map.empty
-          PersistenceError = None }
+          PersistenceError = None
+          GitHubSync = None
+          GitHubDocumentSha = None
+          GitHubSyncStatus = "idle"
+          GitHubLastSyncedAt = None }
 
     let mutable current: State = initial ()

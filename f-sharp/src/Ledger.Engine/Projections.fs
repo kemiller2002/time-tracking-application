@@ -114,8 +114,21 @@ module Projections =
           "activeCanRestore", VBool(has Restore) ]
 
     let private errorFields (errors: Map<string, string>) =
-        [ "create"; "amend"; "void"; "restore"; "split"; "merge"; "evidence"; "timer"; "attest" ]
+        [ "create"; "amend"; "void"; "restore"; "split"; "merge"; "evidence"; "timer"; "attest"; "githubConfig"; "githubSync" ]
         |> List.map (fun key -> key + "Error", VString(errors |> Map.tryFind key |> Option.defaultValue ""))
+
+    /// Never echoes `Token` back — a pasted personal access token should
+    /// never round-trip into the rendered view, even though nothing outside
+    /// this browser ever sees it either way.
+    let private gitHubSyncFields (sync: Session.GitHubSyncConfig option) (sha: string option) (status: string) (lastSyncedAt: DateTimeOffset option) =
+        [ "gitHubSyncConfigured", VBool sync.IsSome
+          "gitHubSyncOwner", VString(sync |> Option.map (fun c -> c.Owner) |> Option.defaultValue "")
+          "gitHubSyncRepo", VString(sync |> Option.map (fun c -> c.Repo) |> Option.defaultValue "")
+          "gitHubSyncPath", VString(sync |> Option.map (fun c -> c.Path) |> Option.defaultValue "")
+          "gitHubSyncBranch", VString(sync |> Option.map (fun c -> c.Branch) |> Option.defaultValue "")
+          "gitHubSyncSha", VString(sha |> Option.defaultValue "")
+          "gitHubSyncStatus", VString status
+          "gitHubLastSyncedLabel", VString(lastSyncedAt |> Option.map (fun dt -> dt.ToString "HH:mm:ss") |> Option.defaultValue "never") ]
 
     let build (state: Session.State) : Map<string, ViewValue> =
         let daySummary = Summary.forDate state.Document state.SelectedDate
@@ -148,5 +161,6 @@ module Projections =
             monthSummary.VoidCount monthSummary.EvidenceCoverage monthSummary.ByActivityType monthSummary.ByProject
         @ timerFields state.Environment state.TimerState
         @ activeCapabilityFlags activeActivity
+        @ gitHubSyncFields state.GitHubSync state.GitHubDocumentSha state.GitHubSyncStatus state.GitHubLastSyncedAt
         @ errorFields state.Errors
         |> Map.ofList

@@ -214,8 +214,9 @@ not satisfy this requirement.
 ## Persistence contract
 
 Independent of the fact that this application's durable store is a
-GitHub-backed ledger reached only through the Cloudflare service
-(execution contract §3):
+GitHub-backed ledger, reached directly from the browser (no Cloudflare
+service or any other server component sits in between — see
+"Implementation" below):
 
 - Loading a day or activity must distinguish four different outcomes:
   found successfully; not found; a known failure (e.g., connectivity); or
@@ -252,14 +253,16 @@ WebAssembly, and runs entirely in the browser — not as a server-side API.
   behind one shared field-validator), and `Services.fs` (the persistence
   port a future real backend will implement).
 - `f-sharp/src/Ledger.Engine/` — the wire protocol, session state, view
-  projection, and report rendering that sit between the domain and the
-  browser bridge (`Dispatch.fs`'s `handle` is the sole function the WASM
-  export calls).
+  projection, GitHub Contents API translation (`GitHubSync.fs`), and report
+  rendering that sit between the domain and the browser bridge (`Dispatch.fs`'s
+  `handle` is the sole function the WASM export calls).
 - `f-sharp/src/Ledger.Wasm/` — the marshalling shim compiled to
   `browser-wasm`.
 - `web/` — a thin JavaScript bridge (`wasm-engine-transport.js`,
-  `dom-bindings.js`) that renders the engine's view and dispatches DOM
-  events back into it; it makes no business decisions of its own.
+  `dom-bindings.js`) that renders the engine's view, dispatches DOM events
+  back into it, and generically fulfils whatever `Storage`/`Http` effects
+  the engine requests (via `localStorage`/`fetch()`); it makes no business
+  decisions of its own and never inspects a GitHub request or response.
 
 All three of this document's rules that were not yet enforced by an
 earlier, since-retired server implementation — the derived six-minute
@@ -267,8 +270,50 @@ billing figure, restore re-validating against current state, and merge
 requiring same-date contiguous sources — are implemented as described
 above and covered by `f-sharp/tests/Ledger.Domain.Specs`.
 
-Persistence currently targets this browser's local storage only, via the
-engine's `Storage` effect (see `Dispatch.fs`); the GitHub-backed ledger
-described in the Persistence contract section above is the intended real
-backend and has an extension point named for it (`Ledger.Domain/Services.fs`'s
-`LedgerStore`), but is not yet built.
+Persistence is a browser-local `localStorage` cache backed by an optional
+GitHub sync, per the Persistence contract section above:
+
+- `localStorage` remains authoritative moment-to-moment and offline: one
+  `Storage.get` right after the engine initializes, one `Storage.set` after
+  any event that actually changes the document, and again after a GitHub
+  pull replaces it — the cache never goes stale relative to whichever
+  source last won.
+- GitHub sync is opt-in, configured from the More screen (owner, repo, file
+  path, branch, a personal access token). Once configured, every mutating
+  command auto-pushes the whole document to the GitHub Contents API in
+  addition to its `localStorage` save; "Pull latest" and "Sync now" trigger
+  the same requests on demand. This is a deliberate, explicitly-chosen
+  architecture decision, not a default: the token is entered by the user
+  and sent straight from the browser to `api.github.com` — **there is no
+  server component**, matching this app's browser-embedded design. The
+  token is kept in its own `localStorage` key, separate from the synced
+  document, and is never echoed back into the rendered view.
+- The Contents API's blob `sha` *is* the version this contract asks a
+  caller to state on every save — GitHub's own optimistic concurrency check
+  (a stale `sha` on a push returns 409, surfaced as this app's `conflict`
+  sync status) needs no separate version scheme layered on top of it.
+- A pull's or push's outcome is always one of found/not-found(404)/known-
+  failure/invalid-document, or confirmed-success/confirmed-failure/
+  conflict/**unknown** exactly as this contract requires — a dropped
+  connection or timed-out request is reported as `unknown`, never
+  collapsed into success or failure (see `Dispatch.fs`'s `"github-push"`
+  handling and `web/dom-bindings.js`'s `AbortController`-based timeout).
+- `Ledger.Domain/Services.fs`'s `LedgerStore` — an `Async`-shaped port
+  imagined for a future in-process backend adapter — stays an unused,
+  documented extension point rather than becoming load-bearing: the actual
+  WASM↔browser boundary is a single synchronous round-trip per message
+  (`Dispatch.handle`), so GitHub sync is built through the same
+  effect-request/effect-result mechanism as `Storage` instead, in
+  `GitHubSync.fs` + `Dispatch.fs`'s `"github-pull"`/`"github-push"` cases.
+  `LedgerStore`'s outcome vocabulary is still honored in spirit: it's
+  mirrored 1:1 by how a GitHub response status maps to a sync outcome.
+- What this sync does **not** do, as a deliberate scope decision: no
+  background/automatic pull (only an explicit "Pull latest" or a page
+  reload after which `Storage.get` still serves the local cache), no merge
+  of concurrent edits (a pull replaces the in-memory document outright,
+  a push conflict must be resolved by pulling first), and no reconciliation
+  queue for a request whose outcome came back `unknown` (the user is told
+  to pull and check, not offered an automatic retry-and-confirm flow). Any
+  of these would need real design work, not just wiring, and are a
+  reasonable later increment rather than something this pass needed
+  to build.

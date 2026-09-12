@@ -37,10 +37,16 @@ cannot import Tier 3/4 even by accident).
   (30-second discard threshold) and `Capability` module.
 - **Capabilities / authority**: `Model.fs`'s `Capability.forActivity`.
 - **Important effects and effect contracts**: `f-sharp/src/Ledger.Engine/Protocol.fs`'s
-  `EffectRequest`/`EffectResult` (the only effect today is `StorageEffect` —
-  `HttpEffect` is defined but not yet emitted by anything); `f-sharp/src/Ledger.Domain/Services.fs`'s
-  `LedgerStore` (a named, unimplemented port for a future real backend —
-  not on the live path; see Known gaps).
+  `EffectRequest`/`EffectResult` — `StorageEffect` (the `localStorage` cache,
+  always live) and `HttpEffect` (the GitHub Contents API, live once the user
+  configures sync from the More screen; built/parsed by
+  `f-sharp/src/Ledger.Engine/GitHubSync.fs`, routed by `Dispatch.fs`'s
+  `"github-pull"`/`"github-push"` cases). `f-sharp/src/Ledger.Domain/Services.fs`'s
+  `LedgerStore` (a named, unimplemented `Async`-shaped port for a future
+  in-process backend adapter — not on the live path; GitHub sync is built
+  through the effect-request/effect-result mechanism instead, since the
+  WASM↔browser boundary is a single synchronous round-trip per message; see
+  Known gaps).
 - **Presentation state**: `f-sharp/src/Ledger.Engine/Session.fs`'s `Draft` (the
   only presentation-shaped state, and it still lives in Tier 3, not the
   browser — the browser (Tier 4) holds no state of its own beyond what
@@ -56,7 +62,10 @@ cannot import Tier 3/4 even by accident).
 - **Outbound**: `Protocol.fs`'s `EngineToBrowserMessage` (`View` + `Effects` +
   `Cancellations`), rendered/dispatched by `web/dom-bindings.js` and fulfilled
   by `web/wasm-engine-transport.js` (WASM runtime loading) and
-  `dom-bindings.js` (the `Storage` effect, via `window.localStorage`).
+  `dom-bindings.js` (`Storage` via `window.localStorage`, `Http` via `fetch()`
+  — the only external network call this app makes is to `api.github.com`,
+  directly from the browser, using a token the user pastes into the More
+  screen's GitHub sync settings; there is no server component).
 
 ## Tests and verification
 
@@ -117,12 +126,28 @@ cannot import Tier 3/4 even by accident).
     `Ledger.Engine.Specs`'s behavior tests (e.g., nothing mechanically
     checks that every `data-event` name in `web/index.html` has a matching
     case in `Dispatch.fs`'s `handleEvent`).
-  - `Services.fs`'s `LedgerStore` port (the named GitHub-backed-persistence
-    extension point) is not wired to anything — `Protocol.fs`'s
-    `StorageOutcome` now has a third `StorageUnknown` case for SDE Tier-4/
-    persistence-contract conformance, but today's synchronous `localStorage`
-    host in `web/dom-bindings.js` cannot actually produce it; it exists for
-    the future network-backed host.
-  - `EffectRequest.HttpEffect` is defined in `Protocol.fs` but never emitted
-    by `Dispatch.fs` and never fulfilled by `dom-bindings.js` — it is where a
-    future GitHub-backed save would land, not yet built.
+  - `Services.fs`'s `LedgerStore` port stays an unused, documented extension
+    point — GitHub sync (built after this manifest's earlier version) went
+    through `Protocol.fs`'s effect-request/effect-result mechanism instead
+    (`GitHubSync.fs` + `Dispatch.fs`), since `LedgerStore`'s `Async`-shaped
+    port doesn't fit the WASM↔browser boundary's single-synchronous-
+    round-trip-per-message shape. `Protocol.fs`'s `StorageOutcome` still has
+    its `StorageUnknown` case unreachable from today's synchronous
+    `localStorage` host — unlike `Http`, `Storage` has no network-backed
+    implementation, so this case stays a satisfied-in-shape, not-yet-
+    producible conformance point.
+  - GitHub sync has no background/automatic pull, no merge of concurrent
+    edits (a pull replaces the document outright; a push conflict — a stale
+    `sha`, surfaced as GitHub's own 409 — must be resolved by pulling
+    first, not auto-merged), and no reconciliation queue for a request
+    whose outcome came back `unknown` (the user is told to pull and check,
+    not offered an automatic retry-and-confirm flow). All three are
+    documented, deliberate scope decisions in
+    [`docs/DOMAIN-REQUIREMENTS.md`](docs/DOMAIN-REQUIREMENTS.md)'s
+    Implementation section, not gaps discovered after the fact.
+  - The GitHub personal access token lives in this browser's `localStorage`
+    (its own key, separate from the synced document, never echoed into the
+    rendered view) — by the explicit architecture decision behind this
+    feature (browser-embedded, no server component), not an oversight. Its
+    exposure is bounded by this browser/device, same as any other
+    browser-stored credential.

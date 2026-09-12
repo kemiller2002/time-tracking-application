@@ -12,8 +12,11 @@ module Protocol =
 
     type SemanticEvent = { Name: string; Key: string option; Value: string option }
 
+    /// `body` on a success is the response text (e.g. GitHub Contents API's
+    /// JSON, carrying the blob `sha` a caller needs for the next optimistic-
+    /// concurrency write) — absent for responses with no body.
     type EffectOutcome =
-        | OutcomeSuccess of status: int
+        | OutcomeSuccess of status: int * body: string option
         | OutcomeFailure of reason: string
         | OutcomeCancelled
         | OutcomeUnknown of reason: string
@@ -55,8 +58,12 @@ module Protocol =
         | StorageSet of value: string
         | StorageRemove
 
+    /// `headers` and `body` exist for a real remote host (the GitHub Contents
+    /// API this effect was defined for but never emitted until GitHub sync):
+    /// auth headers and a JSON PUT body are not optional there the way they
+    /// are for `Storage`.
     type EffectRequest =
-        | HttpEffect of correlationId: string * method: string * url: string * timeoutMs: int
+        | HttpEffect of correlationId: string * method: string * url: string * headers: (string * string) list * body: string option * timeoutMs: int
         | StorageEffect of correlationId: string * operation: StorageOperation * key: string
 
     type EngineToBrowserMessage =
@@ -89,10 +96,10 @@ module Protocol =
                 let outcomeObj = resultObj.["outcome"].AsObject()
                 let outcome =
                     match outcomeObj.["kind"].GetValue<string>() with
-                    | "Success" -> OutcomeSuccess(outcomeObj.["status"].GetValue<int>())
+                    | "Success" -> OutcomeSuccess(outcomeObj.["status"].GetValue<int>(), optionalString outcomeObj "body")
                     | "Failure" -> OutcomeFailure(outcomeObj.["reason"].GetValue<string>())
                     | "Cancelled" -> OutcomeCancelled
-                    | "OutcomeUnknown" -> OutcomeUnknown(outcomeObj.["reason"].GetValue<string>())
+                    | "Unknown" -> OutcomeUnknown(outcomeObj.["reason"].GetValue<string>())
                     | other -> failwithf "unknown EffectOutcome kind '%s'" other
                 EffectResultMessage(HttpResult(correlationId, outcome))
             | "StorageResult" ->
@@ -124,12 +131,19 @@ module Protocol =
     let private effectRequestNode (effect: EffectRequest) : JsonNode =
         let effectObject = JsonObject()
         match effect with
-        | HttpEffect(correlationId, method, url, timeoutMs) ->
+        | HttpEffect(correlationId, method, url, headers, body, timeoutMs) ->
             effectObject.["kind"] <- JsonValue.Create("Http")
             effectObject.["correlationId"] <- JsonValue.Create(correlationId)
             effectObject.["method"] <- JsonValue.Create(method)
             effectObject.["url"] <- JsonValue.Create(url)
             effectObject.["timeoutMs"] <- JsonValue.Create(timeoutMs)
+            let headersObject = JsonObject()
+            for (name, value) in headers do
+                headersObject.[name] <- JsonValue.Create(value)
+            effectObject.["headers"] <- headersObject
+            match body with
+            | Some text -> effectObject.["body"] <- JsonValue.Create(text)
+            | None -> ()
         | StorageEffect(correlationId, operation, key) ->
             effectObject.["kind"] <- JsonValue.Create("Storage")
             effectObject.["correlationId"] <- JsonValue.Create(correlationId)

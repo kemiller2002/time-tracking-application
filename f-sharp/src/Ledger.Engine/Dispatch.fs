@@ -42,6 +42,11 @@ module Dispatch =
         | "DraftEvidenceUriChanged" -> { draft with EvidenceUri = event.Value }
         | "DraftEvidenceNoteChanged" -> { draft with EvidenceNote = event.Value }
         | "DraftEvidenceLabelChanged" -> { draft with EvidenceLabel = event.Value }
+        | "DraftGitHubOwnerChanged" -> { draft with GitHubOwner = event.Value }
+        | "DraftGitHubRepoChanged" -> { draft with GitHubRepo = event.Value }
+        | "DraftGitHubPathChanged" -> { draft with GitHubPath = event.Value }
+        | "DraftGitHubBranchChanged" -> { draft with GitHubBranch = event.Value }
+        | "DraftGitHubTokenChanged" -> { draft with GitHubToken = event.Value }
         | "ToggleDraftTag" ->
             match event.Key, event.Value with
             | Some tagId, Some "on" -> { draft with TagIds = draft.TagIds.Add tagId }
@@ -297,6 +302,34 @@ module Dispatch =
                 |> withError "timer" (firstMessage diagnostics)
             | Conflict(_, _, diagnostics) -> { state with TimerState = NoTimer } |> withError "timer" (firstMessage diagnostics)
 
+    // --- GitHub sync ---------------------------------------------------------------
+
+    let private handleSaveGitHubConfig (state: Session.State) : Session.State =
+        let d = state.Draft
+        match d.GitHubOwner, d.GitHubRepo, d.GitHubPath, d.GitHubToken with
+        | Some owner, Some repo, Some path, Some token when owner <> "" && repo <> "" && path <> "" && token <> "" ->
+            let config : Session.GitHubSyncConfig =
+                { Owner = owner
+                  Repo = repo
+                  Path = path
+                  Branch = d.GitHubBranch |> Option.filter (fun b -> b <> "") |> Option.defaultValue "main"
+                  Token = token }
+            { state with GitHubSync = Some config; Draft = Session.Draft.empty } |> clearError "githubConfig"
+        | _ -> state |> withError "githubConfig" "Owner, repository, file path, and a token are all required."
+
+    /// These only validate that sync is configured and mark the status as
+    /// in-flight — the actual `HttpEffect` request is built in `handle`,
+    /// which is where every other requested effect is decided too.
+    let private handlePullFromGitHub (state: Session.State) : Session.State =
+        match state.GitHubSync with
+        | Some _ -> { state with GitHubSyncStatus = "pulling" } |> clearError "githubSync"
+        | None -> state |> withError "githubSync" "Save your GitHub sync settings first."
+
+    let private handlePushToGitHub (state: Session.State) : Session.State =
+        match state.GitHubSync with
+        | Some _ -> { state with GitHubSyncStatus = "pushing" } |> clearError "githubSync"
+        | None -> state |> withError "githubSync" "Save your GitHub sync settings first."
+
     let private handleEvent (state: Session.State) (event: SemanticEvent) : Session.State =
         match event.Name with
         | "CreateActivity" -> handleCreate state
@@ -320,6 +353,9 @@ module Dispatch =
         | "ViewActivity" -> { state with ActiveActivityId = event.Key }
         | "SelectReportFormat" -> event.Value |> Option.map (fun f -> { state with ReportFormat = f }) |> Option.defaultValue state
         | "ViewScreen" -> event.Value |> Option.map (fun s -> { state with CurrentScreen = s }) |> Option.defaultValue state
+        | "SaveGitHubConfig" -> handleSaveGitHubConfig state
+        | "PullFromGitHub" -> handlePullFromGitHub state
+        | "PushToGitHub" -> handlePushToGitHub state
         | _ -> { state with Draft = applyDraftField state.Draft event }
 
     /// Never trusts a Storage outcome as silent success or silent failure —
@@ -348,36 +384,99 @@ module Dispatch =
         | StorageResult("save", StorageUnknown reason) ->
             { state with PersistenceError = Some $"Changes may not have saved ({reason}). Do not assume they were lost — reload to check before re-entering them." }
         | StorageResult(_, _) -> state
-        | HttpResult _ -> state
 
-    /// Returns the new state and whether the document changed as a result (the
-    /// only condition that should trigger a Storage.set) — Initialize and
-    /// effect results never do; only a state-mutating Event does, and only when
-    /// it actually succeeded.
-    let private handleMessage (state: Session.State) (message: BrowserToEngineMessage) : Session.State * bool =
+        | HttpResult("github-pull", OutcomeSuccess(status, Some body)) when status >= 200 && status < 300 ->
+            match GitHubSync.parseGetResponse body with
+            | Error message -> { state with GitHubSyncStatus = "error" } |> withError "githubSync" message
+            | Ok parsed ->
+                match DocumentCodec.decode parsed.DocumentJson with
+                | Error message -> { state with GitHubSyncStatus = "error" } |> withError "githubSync" $"GitHub's stored ledger could not be read: {message}"
+                | Ok document ->
+                    match Commands.validateDocument state.Environment document with
+                    | [] ->
+                        { state with
+                            Document = document
+                            GitHubDocumentSha = Some parsed.Sha
+                            GitHubSyncStatus = "synced"
+                            GitHubLastSyncedAt = Some(state.Environment.Clock()) }
+                        |> clearError "githubSync"
+                    | diagnostics ->
+                        { state with GitHubSyncStatus = "error" } |> withError "githubSync" $"GitHub's stored ledger failed validation: {firstMessage diagnostics}"
+        | HttpResult("github-pull", OutcomeSuccess(status, None)) when status >= 200 && status < 300 ->
+            { state with GitHubSyncStatus = "error" } |> withError "githubSync" "GitHub's response had no content."
+        | HttpResult("github-pull", OutcomeSuccess(404, _)) ->
+            { state with GitHubSyncStatus = "idle" } |> withError "githubSync" "No ledger file exists yet at that path — use Sync now to create it."
+        | HttpResult("github-pull", OutcomeSuccess(status, bodyOpt)) ->
+            { state with GitHubSyncStatus = "error" } |> withError "githubSync" $"GitHub returned {status}: {GitHubSync.errorMessage bodyOpt}"
+        | HttpResult("github-pull", OutcomeFailure reason) ->
+            { state with GitHubSyncStatus = "error" } |> withError "githubSync" $"Could not reach GitHub ({reason})."
+        | HttpResult("github-pull", OutcomeCancelled) -> { state with GitHubSyncStatus = "idle" } |> clearError "githubSync"
+        | HttpResult("github-pull", OutcomeUnknown reason) ->
+            { state with GitHubSyncStatus = "unknown" } |> withError "githubSync" $"Could not confirm whether the pull from GitHub succeeded ({reason})."
+
+        | HttpResult("github-push", OutcomeSuccess(status, Some body)) when status = 200 || status = 201 ->
+            match GitHubSync.parsePutResponse body with
+            | Ok sha ->
+                { state with GitHubDocumentSha = Some sha; GitHubSyncStatus = "synced"; GitHubLastSyncedAt = Some(state.Environment.Clock()) }
+                |> clearError "githubSync"
+            | Error message -> { state with GitHubSyncStatus = "error" } |> withError "githubSync" message
+        | HttpResult("github-push", OutcomeSuccess(status, None)) when status = 200 || status = 201 ->
+            { state with GitHubSyncStatus = "error" } |> withError "githubSync" "GitHub's response had no content."
+        | HttpResult("github-push", OutcomeSuccess(409, _)) ->
+            { state with GitHubSyncStatus = "conflict" }
+            |> withError "githubSync" "GitHub has a newer version of the ledger than the one this sync last saw. Pull latest before syncing again."
+        | HttpResult("github-push", OutcomeSuccess(status, bodyOpt)) ->
+            { state with GitHubSyncStatus = "error" } |> withError "githubSync" $"GitHub returned {status}: {GitHubSync.errorMessage bodyOpt}"
+        | HttpResult("github-push", OutcomeFailure reason) ->
+            { state with GitHubSyncStatus = "error" } |> withError "githubSync" $"Could not reach GitHub ({reason})."
+        | HttpResult("github-push", OutcomeCancelled) -> { state with GitHubSyncStatus = "idle" } |> clearError "githubSync"
+        /// An unknown push outcome must never collapse into success or failure —
+        /// the same doctrine `StorageResult("save", StorageUnknown _)` already
+        /// applies above — because the write may or may not have reached GitHub.
+        | HttpResult("github-push", OutcomeUnknown reason) ->
+            { state with GitHubSyncStatus = "unknown" }
+            |> withError "githubSync" $"Changes may not have synced to GitHub ({reason}). Do not assume they were lost — pull latest to check before re-entering them."
+        | HttpResult(_, _) -> state
+
+    /// Returns the new state and the effects it requests. LocalStorage stays
+    /// the fast/offline cache (unchanged from before GitHub sync existed): one
+    /// `Storage.get` right after Initialize, one `Storage.set` after any event
+    /// that actually changed the document, and again after a GitHub pull
+    /// replaces the document — so the cache never goes stale relative to
+    /// whichever source last won. GitHub itself is only ever reached through
+    /// explicit `PullFromGitHub`/`PushToGitHub` events or an auto-push
+    /// immediately following a mutating command, never from an effect result,
+    /// so at most one GitHub request is ever in flight at a time.
+    let private handleMessage (state: Session.State) (message: BrowserToEngineMessage) : Session.State * EffectRequest list =
         match message with
-        | Initialize _ -> state, false
+        | Initialize _ -> state, [ StorageEffect("load", StorageGet, storageKey) ]
         | Event event ->
             let previousSequence = state.Document.EventSequence
             let newState = handleEvent state event
-            newState, newState.Document.EventSequence <> previousSequence
-        | EffectResultMessage result -> handleEffectResult state result, false
+            let documentChanged = newState.Document.EventSequence <> previousSequence
+            let cacheEffects =
+                if documentChanged then [ StorageEffect("save", StorageSet(DocumentCodec.encode newState.Document), storageKey) ] else []
+            let githubEffects =
+                match event.Name, newState.GitHubSync with
+                | "PullFromGitHub", Some config -> [ GitHubSync.buildGetEffect config ]
+                | "PushToGitHub", Some config -> [ GitHubSync.buildPutEffect config newState.GitHubDocumentSha (DocumentCodec.encode newState.Document) ]
+                | _, Some config when documentChanged -> [ GitHubSync.buildPutEffect config newState.GitHubDocumentSha (DocumentCodec.encode newState.Document) ]
+                | _ -> []
+            newState, cacheEffects @ githubEffects
+        | EffectResultMessage result ->
+            let newState = handleEffectResult state result
+            let cacheEffects =
+                match result with
+                | HttpResult("github-pull", OutcomeSuccess(status, Some _)) when status >= 200 && status < 300 ->
+                    [ StorageEffect("save", StorageSet(DocumentCodec.encode newState.Document), storageKey) ]
+                | _ -> []
+            newState, cacheEffects
 
     /// `messageJson`/return value are JSON strings matching
     /// `BrowserToEngineMessage`/`EngineToBrowserMessage` — see Protocol.fs.
-    /// Persistence goes through the Storage effect only — nothing here calls
-    /// `localStorage` directly: one `Storage.get` right after Initialize, one
-    /// `Storage.set` after any event that actually changed the document.
     let handle (messageJson: string) : string =
         let message = Protocol.parseMessage messageJson
-        let newState, documentChanged = handleMessage Session.current message
+        let newState, effects = handleMessage Session.current message
         Session.current <- newState
         let view = Projections.build Session.current
-
-        let effects =
-            match message with
-            | Initialize _ -> [ StorageEffect("load", StorageGet, storageKey) ]
-            | _ when documentChanged -> [ StorageEffect("save", StorageSet(DocumentCodec.encode Session.current.Document), storageKey) ]
-            | _ -> []
-
         Protocol.serializeMessage { View = view; Effects = effects; Cancellations = [] }
