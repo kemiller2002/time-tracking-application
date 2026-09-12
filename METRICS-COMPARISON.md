@@ -127,3 +127,70 @@ Domain+Engine+bridge) but adds real rule coverage the JS version lacked,
 runs entirely client-side with 0 npm dependencies, and its actual
 application code compiles to under 280 KB of WASM — the multi-megabyte
 download is .NET's fixed WASM-runtime cost, not this app's.
+
+## Addendum: GitHub-backed sync feature (PRs #17, #18)
+
+Added after the above was written, across a single conversation's worth of
+follow-up requests: GitHub-backed persistence for the ledger, confined to a
+per-person folder, with round-tripped settings and (separately) a first CI
+workflow for the repo. All figures below are **SELF-REPORT** — commands run
+this session against this repository's own git history — unless marked
+otherwise.
+
+### Development shape
+
+Four incremental commits on one branch, each a direct response to a
+follow-up request in the same conversation, squash-merged as PR #17:
+
+| Commit | What it added | Files changed | Lines |
+|---|---|---|---|
+| `b555839` | Base sync: `Protocol.fs` `Http` shapes, `GitHubSync.fs`, config/pull/push, UI panel | 11 | +606 / -82 |
+| `1d8b43f` | Folder confinement (`<folder>/ledger.json`, never repo root) | 8 | +88 / -37 |
+| `208b7e8` | Per-person segregation (`<folder>/<login>/`) + `metadata.json` | 8 | +407 / -105 |
+| `ca3d678` | Settings round-trip (`settings.json`) + GitHub-config `localStorage` persistence | 8 | +348 / -78 |
+| **Total (PR #17, squashed)** | | **11** | **+1,238 / -91** |
+
+`GitHubSync.fs` — the module owning all GitHub REST API translation — is
+**202 lines**, written new for this feature (`f-sharp/src/Ledger.Engine/`
+had 6 files before it existed).
+
+### Test growth
+
+| | Before (post-#16) | After (post-#17) | Change |
+|---|---|---|---|
+| `Ledger.Domain.Specs` | 49 | 49 | +0 (no Domain/business-rule changes — this was Tier 3/4 work only) |
+| `Ledger.Engine.Specs` | 14 | 38 | **+24** |
+| **Total F# specs** | 63 | 87 | **+24** |
+
+Evidence class: **SELF-REPORT** (`dotnet run --project f-sharp/tests/...`,
+re-run and passing at each of the four commits and again after the squash
+merge).
+
+### Follow-on: CI (PR #18)
+
+A separate, smaller change once the above landed: this repository had **zero
+configured CI checks** at every point checked this session
+(`get_check_runs` returned `total_count: 0` on PRs #16 and #17 alike) — all
+verification was manual, run by hand in whatever session made a change.
+`.github/workflows/fsharp-specs.yml` (28 lines, new) runs this repo's own
+documented `npm run test:fsharp` command on every push/PR. Scoped
+deliberately to the two spec projects, not a full `npm run build:wasm`
+(needs the Emscripten workload installed — a heavier job, not built this
+pass). This is the first time this repository has had automated,
+merge-blocking-capable test execution independent of a human or agent
+remembering to run it by hand.
+
+### Not measured this pass
+
+- **WASM artifact size after the sync feature** — a clean publish was run
+  repeatedly during development (to confirm the build stayed green after
+  each change) but its output size was not re-recorded against the §6
+  baseline above; the feature adds no new WASM-side dependencies (only
+  `System.Text.Json.Nodes`, already linked in via `Protocol.fs`), so no
+  material change is expected, but this is an assumption, not a
+  measurement. Evidence class: **NOT OBSERVABLE** (not measured, not
+  estimated).
+- **Engineering-process metrics** (search operations, repair loops, tokens,
+  cost, wall-clock authoring time) — unchanged from §7's original
+  reasoning: this session has no harness-telemetry access to its own
+  execution history. Evidence class: **NOT OBSERVABLE**.

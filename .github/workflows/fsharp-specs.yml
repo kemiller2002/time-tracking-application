@@ -1,0 +1,28 @@
+name: F# specs
+
+# Runs this repo's own documented test command (package.json's "test"
+# script) on every push/PR — until now, `Ledger.Domain.Specs`/
+# `Ledger.Engine.Specs` were only ever run by hand in whatever session
+# happened to be making a change (see manifest.md's Known gaps: "no
+# automated architecture/boundary check exists"). This doesn't add either
+# of those checks; it closes the more basic gap of there being no CI at
+# all, so a regression is caught before merge instead of by inspection.
+#
+# Deliberately scoped to the spec projects only, not a full WASM publish
+# (`npm run build:wasm`) — that needs the Emscripten/wasm-tools workload
+# installed, a heavier job left for a future addition if it's wanted.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - run: npm run test:fsharp
