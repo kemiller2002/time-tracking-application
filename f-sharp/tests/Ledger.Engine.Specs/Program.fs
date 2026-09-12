@@ -147,15 +147,14 @@ let seedDocument () : LedgerDocument =
 
 let tests : (string * (unit -> unit)) list =
     [
-      "Initialize requests a Storage load with the fixed ledger key", fun () ->
+      "Initialize requests a Storage load for the ledger and one for cached GitHub sync settings", fun () ->
         reset ()
         let response = sendJson initializeMessage
-        let effects = effectsOf response
-        assertTrue (effects.Count = 1) $"expected exactly one effect, got {effects.Count}"
-        let effect = effects.[0].AsObject()
-        assertTrue (effect.["kind"].GetValue<string>() = "Storage") "Initialize did not request a Storage effect"
-        assertTrue (effect.["operation"].GetValue<string>() = "get") "Initialize did not request a get"
-        assertTrue (effect.["key"].GetValue<string>() = "business-activity-ledger:v1") "Initialize used the wrong storage key"
+        let effects = effectsOf response |> Seq.map (fun e -> e.AsObject()) |> List.ofSeq
+        assertTrue (effects.Length = 2) $"expected exactly two effects, got {effects.Length}"
+        assertTrue (effects |> List.forall (fun e -> e.["kind"].GetValue<string>() = "Storage" && e.["operation"].GetValue<string>() = "get")) "Initialize did not request only Storage gets"
+        let keys = effects |> List.map (fun e -> e.["key"].GetValue<string>()) |> Set.ofList
+        assertTrue (keys = Set.ofList [ "business-activity-ledger:v1"; "business-activity-ledger:github-config:v1" ]) $"unexpected storage keys requested: {keys}"
 
       "accumulated draft fields + CreateActivity produce a Recorded row in dayActivities", fun () ->
         reset ()
@@ -291,11 +290,14 @@ let tests : (string * (unit -> unit)) list =
         assertTrue (stringView response "gitHubSyncRepo" = "ledger-data") "repo was not stored"
         assertTrue (stringView response "gitHubSyncFolder" = "time-entries") "folder was not stored"
         assertTrue (stringView response "gitHubSyncBranch" = "main") "an omitted branch did not default to main"
-        let effects = effectsOf response
-        assertTrue (effects.Count = 1) $"expected exactly one effect (the identity lookup), got {effects.Count}"
-        let effect = effects.[0].AsObject()
-        assertTrue (effect.["kind"].GetValue<string>() = "Http" && effect.["method"].GetValue<string>() = "GET" && (effect.["url"].GetValue<string>()).EndsWith "/user")
+        let effects = effectsOf response |> Seq.map (fun e -> e.AsObject()) |> List.ofSeq
+        assertTrue (effects.Length = 2) $"expected the identity lookup plus a config cache-save, got {effects.Length}"
+        let whoami = effects |> List.find (fun e -> e.["kind"].GetValue<string>() = "Http")
+        assertTrue (whoami.["method"].GetValue<string>() = "GET" && (whoami.["url"].GetValue<string>()).EndsWith "/user")
             "SaveGitHubConfig did not request a GET to GitHub's /user endpoint"
+        let cacheSave = effects |> List.find (fun e -> e.["kind"].GetValue<string>() = "Storage")
+        assertTrue (cacheSave.["operation"].GetValue<string>() = "set" && cacheSave.["key"].GetValue<string>() = "business-activity-ledger:github-config:v1")
+            "SaveGitHubConfig did not cache the config to its own localStorage key"
 
       "SaveGitHubConfig with a missing field surfaces githubConfigError and leaves sync unconfigured", fun () ->
         reset ()
@@ -432,6 +434,89 @@ let tests : (string * (unit -> unit)) list =
         let response = sendJson (githubPushUnknown "timed out after 15000ms")
         assertTrue (stringView response "gitHubSyncStatus" = "unknown") "an unknown push outcome was not reported as 'unknown'"
         assertTrue (stringView response "githubSyncError" <> "") "an unknown push outcome gave no guidance to the user"
+
+      // --- Settings round trip (reportFormat, timezone) -----------------------
+
+      "SaveSettings applies a timezone preference locally even without GitHub configured, and requests no effect", fun () ->
+        reset ()
+        sendJson (eventMessage "DraftTimezoneChanged" None (Some "America/New_York")) |> ignore
+        let response = sendJson (eventMessage "SaveSettings" None None)
+        assertTrue (stringView response "timezone" = "America/New_York") "the timezone preference was not applied locally"
+        assertTrue ((effectsOf response).Count = 0) "an unconfigured SaveSettings requested an effect anyway"
+
+      "SelectReportFormat once identified pushes a settings.json PUT containing the new format", fun () ->
+        reset ()
+        configureGitHub "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" "kemiller2002" (Some "Kevin Miller") |> ignore
+        let response = sendJson (eventMessage "SelectReportFormat" None (Some "markdown"))
+        let effects = effectsOf response |> Seq.map (fun e -> e.AsObject()) |> List.ofSeq
+        assertTrue (effects.Length = 1) $"expected exactly one effect (the settings push), got {effects.Length}"
+        let push = effects.[0]
+        assertTrue (push.["kind"].GetValue<string>() = "Http" && push.["method"].GetValue<string>() = "PUT" && (push.["url"].GetValue<string>()).Contains "settings.json")
+            "SelectReportFormat did not PUT settings.json"
+        let decoded = Text.Encoding.UTF8.GetString(Convert.FromBase64String((JsonNode.Parse(push.["body"].GetValue<string>()).AsObject().["content"]).GetValue<string>()))
+        assertTrue (decoded.Contains "\"reportFormat\":\"markdown\"") $"settings push body did not contain the new report format: {decoded}"
+
+      "SaveSettings once identified pushes a settings.json PUT containing the new timezone", fun () ->
+        reset ()
+        configureGitHub "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" "kemiller2002" (Some "Kevin Miller") |> ignore
+        sendJson (eventMessage "DraftTimezoneChanged" None (Some "America/New_York")) |> ignore
+        let response = sendJson (eventMessage "SaveSettings" None None)
+        let effects = effectsOf response |> Seq.map (fun e -> e.AsObject()) |> List.ofSeq
+        assertTrue (effects.Length = 1 && effects.[0].["kind"].GetValue<string>() = "Http") "SaveSettings once identified did not push to GitHub"
+        let decoded = Text.Encoding.UTF8.GetString(Convert.FromBase64String((JsonNode.Parse(effects.[0].["body"].GetValue<string>()).AsObject().["content"]).GetValue<string>()))
+        assertTrue (decoded.Contains "\"timezone\":\"America/New_York\"") $"settings push body did not contain the new timezone: {decoded}"
+
+      "a successful settings pull (200) applies reportFormat and timezone and records the sha", fun () ->
+        reset ()
+        configureGitHub "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" "kemiller2002" (Some "Kevin Miller") |> ignore
+        let settingsJson = GitHubSync.buildSettingsJson "csv" (Some "Europe/London")
+        let response = sendJson (httpResult "github-settings-pull" "Success" (Some 200) (Some(contentsGetBody "settings-sha-1" settingsJson)) None)
+        assertTrue (stringView response "githubSettingsError" = "") "unexpected githubSettings error on a successful settings pull"
+        assertTrue (stringView response "reportFormat" = "csv") "the pulled report format was not applied"
+        assertTrue (stringView response "timezone" = "Europe/London") "the pulled timezone was not applied"
+
+      "a 404 settings pull is treated as 'nothing saved yet', not a failure", fun () ->
+        reset ()
+        configureGitHub "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" "kemiller2002" (Some "Kevin Miller") |> ignore
+        let response = sendJson (httpResult "github-settings-pull" "Success" (Some 404) (Some """{"message":"Not Found"}""") None)
+        assertTrue (stringView response "githubSettingsError" = "") "a 404 settings pull was treated as an error"
+
+      // --- GitHub sync config persistence across a reload ---------------------
+
+      "a cached config missing Login re-triggers the identity lookup on load", fun () ->
+        reset ()
+        let cached : Session.GitHubSyncConfig =
+            { Owner = "kemiller2002"; Repo = "ledger-data"; Folder = "time-entries"; Branch = "main"; Token = "ghp_cached_token"; Login = None; DisplayName = None }
+        let response = sendJson (storageResult "github-config-load" "Success" (Some(GitHubSync.encodeConfig cached)) None)
+        assertTrue (boolView response "gitHubSyncConfigured") "a cached config was not restored into session state"
+        assertTrue (stringView response "gitHubSyncStatus" = "identifying") "status was not 'identifying' for a cached config missing Login"
+        let effects = effectsOf response |> Seq.map (fun e -> e.AsObject()) |> List.ofSeq
+        assertTrue (effects.Length = 1 && effects.[0].["kind"].GetValue<string>() = "Http" && (effects.[0].["url"].GetValue<string>()).EndsWith "/user")
+            "a cached config missing Login did not re-trigger the identity lookup"
+
+      "a cached config that already has Login goes straight to a settings pull on load, skipping the identity lookup", fun () ->
+        reset ()
+        let cached : Session.GitHubSyncConfig =
+            { Owner = "kemiller2002"; Repo = "ledger-data"; Folder = "time-entries"; Branch = "main"; Token = "ghp_cached_token"
+              Login = Some "kemiller2002"; DisplayName = Some "Kevin Miller" }
+        let response = sendJson (storageResult "github-config-load" "Success" (Some(GitHubSync.encodeConfig cached)) None)
+        assertTrue (boolView response "gitHubSyncIdentified") "a cached, already-identified config was not restored as identified"
+        assertTrue (stringView response "gitHubSyncStatus" = "idle") "status was not 'idle' for an already-identified cached config"
+        let effects = effectsOf response |> Seq.map (fun e -> e.AsObject()) |> List.ofSeq
+        assertTrue (effects.Length = 1 && effects.[0].["kind"].GetValue<string>() = "Http" && (effects.[0].["url"].GetValue<string>()).Contains "settings.json")
+            "an already-identified cached config did not go straight to a settings pull"
+
+      "a successful identity lookup re-caches the config (now including Login) and triggers a settings pull", fun () ->
+        reset ()
+        saveGitHubConfig "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" |> ignore
+        let response = resolveIdentity "kemiller2002" (Some "Kevin Miller")
+        let effects = effectsOf response |> Seq.map (fun e -> e.AsObject()) |> List.ofSeq
+        assertTrue (effects.Length = 2) $"expected a config re-cache and a settings pull, got {effects.Length}"
+        let cacheSave = effects |> List.find (fun e -> e.["kind"].GetValue<string>() = "Storage")
+        assertTrue (cacheSave.["key"].GetValue<string>() = "business-activity-ledger:github-config:v1") "the re-cache did not target the github-config storage key"
+        assertTrue (cacheSave.["value"].GetValue<string>().Contains "\"login\":\"kemiller2002\"") "the re-cached config did not include the resolved login"
+        let settingsPull = effects |> List.find (fun e -> e.["kind"].GetValue<string>() = "Http")
+        assertTrue ((settingsPull.["url"].GetValue<string>()).Contains "settings.json") "the identity lookup did not follow up with a settings pull"
 
       // --- Multi-person folder segregation (GitHubSync module directly) ------
 

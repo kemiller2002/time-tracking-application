@@ -72,7 +72,8 @@ module Session =
           GitHubRepo: string option
           GitHubFolder: string option
           GitHubBranch: string option
-          GitHubToken: string option }
+          GitHubToken: string option
+          Timezone: string option }
 
     module Draft =
         let empty =
@@ -80,7 +81,8 @@ module Session =
               StartedAt = None; EndedAt = None; ReconstructionReason = None; TagIds = Set.empty; Reason = None
               EvidenceType = None; EvidenceUri = None; EvidenceNote = None; EvidenceLabel = None
               SplitParts = Map.empty; MergeSourceIds = Set.empty; AttestationStatement = None
-              GitHubOwner = None; GitHubRepo = None; GitHubFolder = None; GitHubBranch = None; GitHubToken = None }
+              GitHubOwner = None; GitHubRepo = None; GitHubFolder = None; GitHubBranch = None; GitHubToken = None
+              Timezone = None }
 
     type State =
         { Environment: Environment
@@ -96,14 +98,21 @@ module Session =
           /// decision; see `.sde/architecture/FOUR-TIER-ARCHITECTURE.md`'s
           /// note that presentation-only routing is still Tier 3's to own.
           CurrentScreen: string
-          /// Keyed "create"/"amend"/"void"/"restore"/"split"/"merge"/"evidence"/"timer"/"attest"/"githubConfig"/"githubSync"/"githubMetadata".
+          /// Keyed "create"/"amend"/"void"/"restore"/"split"/"merge"/"evidence"/"timer"/"attest"/"githubConfig"/"githubSync"/"githubMetadata"/"githubSettings".
           Errors: Map<string, string>
           PersistenceError: string option
-          /// None until `SaveGitHubConfig` succeeds. Session-only today — a
-          /// reload clears it and the identity lookup re-runs on the next
-          /// save; `GitHubSync.encodeConfig`/`decodeConfig` exist for a
-          /// localStorage-backed version of this but nothing yet calls them
-          /// from `Dispatch.fs` (see manifest.md's Known gaps).
+          /// A user preference — not business data, so it lives here rather
+          /// than in `LedgerDocument`. `None` until `SaveSettings` sets it or
+          /// a GitHub settings pull restores one. Mirrors `Model.Config`'s
+          /// dormant `Timezone` field, which nothing else in the domain
+          /// reads yet; storing and round-tripping the preference is in
+          /// scope now, deeper timezone-aware behavior is not.
+          Timezone: string option
+          /// None until `SaveGitHubConfig` succeeds, or a cached config is
+          /// found on `Initialize` (see `GitHubSync.encodeConfig`/`decodeConfig`
+          /// and the "github-config-load"/"github-config-save" Storage keys
+          /// in `Dispatch.fs`) — a separate localStorage key from the synced
+          /// document, so the token never enters GitHub-tracked content.
           GitHubSync: GitHubSyncConfig option
           /// The ledger file's Contents API blob `sha` from the last
           /// successful pull or push — GitHub's own optimistic-concurrency
@@ -115,6 +124,8 @@ module Session =
           /// The same, for `metadata.json` — a separate blob with its own
           /// independent version history, never conflated with the ledger's.
           GitHubMetadataSha: string option
+          /// The same, for `settings.json` (`ReportFormat`/`Timezone`).
+          GitHubSettingsSha: string option
           /// "idle" | "identifying" | "pulling" | "pushing" | "synced" | "conflict" | "unknown" | "error"
           GitHubSyncStatus: string
           GitHubLastSyncedAt: DateTimeOffset option }
@@ -168,9 +179,11 @@ module Session =
           CurrentScreen = "today"
           Errors = Map.empty
           PersistenceError = None
+          Timezone = None
           GitHubSync = None
           GitHubDocumentSha = None
           GitHubMetadataSha = None
+          GitHubSettingsSha = None
           GitHubSyncStatus = "idle"
           GitHubLastSyncedAt = None }
 

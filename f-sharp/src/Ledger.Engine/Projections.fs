@@ -114,7 +114,7 @@ module Projections =
           "activeCanRestore", VBool(has Restore) ]
 
     let private errorFields (errors: Map<string, string>) =
-        [ "create"; "amend"; "void"; "restore"; "split"; "merge"; "evidence"; "timer"; "attest"; "githubConfig"; "githubSync"; "githubMetadata" ]
+        [ "create"; "amend"; "void"; "restore"; "split"; "merge"; "evidence"; "timer"; "attest"; "githubConfig"; "githubSync"; "githubMetadata"; "githubSettings" ]
         |> List.map (fun key -> key + "Error", VString(errors |> Map.tryFind key |> Option.defaultValue ""))
 
     /// Never echoes `Token` back — a pasted personal access token should
@@ -160,6 +160,7 @@ module Projections =
           "activeActivityEvidence", VItems(activeActivity |> Option.map (fun a -> a.Evidence |> List.map (evidenceItem a)) |> Option.defaultValue [])
           "reportFormat", VString state.ReportFormat
           "reportContent", VString(Reports.renderDay state.ReportFormat daySummary)
+          "timezone", VString(state.Timezone |> Option.defaultValue "")
           "persistenceError", VString(state.PersistenceError |> Option.defaultValue "") ]
         @ summaryFields "day" daySummary.TotalExactMs daySummary.TotalBilledMinutes daySummary.DecimalHours daySummary.ManualCount daySummary.CorrectionCount
             daySummary.VoidCount daySummary.EvidenceCoverage daySummary.ByActivityType daySummary.ByProject

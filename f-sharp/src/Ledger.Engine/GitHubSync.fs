@@ -28,6 +28,7 @@ module GitHubSync =
     /// the door to pointing this app at an existing, unrelated file.
     let private dataFileName = "ledger.json"
     let private metadataFileName = "metadata.json"
+    let private settingsFileName = "settings.json"
 
     /// `<Folder>/<Login>` — the repository is never assumed to belong to
     /// this app alone (hence `Folder`), and that folder is never assumed to
@@ -40,6 +41,7 @@ module GitHubSync =
 
     let dataFilePath (config: Session.GitHubSyncConfig) (login: string) = $"{personFolder config login}/{dataFileName}"
     let metadataFilePath (config: Session.GitHubSyncConfig) (login: string) = $"{personFolder config login}/{metadataFileName}"
+    let settingsFilePath (config: Session.GitHubSyncConfig) (login: string) = $"{personFolder config login}/{settingsFileName}"
 
     /// GitHub's Contents API path segments are percent-encoded individually —
     /// `Uri.EscapeDataString` on the whole path would also encode the `/`
@@ -85,6 +87,17 @@ module GitHubSync =
         let body = putBody sha config.Branch "Update profile metadata" metadataJson
         HttpEffect("github-metadata-push", "PUT", contentsUrl config (metadataFilePath config login), headers config.Token, Some body, 15000)
 
+    /// Round-tripped, unlike `metadata.json`: pulled on identity resolution
+    /// (fresh save or a cached config reload) and applied to the session, so
+    /// a preference set on one device follows the person to another.
+    let buildSettingsGetEffect (config: Session.GitHubSyncConfig) (login: string) : EffectRequest =
+        let url = $"{contentsUrl config (settingsFilePath config login)}?ref={Uri.EscapeDataString config.Branch}"
+        HttpEffect("github-settings-pull", "GET", url, headers config.Token, None, 15000)
+
+    let buildSettingsPutEffect (config: Session.GitHubSyncConfig) (login: string) (sha: string option) (settingsJson: string) : EffectRequest =
+        let body = putBody sha config.Branch "Update settings" settingsJson
+        HttpEffect("github-settings-push", "PUT", contentsUrl config (settingsFilePath config login), headers config.Token, Some body, 15000)
+
     /// The GET response's `content` is base64 with embedded newlines every 60
     /// characters — `Convert.FromBase64String` tolerates embedded whitespace,
     /// so no pre-processing is needed before decoding.
@@ -125,6 +138,25 @@ module GitHubSync =
         o.["displayName"] <- (match displayName with Some n -> JsonValue.Create(n) :> JsonNode | None -> null)
         o.["lastSyncedAt"] <- JsonValue.Create(lastSyncedAt.ToString "O")
         o.ToJsonString()
+
+    /// `settings.json`'s content — user preferences, not business data (see
+    /// `Session.State.Timezone`'s doc comment). Unlike `metadata.json`, this
+    /// file is read back by this app itself (`parseSettingsJson`), so both
+    /// fields are optional on decode: a partially-written or older file
+    /// should update only the preferences it actually has an opinion about.
+    let buildSettingsJson (reportFormat: string) (timezone: string option) : string =
+        let o = JsonObject()
+        o.["reportFormat"] <- JsonValue.Create(reportFormat)
+        o.["timezone"] <- (match timezone with Some tz -> JsonValue.Create(tz) :> JsonNode | None -> null)
+        o.ToJsonString()
+
+    let parseSettingsJson (json: string) : Result<{| ReportFormat: string option; Timezone: string option |}, string> =
+        try
+            let node = JsonNode.Parse(json).AsObject()
+            let optionalString (key: string) = match node.[key] with null -> None | n -> (try Some(n.GetValue<string>()) with _ -> None)
+            Ok {| ReportFormat = optionalString "reportFormat"; Timezone = optionalString "timezone" |}
+        with ex ->
+            Error $"Saved settings could not be read: {ex.Message}"
 
     /// GitHub's Contents API error responses carry a JSON `message` field;
     /// fall back to the raw body when it doesn't parse as that shape.

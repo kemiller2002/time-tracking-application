@@ -404,6 +404,20 @@
               </div>
               <pre class="report-content" data-text="reportContent"></pre>
             </section>
+            <section class="surface surface-pad" aria-labelledby="preferences-title">
+              <h2 class="section-title" id="preferences-title">Preferences</h2>
+              <p class="page-intro">Report format (above) and timezone are saved to GitHub alongside your ledger once sync is configured below, so they follow you to another device.</p>
+              <div class="form-grid">
+                <div class="field">
+                  <label for="timezone">Timezone <span class="field-help">Current: <span data-text="timezone"></span></span></label>
+                  <input id="timezone" type="text" placeholder="America/New_York" data-event="DraftTimezoneChanged" data-on="change" />
+                </div>
+              </div>
+              <div class="form-actions">
+                <button type="button" class="button button-secondary" data-event="SaveSettings" data-on="click">Save preferences</button>
+              </div>
+              <p class="field-error" role="alert" aria-live="assertive" data-if="githubSettingsError" data-text="githubSettingsError" hidden></p>
+            </section>
             <section class="surface surface-pad" aria-labelledby="github-sync-title">
               <h2 class="section-title" id="github-sync-title">GitHub sync</h2>
               <p class="page-intro">Local storage stays the fast, offline-safe cache. Your personal access token is stored only in this browser and sent directly to GitHub's API &mdash; there is no server in between. This app's data stays confined to its own folder in the repository you choose, and inside that folder to one subfolder per person (identified from your token, not typed) &mdash; several people can point the same repository at this app without colliding.</p>

@@ -337,20 +337,36 @@ GitHub sync, per the Persistence contract section above:
   `GitHubSync.fs` + `Dispatch.fs`'s `"github-pull"`/`"github-push"` cases.
   `LedgerStore`'s outcome vocabulary is still honored in spirit: it's
   mirrored 1:1 by how a GitHub response status maps to a sync outcome.
+- Alongside `ledger.json`/`metadata.json`, this app also writes and reads
+  back `settings.json` — `{reportFormat, timezone}`
+  (`GitHubSync.buildSettingsJson`/`parseSettingsJson`), the user
+  preferences that exist today. Unlike `metadata.json`, this file *is*
+  round-tripped: it's pulled and applied as soon as identity resolves
+  (fresh from `SaveGitHubConfig`, or from a cached config on reload — see
+  below), and pushed again whenever `SelectReportFormat` or `SaveSettings`
+  changes a preference, so a preference set on one device follows the
+  person to another. A 404 here means "nothing saved yet," not a failure,
+  same as for the ledger.
+- The GitHub sync settings themselves (owner/repo/folder/branch/token,
+  plus the resolved login/display name) are cached in their own
+  `localStorage` key (`GitHubSync.encodeConfig`/`decodeConfig`), separate
+  from the ledger's own cache key, so a reload doesn't force re-entering
+  them or re-running the identity lookup: a cached config missing `Login`
+  (an older save, or the lookup never finished) re-triggers `GET /user`;
+  one that already has a `Login` goes straight to pulling `settings.json`.
+  A successful identity lookup re-caches the config (now including
+  `Login`/`DisplayName`) so the next reload skips the lookup too.
 - What this sync does **not** do, as a deliberate scope decision: no
-  background/automatic pull (only an explicit "Pull latest" or a page
-  reload after which `Storage.get` still serves the local cache), no merge
-  of concurrent edits (a pull replaces the in-memory document outright,
-  a push conflict must be resolved by pulling first), no reconciliation
+  background/automatic pull of the *ledger* (only an explicit "Pull
+  latest" — settings are the exception, see above), no merge of
+  concurrent edits (a pull replaces the in-memory document outright, a
+  push conflict must be resolved by pulling first), no reconciliation
   queue for a request whose outcome came back `unknown` (the user is told
-  to pull and check, not offered an automatic retry-and-confirm flow), no
-  atomic multi-file commit (`ledger.json` and `metadata.json` are two
-  independent Contents API writes, not one commit touching both — a
-  metadata write can fail or lag behind the ledger write without losing
-  ledger data, but the two files' histories are not guaranteed to move
-  together), and no persistence of the saved sync settings themselves
-  across a reload (`GitHubSync.encodeConfig`/`decodeConfig` exist for this,
-  but `Dispatch.fs` doesn't yet call them — a reload clears `GitHubSync`
-  and the identity lookup re-runs on the next save). Any of these would
-  need real design work, not just wiring, and are a reasonable later
-  increment rather than something this pass needed to build.
+  to pull and check, not offered an automatic retry-and-confirm flow),
+  and no atomic multi-file commit (`ledger.json`, `metadata.json`, and
+  `settings.json` are independent Contents API writes, not one commit
+  touching all three — one can fail or lag behind another without losing
+  the others' data, but their histories are not guaranteed to move
+  together). Any of these would need real design work, not just wiring,
+  and are a reasonable later increment rather than something this pass
+  needed to build.

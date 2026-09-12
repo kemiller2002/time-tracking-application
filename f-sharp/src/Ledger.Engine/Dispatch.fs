@@ -14,6 +14,7 @@ open Ledger.Engine.Protocol
 module Dispatch =
 
     let private storageKey = "business-activity-ledger:v1"
+    let private githubConfigStorageKey = "business-activity-ledger:github-config:v1"
 
     let private firstMessage (diagnostics: Diagnostic list) =
         diagnostics |> List.tryHead |> Option.map (fun d -> d.Message) |> Option.defaultValue "The request could not be completed."
@@ -47,6 +48,7 @@ module Dispatch =
         | "DraftGitHubFolderChanged" -> { draft with GitHubFolder = event.Value }
         | "DraftGitHubBranchChanged" -> { draft with GitHubBranch = event.Value }
         | "DraftGitHubTokenChanged" -> { draft with GitHubToken = event.Value }
+        | "DraftTimezoneChanged" -> { draft with Timezone = event.Value }
         | "ToggleDraftTag" ->
             match event.Key, event.Value with
             | Some tagId, Some "on" -> { draft with TagIds = draft.TagIds.Add tagId }
@@ -327,12 +329,21 @@ module Dispatch =
                 GitHubSync = Some config
                 GitHubDocumentSha = None
                 GitHubMetadataSha = None
+                GitHubSettingsSha = None
                 GitHubSyncStatus = "identifying"
                 Draft = Session.Draft.empty }
             |> clearError "githubConfig"
             |> clearError "githubSync"
             |> clearError "githubMetadata"
+            |> clearError "githubSettings"
         | _ -> state |> withError "githubConfig" "Owner, repository, and a token are all required."
+
+    /// Applies the timezone preference locally regardless of GitHub sync —
+    /// it's a legitimate local-only preference too. The push to GitHub (if
+    /// configured and identified) is decided in `handle`, same as every
+    /// other requested effect.
+    let private handleSaveSettings (state: Session.State) : Session.State =
+        { state with Timezone = state.Draft.Timezone |> Option.orElse state.Timezone; Draft = Session.Draft.empty }
 
     /// These only validate preconditions and mark the status as in-flight —
     /// the actual `HttpEffect` request is built in `handle`, which is where
@@ -375,6 +386,7 @@ module Dispatch =
         | "SaveGitHubConfig" -> handleSaveGitHubConfig state
         | "PullFromGitHub" -> handlePullFromGitHub state
         | "PushToGitHub" -> handlePushToGitHub state
+        | "SaveSettings" -> handleSaveSettings state
         | _ -> { state with Draft = applyDraftField state.Draft event }
 
     /// Never trusts a Storage outcome as silent success or silent failure —
@@ -402,6 +414,20 @@ module Dispatch =
         /// is where its reconciliation surfaces once built.
         | StorageResult("save", StorageUnknown reason) ->
             { state with PersistenceError = Some $"Changes may not have saved ({reason}). Do not assume they were lost — reload to check before re-entering them." }
+
+        /// A cache-read failure here is silent rather than surfaced as an
+        /// error: unlike the ledger's own Storage load, this is an optional
+        /// convenience (remembering GitHub sync settings across a reload) —
+        /// the user can always just re-enter them, so a scary banner on
+        /// every page load would cost more than it protects.
+        | StorageResult("github-config-load", StorageSuccess(Some json)) ->
+            match GitHubSync.decodeConfig json with
+            | Ok config -> { state with GitHubSync = Some config; GitHubSyncStatus = (if config.Login.IsSome then "idle" else "identifying") }
+            | Error _ -> state
+        | StorageResult("github-config-load", StorageSuccess None) -> state
+        | StorageResult("github-config-load", StorageFailure _) -> state
+        | StorageResult("github-config-load", StorageUnknown _) -> state
+
         | StorageResult(_, _) -> state
 
         | HttpResult("github-pull", OutcomeSuccess(status, Some body)) when status >= 200 && status < 300 ->
@@ -498,6 +524,47 @@ module Dispatch =
         | HttpResult("github-metadata-push", OutcomeUnknown reason) ->
             state |> withError "githubMetadata" $"Profile metadata may not have synced to GitHub ({reason})."
 
+        /// Unlike `metadata.json`, `settings.json` is round-tripped: applying
+        /// it here is what makes a preference set on one device follow the
+        /// person to another (their own error key, `githubSettings`, for the
+        /// same reason `githubMetadata` is separate from `githubSync`).
+        | HttpResult("github-settings-pull", OutcomeSuccess(status, Some body)) when status >= 200 && status < 300 ->
+            match GitHubSync.parseGetResponse body with
+            | Error message -> state |> withError "githubSettings" message
+            | Ok parsed ->
+                match GitHubSync.parseSettingsJson parsed.DocumentJson with
+                | Error message -> state |> withError "githubSettings" message
+                | Ok settings ->
+                    { state with
+                        ReportFormat = settings.ReportFormat |> Option.defaultValue state.ReportFormat
+                        Timezone = settings.Timezone |> Option.orElse state.Timezone
+                        GitHubSettingsSha = Some parsed.Sha }
+                    |> clearError "githubSettings"
+        | HttpResult("github-settings-pull", OutcomeSuccess(status, None)) when status >= 200 && status < 300 ->
+            state |> withError "githubSettings" "GitHub's response had no content."
+        | HttpResult("github-settings-pull", OutcomeSuccess(404, _)) -> state |> clearError "githubSettings" // no settings saved yet — not an error
+        | HttpResult("github-settings-pull", OutcomeSuccess(status, bodyOpt)) ->
+            state |> withError "githubSettings" $"GitHub returned {status} loading settings: {GitHubSync.errorMessage bodyOpt}"
+        | HttpResult("github-settings-pull", OutcomeFailure reason) -> state |> withError "githubSettings" $"Could not load settings from GitHub ({reason})."
+        | HttpResult("github-settings-pull", OutcomeCancelled) -> state
+        | HttpResult("github-settings-pull", OutcomeUnknown reason) ->
+            state |> withError "githubSettings" $"Could not confirm whether settings loaded from GitHub ({reason})."
+
+        | HttpResult("github-settings-push", OutcomeSuccess(status, Some body)) when status = 200 || status = 201 ->
+            match GitHubSync.parsePutResponse body with
+            | Ok sha -> { state with GitHubSettingsSha = Some sha } |> clearError "githubSettings"
+            | Error message -> state |> withError "githubSettings" message
+        | HttpResult("github-settings-push", OutcomeSuccess(status, None)) when status = 200 || status = 201 ->
+            state |> withError "githubSettings" "GitHub's response had no content for settings."
+        | HttpResult("github-settings-push", OutcomeSuccess(409, _)) ->
+            state |> withError "githubSettings" "Settings on GitHub changed since these were last loaded — pull latest before saving preferences again."
+        | HttpResult("github-settings-push", OutcomeSuccess(status, bodyOpt)) ->
+            state |> withError "githubSettings" $"GitHub returned {status} saving settings: {GitHubSync.errorMessage bodyOpt}"
+        | HttpResult("github-settings-push", OutcomeFailure reason) -> state |> withError "githubSettings" $"Could not reach GitHub to save settings ({reason})."
+        | HttpResult("github-settings-push", OutcomeCancelled) -> state
+        | HttpResult("github-settings-push", OutcomeUnknown reason) ->
+            state |> withError "githubSettings" $"Settings may not have saved to GitHub ({reason})."
+
         | HttpResult(_, _) -> state
 
     /// Returns the new state and the effects it requests. LocalStorage stays
@@ -505,28 +572,39 @@ module Dispatch =
     /// `Storage.get` right after Initialize, one `Storage.set` after any event
     /// that actually changed the document, and again after a GitHub pull
     /// replaces the document — so the cache never goes stale relative to
-    /// whichever source last won. GitHub itself is only ever reached through
-    /// `SaveGitHubConfig` (identity lookup), explicit `PullFromGitHub`/
-    /// `PushToGitHub` events, or an auto-push immediately following a
-    /// mutating command, never from an effect result, so at most one GitHub
-    /// request is ever in flight at a time. A push always writes both
-    /// `ledger.json` and `metadata.json` — two independent Contents API
-    /// calls, not one atomic commit (see `GitHubSync.buildMetadataPutEffect`'s
-    /// doc comment and `docs/DOMAIN-REQUIREMENTS.md`'s documented scope).
+    /// whichever source last won. A second, independent `Storage.get`
+    /// (`"github-config-load"`) also fires on Initialize, caching whatever
+    /// GitHub sync settings were last saved (see `GitHubSync.encodeConfig`).
+    /// GitHub itself is only ever reached through `SaveGitHubConfig`
+    /// (identity lookup), a cached config resolving on load, explicit
+    /// `PullFromGitHub`/`PushToGitHub`/`SaveSettings`/`SelectReportFormat`
+    /// events, or an auto-push immediately following a mutating command,
+    /// never from an effect result, so at most one GitHub request is ever in
+    /// flight at a time. A ledger push always writes both `ledger.json` and
+    /// `metadata.json` — two independent Contents API calls, not one atomic
+    /// commit (see `GitHubSync.buildMetadataPutEffect`'s doc comment and
+    /// `docs/DOMAIN-REQUIREMENTS.md`'s documented scope).
     let private handleMessage (state: Session.State) (message: BrowserToEngineMessage) : Session.State * EffectRequest list =
         match message with
-        | Initialize _ -> state, [ StorageEffect("load", StorageGet, storageKey) ]
+        | Initialize _ ->
+            state, [ StorageEffect("load", StorageGet, storageKey); StorageEffect("github-config-load", StorageGet, githubConfigStorageKey) ]
         | Event event ->
             let previousSequence = state.Document.EventSequence
             let newState = handleEvent state event
             let documentChanged = newState.Document.EventSequence <> previousSequence
             let cacheEffects =
-                if documentChanged then [ StorageEffect("save", StorageSet(DocumentCodec.encode newState.Document), storageKey) ] else []
+                (if documentChanged then [ StorageEffect("save", StorageSet(DocumentCodec.encode newState.Document), storageKey) ] else [])
+                @ (match event.Name, newState.GitHubSync with
+                   | "SaveGitHubConfig", Some config -> [ StorageEffect("github-config-save", StorageSet(GitHubSync.encodeConfig config), githubConfigStorageKey) ]
+                   | _ -> [])
             let pushEffects (config: Session.GitHubSyncConfig) (login: string) =
                 let now = newState.Environment.Clock()
                 let metadataJson = GitHubSync.buildMetadataJson login config.DisplayName now
                 [ GitHubSync.buildPutEffect config login newState.GitHubDocumentSha (DocumentCodec.encode newState.Document)
                   GitHubSync.buildMetadataPutEffect config login newState.GitHubMetadataSha metadataJson ]
+            let settingsPushEffect (config: Session.GitHubSyncConfig) (login: string) =
+                let settingsJson = GitHubSync.buildSettingsJson newState.ReportFormat newState.Timezone
+                [ GitHubSync.buildSettingsPutEffect config login newState.GitHubSettingsSha settingsJson ]
             let githubEffects =
                 match newState.GitHubSync with
                 | None -> []
@@ -535,6 +613,7 @@ module Dispatch =
                     | "SaveGitHubConfig", _ -> [ GitHubSync.buildWhoAmIEffect config ]
                     | "PullFromGitHub", Some login -> [ GitHubSync.buildGetEffect config login ]
                     | "PushToGitHub", Some login -> pushEffects config login
+                    | ("SaveSettings" | "SelectReportFormat"), Some login -> settingsPushEffect config login
                     | _, Some login when documentChanged -> pushEffects config login
                     | _ -> []
             newState, cacheEffects @ githubEffects
@@ -545,7 +624,29 @@ module Dispatch =
                 | HttpResult("github-pull", OutcomeSuccess(status, Some _)) when status >= 200 && status < 300 ->
                     [ StorageEffect("save", StorageSet(DocumentCodec.encode newState.Document), storageKey) ]
                 | _ -> []
-            newState, cacheEffects
+            /// After a config resolves (fresh from `localStorage`, or just
+            /// identified), pick up exactly where it's missing something: no
+            /// `Login` yet re-runs the identity lookup; a `Login` already in
+            /// hand goes straight to pulling that person's settings, and a
+            /// freshly-resolved `Login` also re-caches the config (now
+            /// including it) so a future reload skips the lookup entirely.
+            let identityEffects =
+                match result with
+                | StorageResult("github-config-load", StorageSuccess(Some _)) ->
+                    match newState.GitHubSync with
+                    | Some config ->
+                        match config.Login with
+                        | Some login -> [ GitHubSync.buildSettingsGetEffect config login ]
+                        | None -> [ GitHubSync.buildWhoAmIEffect config ]
+                    | None -> []
+                | HttpResult("github-whoami", OutcomeSuccess(status, Some _)) when status >= 200 && status < 300 ->
+                    match newState.GitHubSync with
+                    | Some config ->
+                        [ StorageEffect("github-config-save", StorageSet(GitHubSync.encodeConfig config), githubConfigStorageKey) ]
+                        @ (match config.Login with Some login -> [ GitHubSync.buildSettingsGetEffect config login ] | None -> [])
+                    | None -> []
+                | _ -> []
+            newState, cacheEffects @ identityEffects
 
     /// `messageJson`/return value are JSON strings matching
     /// `BrowserToEngineMessage`/`EngineToBrowserMessage` — see Protocol.fs.

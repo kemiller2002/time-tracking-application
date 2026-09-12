@@ -38,17 +38,23 @@ cannot import Tier 3/4 even by accident).
 - **Capabilities / authority**: `Model.fs`'s `Capability.forActivity`.
 - **Important effects and effect contracts**: `f-sharp/src/Ledger.Engine/Protocol.fs`'s
   `EffectRequest`/`EffectResult` — `StorageEffect` (the `localStorage` cache,
-  always live) and `HttpEffect` (the GitHub REST API, live once the user
-  configures sync from the More screen; built/parsed by
+  always live — now two independent keys: the ledger document and, since
+  GitHub sync settings persist across reloads, the GitHub sync config) and
+  `HttpEffect` (the GitHub REST API, live once the user configures sync
+  from the More screen; built/parsed by
   `f-sharp/src/Ledger.Engine/GitHubSync.fs`, routed by `Dispatch.fs`'s
-  `"github-whoami"`/`"github-pull"`/`"github-push"`/`"github-metadata-push"`
-  cases). `GitHubSync.dataFilePath`/`metadataFilePath` confine every sync to
-  `<folder>/<login>/{ledger,metadata}.json` inside the configured repo —
-  never the repo root, a user-chosen filename, or a file shared by more
-  than one person, since neither the repo nor a folder inside it are ever
-  assumed to belong to this app (or one person) alone. `<login>` comes only
-  from a `GET /user` call against the saved token (`"github-whoami"`),
-  never a typed name. `f-sharp/src/Ledger.Domain/Services.fs`'s
+  `"github-whoami"`/`"github-pull"`/`"github-push"`/`"github-metadata-push"`/
+  `"github-settings-pull"`/`"github-settings-push"` cases).
+  `GitHubSync.dataFilePath`/`metadataFilePath`/`settingsFilePath` confine
+  every sync to `<folder>/<login>/{ledger,metadata,settings}.json` inside
+  the configured repo — never the repo root, a user-chosen filename, or a
+  file shared by more than one person, since neither the repo nor a folder
+  inside it are ever assumed to belong to this app (or one person) alone.
+  `<login>` comes only from a `GET /user` call against the saved token
+  (`"github-whoami"`), never a typed name; `settings.json`
+  (`{reportFormat, timezone}`) is the one file this app both writes *and*
+  reads back, applying it to the session on load so a preference follows
+  the person across devices. `f-sharp/src/Ledger.Domain/Services.fs`'s
   `LedgerStore` (a named, unimplemented `Async`-shaped port for a future
   in-process backend adapter — not on the live path; GitHub sync is built
   through the effect-request/effect-result mechanism instead, since the
@@ -149,27 +155,29 @@ cannot import Tier 3/4 even by accident).
     `localStorage` host — unlike `Http`, `Storage` has no network-backed
     implementation, so this case stays a satisfied-in-shape, not-yet-
     producible conformance point.
-  - GitHub sync has no background/automatic pull, no merge of concurrent
-    edits (a pull replaces the document outright; a push conflict — a stale
-    `sha`, surfaced as GitHub's own 409 — must be resolved by pulling
-    first, not auto-merged), no reconciliation queue for a request whose
-    outcome came back `unknown` (the user is told to pull and check, not
-    offered an automatic retry-and-confirm flow), and no atomic multi-file
-    commit (`ledger.json`/`metadata.json` are two independent Contents API
-    writes, so a metadata write can fail or lag the ledger write without
-    losing ledger data, but the two files' histories aren't guaranteed to
-    move together). All are documented, deliberate scope decisions in
+  - GitHub sync has no background/automatic pull of the *ledger* (only an
+    explicit "Pull latest" — `settings.json` is the one exception, pulled
+    automatically once identity resolves), no merge of concurrent edits (a
+    pull replaces the document outright; a push conflict — a stale `sha`,
+    surfaced as GitHub's own 409 — must be resolved by pulling first, not
+    auto-merged), no reconciliation queue for a request whose outcome came
+    back `unknown` (the user is told to pull and check, not offered an
+    automatic retry-and-confirm flow), and no atomic multi-file commit
+    (`ledger.json`/`metadata.json`/`settings.json` are three independent
+    Contents API writes, so one can fail or lag another without losing the
+    others' data, but their histories aren't guaranteed to move together).
+    All are documented, deliberate scope decisions in
     [`docs/DOMAIN-REQUIREMENTS.md`](docs/DOMAIN-REQUIREMENTS.md)'s
     Implementation section, not gaps discovered after the fact.
-  - The GitHub personal access token lives in this browser's session state
-    only — `GitHubSync.encodeConfig`/`decodeConfig` exist for a
-    `localStorage`-backed version of the saved sync settings (owner/repo/
-    folder/branch/token/login/displayName), but nothing in `Dispatch.fs`
-    calls them yet, so a reload clears `Session.State.GitHubSync` and the
-    `GET /user` identity lookup re-runs on the next `SaveGitHubConfig`. When
-    this is wired up, the same "explicit architecture decision, not an
-    oversight" reasoning as before applies to the token's storage: it's
-    kept in this browser's `localStorage`, separate from the synced
-    document, never echoed into the rendered view, and its exposure is
-    bounded by this browser/device — by the explicit decision behind this
-    feature (browser-embedded, no server component).
+  - The GitHub personal access token lives in this browser's `localStorage`
+    (its own key, `GitHubSync.encodeConfig`/`decodeConfig`, separate from
+    the synced document, never echoed into the rendered view) — by the
+    explicit architecture decision behind this feature (browser-embedded,
+    no server component), not an oversight. Its exposure is bounded by
+    this browser/device, same as any other browser-stored credential.
+    Saving it there is what makes the settings/identity round-trip work at
+    all: `Initialize` loads the cached config, a `Login` already present
+    goes straight to a `settings.json` pull, and a `Login` still missing
+    (an older save, or a lookup that never finished) re-triggers `GET
+    /user` — there is no state where this cache being stale or absent
+    breaks anything beyond asking the user to reconnect once more.
