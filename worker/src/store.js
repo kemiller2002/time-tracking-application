@@ -7,7 +7,7 @@ const MIN_RECORDABLE_TIMER_MS = 30000;
 const MIN_SPLITTABLE_MS = 120000;
 
 export class MemoryLedgerStore {
-  constructor({ now = () => Date.now() } = {}) { this.now = now; this.events = []; this.timers = new Map(); this.requests = new Map(); this.attestations = []; }
+  constructor({ now = () => Date.now(), directories = { projects: [], activityTypes: [], tags: [] } } = {}) { this.now = now; this.directories = directories; this.events = []; this.timers = new Map(); this.requests = new Map(); this.attestations = []; }
   replay(requestId) { return this.requests.has(requestId) ? clone(this.requests.get(requestId)) : null; }
   remember(requestId, result) { this.requests.set(requestId, clone(result)); return result; }
   append(type, aggregateId, payload, actor = 'owner') {
@@ -36,14 +36,32 @@ export class MemoryLedgerStore {
     const record={ activity_id:id, activity_type_id:requireField(input.activity_type_id,'activity_type_id'), project_id:requireField(input.project_id,'project_id'), description:requireField(input.description,'description'), business_purpose:requireField(input.business_purpose,'business_purpose'), outcome:input.outcome??'', tags:input.tags??[], entry_method:input.entry_method??'manual', reconstruction_reason:input.reconstruction_reason??null, started_at:iso(start), ended_at:iso(end), exact_duration_ms:end-start, client_timestamp:input.client_timestamp??null, server_received_at:iso(this.now()) };
     const event=this.append('activity.created',id,record,actor); return this.activity(id,event.sequence);
   }
-  #validateActivityFields(candidate,excludeIds=[]){
+  #validateActivityFields(candidate,excludeIds=[],current=null){
     requireField(candidate.activity_type_id,'activity_type_id'); requireField(candidate.project_id,'project_id');
     requireField(candidate.description,'description'); requireField(candidate.business_purpose,'business_purpose');
     const start=Date.parse(requireField(candidate.started_at,'started_at')); const end=Date.parse(requireField(candidate.ended_at,'ended_at'));
     if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start)throw new ServiceError('invalid_time_range','End time must be after start time.');
     if(iso(start).slice(0,10)!==iso(end).slice(0,10))throw new ServiceError('crosses_midnight','An activity must not extend past midnight.');
     this.#assertNoOverlap(start,end,excludeIds);
+    this.#assertActiveReference(this.directories.projects,candidate.project_id,current?.project_id,'project');
+    this.#assertActiveReference(this.directories.activityTypes,candidate.activity_type_id,current?.activity_type_id,'activity_type');
+    this.#assertActiveTags(candidate.tags??[],current?.tags??[]);
     return {start,end};
+  }
+  #assertActiveReference(directory,id,currentId,kind){
+    if(currentId!==undefined&&currentId===id)return;
+    const record=directory.find(x=>x.id===id);
+    if(!record)throw new ServiceError(`${kind}_not_found`,`Referenced ${kind.replace('_',' ')} does not exist.`,{details:{[`${kind}_id`]:id}});
+    if(!record.active)throw new ServiceError(`${kind}_inactive`,`Referenced ${kind.replace('_',' ')} is archived.`,{details:{[`${kind}_id`]:id}});
+  }
+  #assertActiveTags(tagIds,currentTagIds){
+    const existing=new Set(currentTagIds);
+    for(const tagId of tagIds){
+      if(existing.has(tagId))continue;
+      const tag=this.directories.tags.find(t=>t.id===tagId);
+      if(!tag)throw new ServiceError('tag_not_found','Referenced tag does not exist.',{details:{tag_id:tagId}});
+      if(!tag.active)throw new ServiceError('tag_inactive','Referenced tag is not active and cannot be newly assigned.',{details:{tag_id:tagId}});
+    }
   }
   #assertNoOverlap(start,end,excludeIds){
     const dateKey=iso(start).slice(0,10);
@@ -51,7 +69,7 @@ export class MemoryLedgerStore {
     if(conflict)throw new ServiceError('overlapping_activity','This time interval overlaps another recorded activity.',{status:409,details:{conflicting_activity_id:conflict.activity_id}});
   }
   #assertRecorded(current){if(current.voided)throw new ServiceError('activity_not_recorded','Only a Recorded activity can be changed this way.',{status:409,details:{superseded:current.superseded}});}
-  amendActivity(id, input, actor='owner') { const current=this.assertVersion(id,input.base_version); this.#assertRecorded(current); const changes=clone(requireField(input.changes,'changes')); delete changes.activity_id; delete changes.entry_method; this.#validateActivityFields({...current,...changes},[id]); const event=this.append('activity.amended',id,{changes,reason:requireField(input.reason,'reason'),prior_version:current.version},actor); return this.activity(id,event.sequence); }
+  amendActivity(id, input, actor='owner') { const current=this.assertVersion(id,input.base_version); this.#assertRecorded(current); const changes=clone(requireField(input.changes,'changes')); delete changes.activity_id; delete changes.entry_method; this.#validateActivityFields({...current,...changes},[id],current); const event=this.append('activity.amended',id,{changes,reason:requireField(input.reason,'reason'),prior_version:current.version},actor); return this.activity(id,event.sequence); }
   voidActivity(id,input,actor='owner'){const current=this.assertVersion(id,input.base_version);if(current.voided)throw new ServiceError('already_voided','Activity is already removed from totals.',{status:409});const event=this.append('activity.voided',id,{reason:requireField(input.reason,'reason'),prior_version:current.version},actor);return this.activity(id,event.sequence);}
   restoreActivity(id,input,actor='owner'){const current=this.assertVersion(id,input.base_version);if(current.superseded)throw new ServiceError('activity_superseded','A Superseded activity (replaced by a split or merge) cannot be restored.',{status:409});if(!current.voided)throw new ServiceError('not_voided','Activity is already included in totals.',{status:409});const event=this.append('activity.restored',id,{reason:requireField(input.reason,'reason'),prior_version:current.version},actor);return this.activity(id,event.sequence);}
   attachEvidence(id,input,actor='owner'){const current=this.assertVersion(id,input.base_version);if(current.superseded)throw new ServiceError('activity_superseded','A Superseded activity cannot have evidence attached.',{status:409});const evidence={evidence_link_id:crypto.randomUUID(),type:requireField(input.type,'type'),uri:input.uri??null,note:input.note??null,hash:input.hash??null,label:input.label??'',attached_at:iso(this.now())};const event=this.append('evidence.attached',id,{...evidence,prior_version:current.version},actor);return {activity:this.activity(id,event.sequence),evidence};}

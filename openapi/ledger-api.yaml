@@ -71,6 +71,17 @@ paths:
               schema: {$ref: '#/components/schemas/ActivityTypeListResponse'}
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /tags:
+    get:
+      operationId: listTags
+      responses:
+        '200':
+          description: Effective tags
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TagListResponse'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /timers/current:
     get:
       operationId: getCurrentTimer
@@ -190,7 +201,10 @@ paths:
         minute — six-minute controls, if used by a client, are an input
         convenience only and must not alter what is sent here. The interval
         must fall on a single calendar day and must not overlap any other
-        Recorded activity on that date.
+        Recorded activity on that date. project_id and activity_type_id must
+        reference an existing, active record; every tag must reference an
+        existing, active tag (a new activity has no history, so every tag on
+        it counts as newly assigned).
       requestBody:
         required: true
         content:
@@ -204,9 +218,14 @@ paths:
               schema: {$ref: '#/components/schemas/ActivityResponse'}
         '400':
           description: >-
-            A required field is missing (validation_failed), ended_at is not
-            after started_at (invalid_time_range), or started_at/ended_at
-            fall on different calendar days (crosses_midnight)
+            A required field is missing (validation_failed); ended_at is not
+            after started_at (invalid_time_range); started_at/ended_at fall
+            on different calendar days (crosses_midnight); project_id,
+            activity_type_id, or a tag does not reference an existing record
+            (project_not_found / activity_type_not_found / tag_not_found); or
+            project_id, activity_type_id, or a tag references an archived/
+            inactive record (project_inactive / activity_type_inactive /
+            tag_inactive)
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorResponse'}
@@ -375,7 +394,13 @@ paths:
         re-validated by the same rules as creation: required fields, valid
         time range, no midnight crossing, and no overlap with any other
         Recorded activity on the same date (the activity's own prior
-        interval is excluded from that check).
+        interval is excluded from that check). If project_id or
+        activity_type_id is unchanged from the activity's current value, it
+        does not need to still be active — an existing, unchanged assignment
+        to an archived record remains valid; assigning a *different* one
+        requires it to be active. The same exemption applies per tag: a tag
+        the activity already carried remains valid even if later deactivated,
+        but a newly added tag must be active.
       parameters:
         - name: activityId
           in: path
@@ -394,11 +419,16 @@ paths:
               schema: {$ref: '#/components/schemas/ActivityResponse'}
         '400':
           description: >-
-            changes or reason missing (validation_failed), the resulting
+            changes or reason missing (validation_failed); the resulting
             description/business_purpose/activity_type_id/project_id would be
-            blank (validation_failed), the resulting time range is invalid
-            (invalid_time_range), or the resulting interval crosses midnight
-            (crosses_midnight)
+            blank (validation_failed); the resulting time range is invalid
+            (invalid_time_range); the resulting interval crosses midnight
+            (crosses_midnight); a newly assigned project_id, activity_type_id,
+            or tag does not reference an existing record (project_not_found /
+            activity_type_not_found / tag_not_found); or a newly assigned one
+            references an archived/inactive record (project_inactive /
+            activity_type_inactive / tag_inactive) — an unchanged assignment
+            is exempt from both of the last two
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorResponse'}
@@ -743,6 +773,14 @@ components:
         data:
           type: array
           items: {$ref: '../schemas/domain/activity-type.schema.json'}
+        meta: {$ref: '#/components/schemas/Meta'}
+    TagListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items: {$ref: '../schemas/domain/tag.schema.json'}
         meta: {$ref: '#/components/schemas/Meta'}
     Timer:
       type: object
