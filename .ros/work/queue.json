@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "time-tracking-application",
-  "nextSeq": 50,
+  "nextSeq": 51,
   "items": [
     {
       "id": "WI-0001",
@@ -760,6 +760,20 @@
       "attachments": [],
       "createdAt": "2026-09-12T02:48:46Z",
       "updatedAt": "2026-09-12T02:56:00Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0050",
+      "title": "TE-050 Attribute the branch's build and configuration files, and make the local ROS gate match CI's",
+      "description": null,
+      "tags": [],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T02:57:44Z",
+      "updatedAt": "2026-09-12T02:57:44Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null

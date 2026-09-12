@@ -51,4 +51,5 @@
 | WI-0046 | TE-046 Entry history (TE-R-052): what changed, why, when, by whom, from which device | complete |  | medium |
 | WI-0047 | TE-047 Word each rejection explicitly instead of sprintf %A — TE-R-053 requires it, and it is what now blocks trimming | complete |  | medium |
 | WI-0048 | TE-048 Warn on device/server clock skew (TE-R-008) — needs a decision on where authoritative time comes from | captured |  | medium |
-| WI-0049 | TE-049 Evidence reassignment affordance on split (TE-R-045 is structural only) | ready |  | medium |
+| WI-0049 | TE-049 Evidence reassignment affordance on split (TE-R-045 is structural only) | complete |  | medium |
+| WI-0050 | TE-050 Attribute the branch's build and configuration files, and make the local ROS gate match CI's | ready |  | medium |

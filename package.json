@@ -15,7 +15,7 @@
     "lint": "node --check src/app.js && node --check src/api/client.js && node --check src/domain.js && node --check src/state.js && node --check worker/src/handler.js && node --check worker/src/store.js",
     "build": "node tools/build.mjs",
     "validate:schemas": "node tools/validate-schemas.mjs",
-    "check": "npm run typecheck && npm run validate:schemas && npm run check:architecture && node --test tests/*.test.js",
+    "check": "npm run typecheck && npm run validate:schemas && npm run check:architecture && npm run check:ros && node --test tests/*.test.js",
     "check:architecture": "node tools/check-domain-architecture.mjs",
     "fsharp:restore": "dotnet restore TimeEntry.sln",
     "fsharp:build": "dotnet build TimeEntry.sln --no-restore",
@@ -26,7 +26,8 @@
     "wasm:workloads": "dotnet workload install wasm-tools wasm-experimental",
     "wasm:publish": "dotnet publish browser/TimeEntry.Host/TimeEntry.Host.csproj -c Release && npm run wasm:stage",
     "check:browser": "npm run wasm:publish && node tools/verify-browser-kernel.mjs",
-    "wasm:stage": "node tools/stage-wasm-assets.mjs"
+    "wasm:stage": "node tools/stage-wasm-assets.mjs",
+    "check:ros": "node tools/validate-branch.mjs"
   },
   "dependencies": {
     "@echelon-foundry/typescript-wasm-kernel": "^0.4.1"
