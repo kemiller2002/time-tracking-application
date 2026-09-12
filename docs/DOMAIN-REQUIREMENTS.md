@@ -278,16 +278,26 @@ GitHub sync, per the Persistence contract section above:
   any event that actually changes the document, and again after a GitHub
   pull replaces it — the cache never goes stale relative to whichever
   source last won.
-- GitHub sync is opt-in, configured from the More screen (owner, repo, file
-  path, branch, a personal access token). Once configured, every mutating
-  command auto-pushes the whole document to the GitHub Contents API in
-  addition to its `localStorage` save; "Pull latest" and "Sync now" trigger
-  the same requests on demand. This is a deliberate, explicitly-chosen
-  architecture decision, not a default: the token is entered by the user
-  and sent straight from the browser to `api.github.com` — **there is no
-  server component**, matching this app's browser-embedded design. The
-  token is kept in its own `localStorage` key, separate from the synced
-  document, and is never echoed back into the rendered view.
+- GitHub sync is opt-in, configured from the More screen (owner, repo, an
+  optional folder, branch, a personal access token). Once configured,
+  every mutating command auto-pushes the whole document to the GitHub
+  Contents API in addition to its `localStorage` save; "Pull latest" and
+  "Sync now" trigger the same requests on demand. This is a deliberate,
+  explicitly-chosen architecture decision, not a default: the token is
+  entered by the user and sent straight from the browser to
+  `api.github.com` — **there is no server component**, matching this
+  app's browser-embedded design. The token is kept in its own
+  `localStorage` key, separate from the synced document, and is never
+  echoed back into the rendered view.
+- The configured GitHub repository is never assumed to belong to this app
+  alone — it may hold unrelated content the user already has there. The
+  ledger's data is therefore always confined to one folder inside it,
+  never placed at the repo root or at a user-chosen filename: the file
+  path is always `<folder>/ledger.json` (`GitHubSync.dataFilePath`), where
+  `<folder>` defaults to `time-tracking-data` when left blank. Neither the
+  folder default nor the fixed filename are user-overridable beyond
+  choosing the folder's name, precisely so this app cannot be pointed at
+  an existing, unrelated file.
 - The Contents API's blob `sha` *is* the version this contract asks a
   caller to state on every save — GitHub's own optimistic concurrency check
   (a stale `sha` on a push returns 409, surfaced as this app's `conflict`

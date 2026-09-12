@@ -17,9 +17,27 @@ module GitHubSync =
 
     let private apiBase = "https://api.github.com"
 
+    /// Used whenever a saved config's `Folder` is blank — the target
+    /// repository is never assumed to be dedicated to this app, so a
+    /// concrete, namespaced default is used rather than falling back to
+    /// the repo root.
+    let defaultFolder = "time-tracking-data"
+
+    /// The single fixed filename inside that folder. Not user-configurable:
+    /// letting the user name the file too would reopen the door to pointing
+    /// this app at an existing, unrelated file in the target repo.
+    let private fileName = "ledger.json"
+
+    /// Always a folder, never the repo root and never a bare filename —
+    /// this app's data stays confined to one folder it owns inside a
+    /// repository that may hold other, unrelated content.
+    let dataFilePath (config: Session.GitHubSyncConfig) =
+        let folder = (if String.IsNullOrWhiteSpace config.Folder then defaultFolder else config.Folder).Trim('/')
+        $"{folder}/{fileName}"
+
     /// GitHub's Contents API path segments are percent-encoded individually —
     /// `Uri.EscapeDataString` on the whole path would also encode the `/`
-    /// separators a nested path (e.g. "data/ledger.json") needs to keep.
+    /// separator the folder/file split needs to keep.
     let private encodedPath (path: string) = path.Split('/') |> Array.map Uri.EscapeDataString |> String.concat "/"
 
     let private headers (token: string) =
@@ -29,7 +47,7 @@ module GitHubSync =
           "Content-Type", "application/json; charset=utf-8" ]
 
     let private contentsUrl (config: Session.GitHubSyncConfig) =
-        $"{apiBase}/repos/{Uri.EscapeDataString config.Owner}/{Uri.EscapeDataString config.Repo}/contents/{encodedPath config.Path}"
+        $"{apiBase}/repos/{Uri.EscapeDataString config.Owner}/{Uri.EscapeDataString config.Repo}/contents/{encodedPath (dataFilePath config)}"
 
     let buildGetEffect (config: Session.GitHubSyncConfig) : EffectRequest =
         let url = $"{contentsUrl config}?ref={Uri.EscapeDataString config.Branch}"

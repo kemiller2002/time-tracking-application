@@ -124,7 +124,8 @@ module Projections =
         [ "gitHubSyncConfigured", VBool sync.IsSome
           "gitHubSyncOwner", VString(sync |> Option.map (fun c -> c.Owner) |> Option.defaultValue "")
           "gitHubSyncRepo", VString(sync |> Option.map (fun c -> c.Repo) |> Option.defaultValue "")
-          "gitHubSyncPath", VString(sync |> Option.map (fun c -> c.Path) |> Option.defaultValue "")
+          "gitHubSyncFolder", VString(sync |> Option.map (fun c -> c.Folder) |> Option.defaultValue "")
+          "gitHubSyncFilePath", VString(sync |> Option.map GitHubSync.dataFilePath |> Option.defaultValue "")
           "gitHubSyncBranch", VString(sync |> Option.map (fun c -> c.Branch) |> Option.defaultValue "")
           "gitHubSyncSha", VString(sha |> Option.defaultValue "")
           "gitHubSyncStatus", VString status

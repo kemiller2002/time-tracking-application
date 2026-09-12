@@ -25,7 +25,13 @@ module Session =
     /// this a browser-embedded app with no server component, it is sent
     /// straight from the browser to the GitHub REST API and never echoed
     /// back into the view (see Projections.fs).
-    type GitHubSyncConfig = { Owner: string; Repo: string; Path: string; Branch: string; Token: string }
+    ///
+    /// `Folder`, not a free-form file path: the target repository is not
+    /// assumed to belong to this app alone, so the ledger's data is never
+    /// placed at the repo root or at a path the user could point at an
+    /// unrelated existing file — it always lives at `<Folder>/ledger.json`
+    /// (see `GitHubSync.dataFilePath`), confined to a folder this app owns.
+    type GitHubSyncConfig = { Owner: string; Repo: string; Folder: string; Branch: string; Token: string }
 
     /// Accumulates one field at a time as the browser flushes each changed form
     /// control before the form's own submit event arrives.
@@ -49,7 +55,7 @@ module Session =
           AttestationStatement: string option
           GitHubOwner: string option
           GitHubRepo: string option
-          GitHubPath: string option
+          GitHubFolder: string option
           GitHubBranch: string option
           GitHubToken: string option }
 
@@ -59,7 +65,7 @@ module Session =
               StartedAt = None; EndedAt = None; ReconstructionReason = None; TagIds = Set.empty; Reason = None
               EvidenceType = None; EvidenceUri = None; EvidenceNote = None; EvidenceLabel = None
               SplitParts = Map.empty; MergeSourceIds = Set.empty; AttestationStatement = None
-              GitHubOwner = None; GitHubRepo = None; GitHubPath = None; GitHubBranch = None; GitHubToken = None }
+              GitHubOwner = None; GitHubRepo = None; GitHubFolder = None; GitHubBranch = None; GitHubToken = None }
 
     type State =
         { Environment: Environment

@@ -41,7 +41,10 @@ cannot import Tier 3/4 even by accident).
   always live) and `HttpEffect` (the GitHub Contents API, live once the user
   configures sync from the More screen; built/parsed by
   `f-sharp/src/Ledger.Engine/GitHubSync.fs`, routed by `Dispatch.fs`'s
-  `"github-pull"`/`"github-push"` cases). `f-sharp/src/Ledger.Domain/Services.fs`'s
+  `"github-pull"`/`"github-push"` cases). `GitHubSync.dataFilePath` confines
+  every sync to `<folder>/ledger.json` inside the configured repo — never
+  the repo root or a user-chosen filename, since that repo is never assumed
+  to belong to this app alone. `f-sharp/src/Ledger.Domain/Services.fs`'s
   `LedgerStore` (a named, unimplemented `Async`-shaped port for a future
   in-process backend adapter — not on the live path; GitHub sync is built
   through the effect-request/effect-result mechanism instead, since the

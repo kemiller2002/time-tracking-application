@@ -92,10 +92,10 @@ let contentsPutBody sha =
     o.["commit"] <- commit
     o.ToJsonString()
 
-let saveGitHubConfig owner repo path branch token =
+let saveGitHubConfig owner repo folder branch token =
     sendJson (eventMessage "DraftGitHubOwnerChanged" None (Some(owner: string))) |> ignore
     sendJson (eventMessage "DraftGitHubRepoChanged" None (Some(repo: string))) |> ignore
-    sendJson (eventMessage "DraftGitHubPathChanged" None (Some(path: string))) |> ignore
+    folder |> Option.iter (fun f -> sendJson (eventMessage "DraftGitHubFolderChanged" None (Some f)) |> ignore)
     branch |> Option.iter (fun b -> sendJson (eventMessage "DraftGitHubBranchChanged" None (Some b)) |> ignore)
     sendJson (eventMessage "DraftGitHubTokenChanged" None (Some(token: string))) |> ignore
     sendJson (eventMessage "SaveGitHubConfig" None None)
@@ -263,12 +263,13 @@ let tests : (string * (unit -> unit)) list =
 
       "SaveGitHubConfig with all fields configures sync and defaults an omitted branch to main", fun () ->
         reset ()
-        let response = saveGitHubConfig "kemiller2002" "ledger-data" "data/ledger.json" None "ghp_test_token"
+        let response = saveGitHubConfig "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token"
         assertTrue (stringView response "githubConfigError" = "") "unexpected githubConfig error"
         assertTrue (boolView response "gitHubSyncConfigured") "sync was not marked configured"
         assertTrue (stringView response "gitHubSyncOwner" = "kemiller2002") "owner was not stored"
         assertTrue (stringView response "gitHubSyncRepo" = "ledger-data") "repo was not stored"
-        assertTrue (stringView response "gitHubSyncPath" = "data/ledger.json") "path was not stored"
+        assertTrue (stringView response "gitHubSyncFolder" = "time-entries") "folder was not stored"
+        assertTrue (stringView response "gitHubSyncFilePath" = "time-entries/ledger.json") "the file path was not confined to the configured folder"
         assertTrue (stringView response "gitHubSyncBranch" = "main") "an omitted branch did not default to main"
 
       "SaveGitHubConfig with a missing field surfaces githubConfigError and leaves sync unconfigured", fun () ->
@@ -278,6 +279,14 @@ let tests : (string * (unit -> unit)) list =
         assertTrue (stringView response "githubConfigError" <> "") "missing-field config save did not surface an error"
         assertTrue (not (boolView response "gitHubSyncConfigured")) "sync was marked configured despite missing fields"
 
+      "SaveGitHubConfig with an omitted folder defaults to a dedicated folder, never the repo root", fun () ->
+        reset ()
+        let response = saveGitHubConfig "kemiller2002" "ledger-data" None None "ghp_test_token"
+        assertTrue (stringView response "githubConfigError" = "") "unexpected githubConfig error with an omitted folder"
+        assertTrue (stringView response "gitHubSyncFolder" <> "") "an omitted folder left the stored folder blank"
+        assertTrue (stringView response "gitHubSyncFilePath" <> "ledger.json") "an omitted folder still placed the file at the repo root"
+        assertTrue ((stringView response "gitHubSyncFilePath").EndsWith "/ledger.json") "the default folder's file path was not folder-scoped"
+
       "PullFromGitHub before configuring sync surfaces githubSyncError and requests no effect", fun () ->
         reset ()
         let response = sendJson (eventMessage "PullFromGitHub" None None)
@@ -286,7 +295,7 @@ let tests : (string * (unit -> unit)) list =
 
       "PullFromGitHub once configured requests a GET Http effect against the Contents API with an auth header", fun () ->
         reset ()
-        saveGitHubConfig "kemiller2002" "ledger-data" "data/ledger.json" None "ghp_test_token" |> ignore
+        saveGitHubConfig "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" |> ignore
         let response = sendJson (eventMessage "PullFromGitHub" None None)
         let effects = effectsOf response
         assertTrue (effects.Count = 1) $"expected exactly one effect, got {effects.Count}"
@@ -294,13 +303,13 @@ let tests : (string * (unit -> unit)) list =
         assertTrue (effect.["kind"].GetValue<string>() = "Http") "pull did not request an Http effect"
         assertTrue (effect.["method"].GetValue<string>() = "GET") "pull was not a GET"
         let url = effect.["url"].GetValue<string>()
-        assertTrue (url.Contains "kemiller2002" && url.Contains "ledger-data" && url.Contains "data/ledger.json") $"url missing owner/repo/path: {url}"
+        assertTrue (url.Contains "kemiller2002" && url.Contains "ledger-data" && url.Contains "time-entries" && url.Contains "ledger.json") $"url missing owner/repo/folder/file: {url}"
         let headers = effect.["headers"].AsObject()
         assertTrue (headers.["Authorization"].GetValue<string>() = "Bearer ghp_test_token") "Authorization header was missing or wrong"
 
       "a successful GitHub pull (200) replaces the document, records the sha, and re-caches to Storage", fun () ->
         reset ()
-        saveGitHubConfig "kemiller2002" "ledger-data" "data/ledger.json" None "ghp_test_token" |> ignore
+        saveGitHubConfig "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" |> ignore
         let document = seedDocument ()
         let response = sendJson (githubPullSuccess 200 (Some(contentsGetBody "abc123" (DocumentCodec.encode document))))
         assertTrue (stringView response "githubSyncError" = "") "unexpected githubSync error on a successful pull"
@@ -313,7 +322,7 @@ let tests : (string * (unit -> unit)) list =
 
       "a 404 GitHub pull is treated as 'nothing there yet', not a failure", fun () ->
         reset ()
-        saveGitHubConfig "kemiller2002" "ledger-data" "data/ledger.json" None "ghp_test_token" |> ignore
+        saveGitHubConfig "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" |> ignore
         let response = sendJson (githubPullSuccess 404 (Some """{"message":"Not Found"}"""))
         assertTrue (stringView response "gitHubSyncStatus" = "idle") "a 404 pull was not treated as idle/not-yet-existing"
         assertTrue (stringView response "githubSyncError" <> "") "a 404 pull gave no guidance to the user"
@@ -321,7 +330,7 @@ let tests : (string * (unit -> unit)) list =
 
       "a mutating command auto-pushes to GitHub once configured, alongside the usual Storage cache save", fun () ->
         reset ()
-        saveGitHubConfig "kemiller2002" "ledger-data" "data/ledger.json" None "ghp_test_token" |> ignore
+        saveGitHubConfig "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" |> ignore
         let response = createTodayActivity 9 10
         let effects = effectsOf response
         assertTrue (effects.Count = 2) $"expected a Storage save and an Http push, got {effects.Count}"
@@ -333,7 +342,7 @@ let tests : (string * (unit -> unit)) list =
 
       "a successful GitHub push (201) records the new sha and marks status synced", fun () ->
         reset ()
-        saveGitHubConfig "kemiller2002" "ledger-data" "data/ledger.json" None "ghp_test_token" |> ignore
+        saveGitHubConfig "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" |> ignore
         createTodayActivity 9 10 |> ignore
         let response = sendJson (githubPushSuccess 201 (Some(contentsPutBody "new-sha-1")))
         assertTrue (stringView response "githubSyncError" = "") "unexpected githubSync error on a successful push"
@@ -342,7 +351,7 @@ let tests : (string * (unit -> unit)) list =
 
       "a 409 GitHub push conflict surfaces githubSyncError with status 'conflict', without touching the document", fun () ->
         reset ()
-        saveGitHubConfig "kemiller2002" "ledger-data" "data/ledger.json" None "ghp_test_token" |> ignore
+        saveGitHubConfig "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" |> ignore
         let created = createTodayActivity 9 10
         let response = sendJson (githubPushSuccess 409 (Some """{"message":"sha does not match"}"""))
         assertTrue (stringView response "gitHubSyncStatus" = "conflict") "a 409 push was not marked as a conflict"
@@ -354,7 +363,7 @@ let tests : (string * (unit -> unit)) list =
       /// a dropped connection must not be read as either success or failure.
       "an unknown GitHub push outcome (e.g. a timeout) is never treated as success or failure", fun () ->
         reset ()
-        saveGitHubConfig "kemiller2002" "ledger-data" "data/ledger.json" None "ghp_test_token" |> ignore
+        saveGitHubConfig "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" |> ignore
         createTodayActivity 9 10 |> ignore
         let response = sendJson (githubPushUnknown "timed out after 15000ms")
         assertTrue (stringView response "gitHubSyncStatus" = "unknown") "an unknown push outcome was not reported as 'unknown'"

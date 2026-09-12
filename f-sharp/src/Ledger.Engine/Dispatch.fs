@@ -44,7 +44,7 @@ module Dispatch =
         | "DraftEvidenceLabelChanged" -> { draft with EvidenceLabel = event.Value }
         | "DraftGitHubOwnerChanged" -> { draft with GitHubOwner = event.Value }
         | "DraftGitHubRepoChanged" -> { draft with GitHubRepo = event.Value }
-        | "DraftGitHubPathChanged" -> { draft with GitHubPath = event.Value }
+        | "DraftGitHubFolderChanged" -> { draft with GitHubFolder = event.Value }
         | "DraftGitHubBranchChanged" -> { draft with GitHubBranch = event.Value }
         | "DraftGitHubTokenChanged" -> { draft with GitHubToken = event.Value }
         | "ToggleDraftTag" ->
@@ -304,18 +304,22 @@ module Dispatch =
 
     // --- GitHub sync ---------------------------------------------------------------
 
+    /// `Folder` is deliberately not required here — an omitted or blank
+    /// folder falls back to `GitHubSync.defaultFolder` (see `dataFilePath`),
+    /// never to the repo root, since the target repository is never assumed
+    /// to be dedicated to this app alone.
     let private handleSaveGitHubConfig (state: Session.State) : Session.State =
         let d = state.Draft
-        match d.GitHubOwner, d.GitHubRepo, d.GitHubPath, d.GitHubToken with
-        | Some owner, Some repo, Some path, Some token when owner <> "" && repo <> "" && path <> "" && token <> "" ->
+        match d.GitHubOwner, d.GitHubRepo, d.GitHubToken with
+        | Some owner, Some repo, Some token when owner <> "" && repo <> "" && token <> "" ->
             let config : Session.GitHubSyncConfig =
                 { Owner = owner
                   Repo = repo
-                  Path = path
+                  Folder = d.GitHubFolder |> Option.filter (fun f -> f <> "") |> Option.defaultValue GitHubSync.defaultFolder
                   Branch = d.GitHubBranch |> Option.filter (fun b -> b <> "") |> Option.defaultValue "main"
                   Token = token }
             { state with GitHubSync = Some config; Draft = Session.Draft.empty } |> clearError "githubConfig"
-        | _ -> state |> withError "githubConfig" "Owner, repository, file path, and a token are all required."
+        | _ -> state |> withError "githubConfig" "Owner, repository, and a token are all required."
 
     /// These only validate that sync is configured and mark the status as
     /// in-flight — the actual `HttpEffect` request is built in `handle`,

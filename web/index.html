@@ -406,11 +406,11 @@
             </section>
             <section class="surface surface-pad" aria-labelledby="github-sync-title">
               <h2 class="section-title" id="github-sync-title">GitHub sync</h2>
-              <p class="page-intro">Local storage stays the fast, offline-safe cache. Your personal access token is stored only in this browser and sent directly to GitHub's API &mdash; there is no server in between.</p>
+              <p class="page-intro">Local storage stays the fast, offline-safe cache. Your personal access token is stored only in this browser and sent directly to GitHub's API &mdash; there is no server in between. This app's data stays confined to its own folder in the repository you choose &mdash; it never assumes the repository belongs to this app alone.</p>
 
               <div class="notice" data-if="gitHubSyncConfigured" hidden>
                 <p class="notice-title">Syncing <span data-text="gitHubSyncOwner"></span>/<span data-text="gitHubSyncRepo"></span></p>
-                <p class="notice-copy">Path <span data-text="gitHubSyncPath"></span> on branch <span data-text="gitHubSyncBranch"></span>. Status: <span data-text="gitHubSyncStatus"></span>. Last synced: <span data-text="gitHubLastSyncedLabel"></span>.</p>
+                <p class="notice-copy"><span data-text="gitHubSyncFilePath"></span> on branch <span data-text="gitHubSyncBranch"></span>. Status: <span data-text="gitHubSyncStatus"></span>. Last synced: <span data-text="gitHubLastSyncedLabel"></span>.</p>
               </div>
 
               <fieldset class="form-section">
@@ -418,7 +418,7 @@
                 <div class="form-grid">
                   <div class="field"><label for="github-owner">Owner <span class="required">*</span></label><input id="github-owner" type="text" data-event="DraftGitHubOwnerChanged" data-on="change" /></div>
                   <div class="field"><label for="github-repo">Repository <span class="required">*</span></label><input id="github-repo" type="text" data-event="DraftGitHubRepoChanged" data-on="change" /></div>
-                  <div class="field"><label for="github-path">File path <span class="required">*</span></label><input id="github-path" type="text" placeholder="data/ledger.json" data-event="DraftGitHubPathChanged" data-on="change" /></div>
+                  <div class="field"><label for="github-folder">Folder <span class="field-help">Data stays inside this folder, never at the repo root</span></label><input id="github-folder" type="text" placeholder="time-tracking-data" data-event="DraftGitHubFolderChanged" data-on="change" /></div>
                   <div class="field"><label for="github-branch">Branch <span class="field-help">Defaults to main</span></label><input id="github-branch" type="text" placeholder="main" data-event="DraftGitHubBranchChanged" data-on="change" /></div>
                   <div class="field field-full"><label for="github-token">Personal access token <span class="required">*</span></label><input id="github-token" type="password" autocomplete="off" data-event="DraftGitHubTokenChanged" data-on="change" /></div>
                 </div>
