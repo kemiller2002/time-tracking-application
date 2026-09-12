@@ -59,6 +59,9 @@ module Projections =
         Map.ofList
             [ "activityId", VString activity.ActivityId
               "evidenceLinkId", VString evidence.EvidenceLinkId
+              // Pre-composed "<activityId>:<evidenceLinkId>" DetachEvidence key, so
+              // the DOM bridge never concatenates identifiers itself.
+              "detachKey", VString(sprintf "%s:%s" activity.ActivityId evidence.EvidenceLinkId)
               "label", VString evidence.Label
               "uri", VString(evidence.Uri |> Option.defaultValue "") ]
 

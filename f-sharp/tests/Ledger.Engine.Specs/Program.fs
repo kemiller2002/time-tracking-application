@@ -198,7 +198,7 @@ let tests : (string * (unit -> unit)) list =
         createTodayActivity 9 10 |> ignore
         for format in [ "json"; "markdown"; "csv" ] do
             sendJson (eventMessage "SelectReportFormat" None (Some format)) |> ignore
-            let response = sendJson (eventMessage "ViewDay" (Some((DateOnly.FromDateTime DateTime.UtcNow).ToString "yyyy-MM-dd")) None)
+            let response = sendJson (eventMessage "ViewDay" None (Some((DateOnly.FromDateTime DateTime.UtcNow).ToString "yyyy-MM-dd")))
             assertTrue (stringView response "reportContent" <> "") $"{format} report content was empty"
     ]
 

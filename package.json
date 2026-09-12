@@ -5,6 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "node tools/dev-server.mjs",
+    "build:wasm": "dotnet publish f-sharp/src/Ledger.Wasm/Ledger.Wasm.csproj -c Release",
+    "serve": "python3 -m http.server 4321",
+    "start": "npm run build:wasm && npm run serve",
+    "test:fsharp": "dotnet run --project f-sharp/tests/Ledger.Domain.Specs && dotnet run --project f-sharp/tests/Ledger.Engine.Specs",
     "test": "node --test tests/*.test.js",
     "test:unit": "node --test tests/domain.test.js",
     "test:contract": "node --test tests/api-client.test.js tests/service.test.js",

@@ -309,10 +309,10 @@ module Dispatch =
         | "StopTimer" -> handleStopTimer state
         | "AttestDay" -> handleAttestDay state
         | "ViewDay" ->
-            match event.Key |> Option.bind (fun k -> match DateOnly.TryParse k with true, d -> Some d | _ -> None) with
+            match event.Value |> Option.bind (fun v -> match DateOnly.TryParse v with true, d -> Some d | _ -> None) with
             | Some date -> { state with SelectedDate = date; ActiveActivityId = None }
             | None -> state
-        | "ViewMonth" -> event.Key |> Option.map (fun m -> { state with SelectedMonth = m }) |> Option.defaultValue state
+        | "ViewMonth" -> event.Value |> Option.map (fun m -> { state with SelectedMonth = m }) |> Option.defaultValue state
         | "ViewActivity" -> { state with ActiveActivityId = event.Key }
         | "SelectReportFormat" -> event.Value |> Option.map (fun f -> { state with ReportFormat = f }) |> Option.defaultValue state
         | _ -> { state with Draft = applyDraftField state.Draft event }
