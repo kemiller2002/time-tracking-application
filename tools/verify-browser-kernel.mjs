@@ -498,6 +498,50 @@ if (ready) {
   )
 
   // -------------------------------------------------------------------------
+  // Evidence
+  // -------------------------------------------------------------------------
+
+  // Before the merge, deliberately: the merge supersedes both proposal
+  // entries, and a superseded entry offers no capabilities at all — including
+  // this one. Attaching afterwards would be testing against an entry the
+  // kernel had already, correctly, closed to changes.
+  const evidenced = row('Client proposal outline')
+  check(
+    'an entry with no evidence carries no evidence badge',
+    (await evidenced.locator('.badge', { hasText: 'evidence' }).count()) === 0
+  )
+
+  const attach = evidenced.locator('details', { hasText: 'Attach evidence' })
+  await attach.locator('summary').click()
+  await attach.locator('input[type=url]').fill('https://example.invalid/brief.pdf')
+  await attach.locator('input[type=text]').fill('The brief')
+  await attach.locator('button[type=submit]').click()
+
+  // The badge is the projection's, counted and worded in F#.
+  await page
+    .waitForFunction(
+      () =>
+        globalThis.__kernel.view.entries.some((e) =>
+          e.badges.some((b) => b.text === '1 evidence')
+        ),
+      { timeout: 15000 }
+    )
+    .then(() => check('attaching evidence is reflected in the kernel\'s badges', true, '1 evidence'))
+    .catch(async () =>
+      check(
+        'attaching evidence is reflected in the kernel\'s badges',
+        false,
+        (await page.textContent('#create-message'))?.trim()
+      )
+    )
+
+  check(
+    'the attachment reports the persistence effect it needs',
+    (await page.textContent('#create-effects'))?.trim() === 'Requested: PersistEvidenceAttachment',
+    (await page.textContent('#create-effects'))?.trim()
+  )
+
+  // -------------------------------------------------------------------------
   // Merge
   // -------------------------------------------------------------------------
 
@@ -551,6 +595,7 @@ if (ready) {
     afterMerge.excludedEntries >= 3,
     `${afterMerge.excludedEntries} excluded`
   )
+
 }
 
 check('no page errors', errors.length === 0, errors.slice(0, 2).join(' | '))

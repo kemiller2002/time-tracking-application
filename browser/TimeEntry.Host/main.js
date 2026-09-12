@@ -283,6 +283,53 @@ const correctionControl = (row) => {
   return details
 }
 
+// Attaching evidence (TE-R-033, §8.12). A link, and optionally a label for
+// it. No timestamp field: the moment is the command's `occurredAtMs`, so the
+// evidence and the revision that records it agree by construction rather
+// than by a second clock read.
+const evidenceControl = (entryId) => {
+  const details = el('details', 'section')
+  details.append(el('summary', null, 'Attach evidence'))
+  const form = el('form')
+  const fields = el('div', 'form-grid')
+
+  const uri = document.createElement('input')
+  // `url` rather than `text` so the browser's own validation applies to the
+  // shape of a link — which is a fact about URLs, not a rule about the
+  // ledger, so it belongs here rather than in the domain.
+  uri.type = 'url'
+  uri.required = true
+  uri.placeholder = 'https://'
+
+  const label = document.createElement('input')
+  label.type = 'text'
+  label.placeholder = 'Optional'
+
+  fields.append(
+    labelled(`evidence-uri-${entryId}`, 'Link', uri),
+    labelled(`evidence-label-${entryId}`, 'Label', label)
+  )
+
+  const button = el('button', 'button', 'Attach')
+  button.type = 'submit'
+  form.append(fields, button)
+  form.addEventListener('submit', (event) => {
+    event.preventDefault()
+    absorb(
+      send({
+        kind: 'attachEvidence',
+        entryId,
+        expectedVersion: versions[entryId],
+        uri: uri.value,
+        label: label.value,
+        occurredAtMs: Date.now()
+      })
+    )
+  })
+  details.append(form)
+  return details
+}
+
 // The merge checkbox on a record. Selection is the page's to track; what the
 // selection MEANS — how much time it comes to, how many days it spans — is
 // the kernel's.
@@ -484,6 +531,9 @@ const renderDay = (view) => {
         article.append(
           reasonControl(row.id, 'void', 'Remove', 'Remove entry', 'Why is this being removed?')
         )
+
+      if (row.capabilities.includes('CanAttachEvidence'))
+        article.append(evidenceControl(row.id))
 
       if (row.capabilities.includes('CanMerge')) article.append(mergeCheckbox(row))
 
