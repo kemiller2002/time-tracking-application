@@ -29,13 +29,180 @@ paths:
       responses:
         '200':
           description: Effective projects
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProjectListResponse'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /activity-types:
     get:
       operationId: listActivityTypes
       responses:
         '200':
           description: Effective activity types
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ActivityTypeListResponse'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /timers/current:
+    get:
+      operationId: getCurrentTimer
+      description: Returns the caller's active timer, or null if none is running or paused.
+      responses:
+        '200':
+          description: Current timer state
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TimerCurrentResponse'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /timers/start:
+    post:
+      operationId: startTimer
+      description: >-
+        Starts a timer for the caller. Only one timer may be active at a time;
+        starting a second one while one is already running or paused fails
+        with 409 timer_already_running.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/StartTimerRequest'}
+      responses:
+        '200':
+          description: Timer started
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TimerResponse'}
+        '400':
+          description: activity_type_id or project_id missing (validation_failed)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '409':
+          description: A timer is already active (timer_already_running); details.current_timer carries it
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /timers/pause:
+    post:
+      operationId: pauseTimer
+      description: Pauses the caller's running timer. The paused interval is excluded from the eventual recorded duration.
+      responses:
+        '200':
+          description: Timer paused
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TimerResponse'}
+        '404':
+          description: No active timer exists (timer_not_found)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '409':
+          description: Timer is not running (timer_not_running)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /timers/resume:
+    post:
+      operationId: resumeTimer
+      description: Resumes the caller's paused timer.
+      responses:
+        '200':
+          description: Timer resumed
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TimerResponse'}
+        '404':
+          description: No active timer exists (timer_not_found)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '409':
+          description: Timer is not paused (timer_not_paused)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /timers/stop:
+    post:
+      operationId: stopTimer
+      description: >-
+        Stops the caller's timer and computes exact elapsed working time
+        (paused intervals excluded), rounded to the nearest whole minute for
+        exact_minutes. This does not itself create an activity record — the
+        caller separately calls POST /activities with the resulting times to
+        record it, matching how a manual entry is recorded.
+      responses:
+        '200':
+          description: Timer stopped
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TimerStopResponse'}
+        '404':
+          description: No active timer exists (timer_not_found)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /activities:
+    post:
+      operationId: createActivity
+      description: >-
+        Records a new activity. started_at and ended_at are exact to the
+        minute — six-minute controls, if used by a client, are an input
+        convenience only and must not alter what is sent here.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateActivityRequest'}
+      responses:
+        '201':
+          description: Activity recorded
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ActivityResponse'}
+        '400':
+          description: >-
+            A required field is missing (validation_failed), or ended_at is
+            not after started_at (invalid_time_range)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /days/{date}:
+    get:
+      operationId: getDay
+      parameters:
+        - name: date
+          in: path
+          required: true
+          schema: {type: string, format: date}
+      responses:
+        '200':
+          description: Effective activities and totals for the date, excluding voided activities from totals
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DaySummaryResponse'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 components:
+  responses:
+    Unauthorized:
+      description: Sign-in is required (unauthorized)
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
   schemas:
     Meta:
       type: object
@@ -59,6 +226,206 @@ components:
       required: [data, meta]
       properties:
         data: {$ref: '../schemas/domain/config.schema.json'}
+        meta: {$ref: '#/components/schemas/Meta'}
+    ProjectListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items: {$ref: '../schemas/domain/project.schema.json'}
+        meta: {$ref: '#/components/schemas/Meta'}
+    ActivityTypeListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items: {$ref: '../schemas/domain/activity-type.schema.json'}
+        meta: {$ref: '#/components/schemas/Meta'}
+    Timer:
+      type: object
+      required: [timer_id, owner, status, activity_type_id, project_id, description, started_at, paused_at, paused_ms, version]
+      properties:
+        timer_id: {type: string, minLength: 1}
+        owner: {type: string, minLength: 1}
+        status: {enum: [running, paused]}
+        activity_type_id: {type: string, minLength: 1}
+        project_id: {type: string, minLength: 1}
+        description: {type: string}
+        started_at: {type: string, format: date-time}
+        paused_at: {type: [string, 'null'], format: date-time}
+        paused_ms: {type: integer, minimum: 0}
+        version: {type: string, minLength: 1}
+    StoppedTimer:
+      allOf:
+        - $ref: '#/components/schemas/Timer'
+        - type: object
+          required: [status, stopped_at, exact_duration_ms, exact_minutes]
+          properties:
+            status: {const: stopped}
+            stopped_at: {type: string, format: date-time}
+            exact_duration_ms: {type: integer, minimum: 0}
+            exact_minutes:
+              type: number
+              minimum: 0
+              description: exact_duration_ms rounded to the nearest whole minute
+    StartTimerRequest:
+      type: object
+      required: [activity_type_id, project_id]
+      properties:
+        activity_type_id: {type: string, minLength: 1}
+        project_id: {type: string, minLength: 1}
+        description: {type: string}
+    TimerCurrentResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [timer]
+          properties:
+            timer:
+              oneOf:
+                - $ref: '#/components/schemas/Timer'
+                - type: 'null'
+        meta: {$ref: '#/components/schemas/Meta'}
+    TimerResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data: {$ref: '#/components/schemas/Timer'}
+        meta: {$ref: '#/components/schemas/Meta'}
+    TimerStopResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data: {$ref: '#/components/schemas/StoppedTimer'}
+        meta: {$ref: '#/components/schemas/Meta'}
+    CreateActivityRequest:
+      type: object
+      required: [activity_type_id, project_id, description, business_purpose, started_at, ended_at]
+      properties:
+        activity_type_id: {type: string, minLength: 1}
+        project_id: {type: string, minLength: 1}
+        description: {type: string, minLength: 1}
+        business_purpose:
+          type: string
+          minLength: 1
+          description: Why the work relates to the business, distinct from description.
+        started_at: {type: string, format: date-time}
+        ended_at:
+          type: string
+          format: date-time
+          description: Must be strictly after started_at.
+        outcome: {type: string}
+        tags:
+          type: array
+          items: {type: string}
+        reconstruction_reason:
+          type: [string, 'null']
+          description: Required by product convention for a manually entered past-dated activity; not enforced server-side today.
+        client_timestamp: {type: [string, 'null'], format: date-time}
+    Activity:
+      type: object
+      required:
+        - activity_id
+        - activity_type_id
+        - project_id
+        - description
+        - business_purpose
+        - outcome
+        - tags
+        - entry_method
+        - reconstruction_reason
+        - started_at
+        - ended_at
+        - exact_duration_ms
+        - client_timestamp
+        - server_received_at
+        - voided
+        - evidence
+        - history
+        - relationships
+        - version
+        - updated_at
+      properties:
+        activity_id: {type: string, minLength: 1}
+        activity_type_id: {type: string, minLength: 1}
+        project_id: {type: string, minLength: 1}
+        description: {type: string}
+        business_purpose: {type: string}
+        outcome: {type: string}
+        tags:
+          type: array
+          items: {type: string}
+        entry_method: {enum: [manual, timer, split, merge]}
+        reconstruction_reason: {type: [string, 'null']}
+        started_at: {type: string, format: date-time}
+        ended_at: {type: string, format: date-time}
+        exact_duration_ms: {type: integer, minimum: 0}
+        client_timestamp: {type: [string, 'null'], format: date-time}
+        server_received_at: {type: string, format: date-time}
+        voided: {type: boolean}
+        evidence:
+          type: array
+          items: {type: object}
+          description: Evidence links; see the evidence endpoints (not yet documented here).
+        history:
+          type: array
+          items: {type: object}
+          description: Raw ledger events behind this projection (audit trail).
+        relationships:
+          type: object
+          description: e.g. split_into or merged_from activity ids, present only when applicable.
+        version: {type: string, minLength: 1}
+        updated_at: {type: string, format: date-time}
+    ActivityResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data: {$ref: '#/components/schemas/Activity'}
+        meta: {$ref: '#/components/schemas/Meta'}
+    DaySummary:
+      type: object
+      required:
+        - date
+        - projection_version
+        - activities
+        - total_exact_ms
+        - total_minutes
+        - decimal_hours
+        - by_activity_type
+        - by_project
+        - manual_count
+        - correction_count
+        - void_count
+        - evidence_coverage
+      properties:
+        date: {type: string, format: date}
+        projection_version: {type: string, minLength: 1}
+        activities:
+          type: array
+          items: {$ref: '#/components/schemas/Activity'}
+          description: Voided activities are excluded.
+        total_exact_ms: {type: integer, minimum: 0}
+        total_minutes: {type: number, minimum: 0}
+        decimal_hours: {type: number, minimum: 0}
+        by_activity_type:
+          type: object
+          additionalProperties: {type: integer}
+        by_project:
+          type: object
+          additionalProperties: {type: integer}
+        manual_count: {type: integer, minimum: 0}
+        correction_count: {type: integer, minimum: 0}
+        void_count: {type: integer, minimum: 0}
+        evidence_coverage: {type: number, minimum: 0, maximum: 1}
+    DaySummaryResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data: {$ref: '#/components/schemas/DaySummary'}
         meta: {$ref: '#/components/schemas/Meta'}
     ErrorResponse:
       type: object
