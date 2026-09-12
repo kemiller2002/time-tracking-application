@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/Ledger.Domain/Ledger.Domain.fsproj" />
+  <Project Path="tests/Ledger.Domain.Specs/Ledger.Domain.Specs.fsproj" />
+</Solution>
