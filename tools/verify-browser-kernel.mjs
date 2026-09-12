@@ -657,6 +657,49 @@ if (ready) {
   )
 
   // -------------------------------------------------------------------------
+  // History (TE-R-052)
+  // -------------------------------------------------------------------------
+
+  // The entry corrected a moment ago: 52 minutes became an hour on a
+  // different project, with a reason.
+  const historyOf = row('Reviewed composition evidence.').locator('details', { hasText: 'History' })
+  await historyOf.locator('summary').click()
+
+  // The history is fetched when the disclosure opens, so it arrives a tick
+  // after the click. Reading immediately caught the container empty.
+  await historyOf.locator('.history-item').first().waitFor({ timeout: 15000 })
+  const historyText = (await historyOf.textContent())?.trim() ?? ''
+
+  check(
+    'history shows the original record and every later change',
+    (await historyOf.locator('.history-item').count()) >= 3,
+    `${await historyOf.locator('.history-item').count()} items`
+  )
+  // TE-R-052's "original values and changed values", as the reader sees them.
+  check(
+    'and what changed, from what, to what',
+    historyText.includes('Duration: 52m → 1h 00m') &&
+      historyText.includes('Project: echelon-foundry → northline'),
+    historyText.slice(0, 120)
+  )
+  check(
+    'and the reason, the person and the device',
+    historyText.includes('Logged against the wrong client') && historyText.includes('browser'),
+    historyText.slice(0, 120)
+  )
+  // TE-R-053: a ledger's words, not a database's.
+  check(
+    'in a ledger\'s words, not a database\'s',
+    !/superseded|revision|event sourc/i.test(historyText),
+    historyText.slice(0, 120)
+  )
+  // TE-R-054: the stored record is not exposed by default.
+  check(
+    'and without exposing the stored record',
+    !historyText.includes('exact_duration_ms') && !historyText.includes('schema_version')
+  )
+
+  // -------------------------------------------------------------------------
   // Split, with the preview TE-R-044 asks for
   // -------------------------------------------------------------------------
 

@@ -27,6 +27,13 @@ public static partial class Interop
     internal static string Dispatch(string requestJson) => TimeEntry.Kernel.dispatch(requestJson);
 
     /// <summary>
+    /// Forwards a request for one entry's history.
+    /// </summary>
+    [JSExport]
+    internal static string EntryHistory(string requestJson) =>
+        TimeEntry.Kernel.entryHistory(requestJson);
+
+    /// <summary>
     /// Forwards a daily review request.
     /// </summary>
     [JSExport]

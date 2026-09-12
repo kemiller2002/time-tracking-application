@@ -870,3 +870,160 @@ let ``reading without a date is refused rather than given an invented one`` () =
 
     Assert.Equal("false", field result "ok")
     Assert.Equal("missing 'date'", field result "error")
+
+// ---------------------------------------------------------------------------
+// Entry history (TE-R-052)
+// ---------------------------------------------------------------------------
+
+let private historyOf (entries: TimeEntry list) (entryId: string) =
+    let node = JsonObject()
+    let documents = JsonArray()
+
+    for entry in entries do
+        documents.Add(JsonNode.Parse(Serialization.write (Mapping.toDocument entry)))
+
+    node.Add("entries", documents)
+    node.Add("entryId", JsonValue.Create<string> entryId)
+    node.Add("catalogue", JsonNode.Parse(Serialization.writeCatalogue (Mapping.catalogueToDocument catalogue)))
+    TimeEntry.Kernel.entryHistory (node.ToJsonString()) |> JsonNode.Parse
+
+/// The entry after a correction: 30 minutes became an hour, on a different
+/// project, with a reason.
+let private corrected =
+    let before = persistedEntry "e1" (minutes 30) "sha-1"
+
+    let correctedFacts =
+        { before.Effective with
+            Duration = minutes 60
+            Project = projectId "northline"
+            Description = Some(description "Reviewed the ledger schema") }
+
+    { before with
+        Effective = correctedFacts
+        History =
+            { Id = revisionId "e1-correct"
+              Change = Corrected(reason "Logged against the wrong client.")
+              Facts = correctedFacts
+              RecordedAt = instant 1789000000000L
+              RecordedBy = userId "km"
+              Device = deviceLabel "iPhone" }
+            :: before.History }
+
+[<Fact>]
+let ``history shows what changed, from what, to what`` () =
+    // TE-R-052's "original values and changed values". Computed by comparing
+    // each revision's facts against the one before it — the facts are already
+    // recorded at every revision precisely so this needs no reconstruction.
+    let result = historyOf [ corrected ] "e1"
+
+    let revisions =
+        match result.["revisions"] with
+        | :? JsonArray as items -> List.ofSeq items
+        | _ -> []
+
+    Assert.Equal(2, List.length revisions)
+
+    // Oldest first: a history read top to bottom is a story, and "what
+    // changed" only means anything against what came before it.
+    Assert.Equal("Recorded", field (List.head revisions) "change")
+    Assert.Empty(
+        match (List.head revisions).["changed"] with
+        | :? JsonArray as items -> List.ofSeq items
+        | _ -> []
+    )
+
+    let correction = List.item 1 revisions
+    Assert.Equal("Corrected", field correction "change")
+    Assert.Equal("Logged against the wrong client.", field correction "detail")
+
+    let changed = correction.["changed"].ToJsonString()
+    Assert.Contains("\"field\":\"Duration\",\"from\":\"30m\",\"to\":\"1h 00m\"", changed)
+    Assert.Contains("\"field\":\"Project\",\"from\":\"echelon-foundry\",\"to\":\"northline\"", changed)
+
+[<Fact>]
+let ``history records who, when and from which device`` () =
+    let result = historyOf [ corrected ] "e1"
+    let correction = (result.["revisions"] :?> JsonArray) |> Seq.item 1
+
+    Assert.Equal("km", field correction "recordedBy")
+    Assert.Equal("iPhone", field correction "device")
+    // UTC, and labelled as such: no offset was supplied, and guessing a zone
+    // would silently misdate every revision by up to a day.
+    Assert.Contains("UTC", field correction "recordedAt")
+
+[<Fact>]
+let ``a supplied time zone offset moves the displayed moment`` () =
+    // The offset is a fact about the reader's environment, supplied by the
+    // host. The kernel reads no clock and knows no zone; it does arithmetic
+    // on what it was told.
+    let node = JsonNode.Parse(historyOf [ corrected ] "e1" |> fun _ ->
+        let n = JsonObject()
+        let documents = JsonArray()
+        documents.Add(JsonNode.Parse(Serialization.write (Mapping.toDocument corrected)))
+        n.Add("entries", documents)
+        n.Add("entryId", JsonValue.Create<string> "e1")
+        n.Add("timeZoneOffsetMinutes", JsonValue.Create 60)
+        n.ToJsonString())
+
+    let shifted =
+        TimeEntry.Kernel.entryHistory (node.ToJsonString())
+        |> JsonNode.Parse
+        |> fun r -> (r.["revisions"] :?> JsonArray) |> Seq.item 1
+
+    // One hour ahead of UTC, and no longer labelled UTC.
+    Assert.DoesNotContain("UTC", field shifted "recordedAt")
+
+[<Fact>]
+let ``history uses a ledger's words, not a database's`` () =
+    // TE-R-053: no event-sourcing vocabulary in the main UI.
+    let removed =
+        let entry = persistedEntry "e2" (minutes 30) "sha-2"
+
+        { entry with
+            State = Void(reason "Recorded twice.", instant 1L)
+            History =
+                { Id = revisionId "e2-void"
+                  Change = Voided(reason "Recorded twice.")
+                  Facts = entry.Effective
+                  RecordedAt = instant 1789000000000L
+                  RecordedBy = userId "km"
+                  Device = deviceLabel "iPhone" }
+                :: entry.History }
+
+    let result = historyOf [ removed ] "e2"
+
+    // Asserted over the WORDS A READER SEES, not over the whole document.
+    // An earlier version of this checked the entire JSON and failed on the
+    // field name "revisions" — which no one reads. The requirement is about
+    // the vocabulary of the interface, not of the wire format.
+    let text (node: JsonNode) (name: string) =
+        match node.[name] with
+        | null -> ""
+        | value -> value.ToString()
+
+    let words =
+        (result.["revisions"] :?> JsonArray)
+        |> Seq.collect (fun r -> [ text r "change"; text r "detail" ])
+        |> String.concat " | "
+
+    Assert.Contains("Removed from totals", words)
+    Assert.DoesNotContain("Voided", words)
+    Assert.DoesNotContain("superseded", words)
+    Assert.DoesNotContain("revision", words)
+    Assert.DoesNotContain("event", words)
+
+[<Fact>]
+let ``history does not expose the stored record by default`` () =
+    // TE-R-054 permits a raw record view for advanced users but forbids
+    // exposing it by default. Every value a reader wants is already rendered.
+    let rendered = (historyOf [ corrected ] "e1").ToJsonString()
+
+    Assert.DoesNotContain("schema_version", rendered)
+    Assert.DoesNotContain("exact_duration_ms", rendered)
+
+[<Fact>]
+let ``asking for an entry that is not loaded says so`` () =
+    let result = historyOf [ corrected ] "nope"
+
+    Assert.Equal("false", field result "ok")
+    Assert.Contains("nope", field result "error")

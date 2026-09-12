@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "time-tracking-application",
-  "nextSeq": 46,
+  "nextSeq": 47,
   "items": [
     {
       "id": "WI-0001",
@@ -704,6 +704,20 @@
       "attachments": [],
       "createdAt": "2026-09-12T02:23:20Z",
       "updatedAt": "2026-09-12T02:23:20Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0046",
+      "title": "TE-046 Entry history (TE-R-052): what changed, why, when, by whom, from which device",
+      "description": null,
+      "tags": [],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T02:29:05Z",
+      "updatedAt": "2026-09-12T02:29:05Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null

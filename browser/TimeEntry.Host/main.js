@@ -419,6 +419,66 @@ const mergeCheckbox = (row) => {
   return wrapper
 }
 
+// One entry's history (TE-R-052), disclosed in place rather than on its own
+// screen: the entry is right there, and a full-page navigation to read three
+// lines is a worse answer to "what happened to this?".
+//
+// Markup follows activity.html's history block — `history`, `history-item`,
+// `history-marker`, `history-title`, `history-copy`, `history-time`.
+const historyControl = (entryId) => {
+  const details = el('details', 'section')
+  details.append(el('summary', null, 'History'))
+  const container = el('div', 'history')
+  details.append(container)
+
+  // Fetched when opened rather than for every row on every render: a day with
+  // forty entries would otherwise compute forty histories nobody asked to see.
+  details.addEventListener('toggle', () => {
+    if (!details.open) return
+
+    const answer = ask(kernel.EntryHistory, {
+      entries: state.entries,
+      entryId,
+      catalogue,
+      // A fact about the reader's environment, supplied by the host. The
+      // kernel reads no clock and knows no zone. getTimezoneOffset is minutes
+      // BEHIND UTC, so it is negated to give minutes ahead.
+      timeZoneOffsetMinutes: -new Date().getTimezoneOffset()
+    })
+
+    if (answer.ok !== true) {
+      container.replaceChildren(el('p', 'history-copy', answer.error))
+      return
+    }
+
+    container.replaceChildren(
+      ...answer.revisions.map((revision) => {
+        const item = el('article', 'history-item')
+        const body = el('div')
+        body.append(el('p', 'history-title', revision.change))
+
+        if (revision.detail) body.append(el('p', 'history-copy', revision.detail))
+
+        // "Duration: 30m → 1h 00m". The before and after are the kernel's;
+        // the arrow is punctuation.
+        for (const change of revision.changed ?? []) {
+          body.append(
+            el('p', 'history-copy', `${change.field}: ${change.from} → ${change.to}`)
+          )
+        }
+
+        body.append(
+          el('p', 'history-time', `${revision.recordedAt} · ${revision.recordedBy} · ${revision.device}`)
+        )
+        item.append(el('span', 'history-marker'), body)
+        return item
+      })
+    )
+  })
+
+  return details
+}
+
 // Splitting an entry. `split.html` calls the pieces "Part 1", "Part 2"; this
 // keeps that language and that structure.
 //
@@ -591,6 +651,11 @@ const renderDay = (view) => {
         article.append(
           reasonControl(row.id, 'void', 'Remove', 'Remove entry', 'Why is this being removed?')
         )
+
+      // Offered on every entry, including superseded ones: history is the one
+      // thing a record keeps when it can no longer be changed, and it is
+      // exactly then that someone wants to read it.
+      article.append(historyControl(row.id))
 
       if (row.capabilities.includes('CanAttachEvidence'))
         article.append(evidenceControl(row.id))

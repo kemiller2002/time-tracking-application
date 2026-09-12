@@ -311,6 +311,202 @@ let viewDay (requestJson: string) : string =
         errorResult (ex.GetType().Name + ": " + ex.Message)
 
 
+/// A moment, written for a person.
+///
+/// The offset comes from the host as data rather than being read here: the
+/// kernel performs no effects and has no business knowing where the reader
+/// is. The browser knows its own offset and states it; this does arithmetic
+/// on what it was told. Absent an offset, UTC is used and labelled as such —
+/// guessing a zone would silently misdate every revision by up to a day.
+let private displayMoment (offsetMinutes: int) (epochMilliseconds: int64) =
+    let shifted =
+        System.DateTimeOffset.FromUnixTimeMilliseconds(epochMilliseconds).ToOffset(
+            System.TimeSpan.FromMinutes(float offsetMinutes)
+        )
+
+    let suffix = if offsetMinutes = 0 then " UTC" else ""
+    shifted.ToString("d MMM yyyy, HH:mm") + suffix
+
+/// What a revision did, in the words a ledger uses rather than the words a
+/// database uses.
+///
+/// TE-R-053 forbids technical event-sourcing language in the main UI, so
+/// "superseded", "revision" and "event" do not appear here. The domain keeps
+/// its own vocabulary; this translates it once, at the boundary.
+let private changeWording (change: RevisionChange) =
+    match change with
+    | Created -> "Recorded", None
+    | Corrected reason -> "Corrected", Some(Reason.value reason)
+    | Voided reason -> "Removed from totals", Some(Reason.value reason)
+    | Restored reason -> "Returned to totals", Some(Reason.value reason)
+    | SplitInto children ->
+        sprintf "Split into %d records" (List.length children), None
+    | MergedInto _ -> "Merged into another record", None
+    | CreatedBySplitOf source ->
+        sprintf "Created by splitting %s" (EntryId.value source), None
+    | CreatedByMergeOf sources ->
+        sprintf "Created by merging %d records" (List.length sources), None
+    | EvidenceAttached evidence -> "Evidence attached", Some evidence.Uri
+    | EvidenceReassignedFrom source ->
+        sprintf "Evidence moved from %s" (EntryId.value source), None
+
+/// Which facts differ between two points in an entry's history.
+///
+/// This is TE-R-052's "original values and changed values". Computed by
+/// comparing a revision's facts against the one before it, rather than stored
+/// as a diff: a stored diff can disagree with the values it claims to
+/// describe, and the facts are already recorded at every revision precisely
+/// so this does not need reconstruction.
+let private differences (previous: EntryFacts option) (current: EntryFacts) =
+    match previous with
+    | None -> []
+    | Some before ->
+        [ if before.Duration <> current.Duration then
+              "Duration",
+              displayExact (Duration.milliseconds before.Duration),
+              displayExact (Duration.milliseconds current.Duration)
+
+          if before.Project <> current.Project then
+              "Project", ProjectId.value before.Project, ProjectId.value current.Project
+
+          if before.ActivityType <> current.ActivityType then
+              "Activity type",
+              ActivityTypeId.value before.ActivityType,
+              ActivityTypeId.value current.ActivityType
+
+          if before.Date <> current.Date then
+              let by, bm, bd = EntryDate.toYearMonthDay before.Date
+              let cy, cm, cd = EntryDate.toYearMonthDay current.Date
+
+              "Date",
+              sprintf "%04d-%02d-%02d" by bm bd,
+              sprintf "%04d-%02d-%02d" cy cm cd
+
+          if before.Description <> current.Description then
+              "Description",
+              (match before.Description with
+               | Some d -> Description.value d
+               | None -> "(none)"),
+              (match current.Description with
+               | Some d -> Description.value d
+               | None -> "(none)") ]
+
+/// One entry's whole history (TE-R-052).
+///
+/// Shows what each change did, why, when, by whom and from which device, plus
+/// the values that changed — and the current effective result, which is what
+/// the ledger actually stands behind.
+///
+/// Raw stored JSON is NOT included. TE-R-054 permits a raw record view for
+/// advanced users but forbids exposing it by default, and nothing here needs
+/// it: every value a reader wants is already rendered.
+let entryHistory (requestJson: string) : string =
+    try
+        match JsonNode.Parse requestJson with
+        | null -> errorResult "empty request"
+        | request ->
+            let offsetMinutes =
+                match request.["timeZoneOffsetMinutes"] with
+                | null -> 0
+                | value ->
+                    match System.Int32.TryParse(value.ToString()) with
+                    | true, parsed -> parsed
+                    | _ -> 0
+
+            let catalogue =
+                match request.["catalogue"] with
+                | null -> Catalogue.empty
+                | node ->
+                    match Serialization.readCatalogue (node.ToJsonString()) with
+                    | Error _ -> Catalogue.empty
+                    | Ok document ->
+                        Mapping.catalogueFromDocument document
+                        |> Result.defaultValue Catalogue.empty
+
+            let entries =
+                match request.["entries"] with
+                | :? JsonArray as items ->
+                    items
+                    |> Seq.choose (fun item ->
+                        match item with
+                        | null -> None
+                        | node ->
+                            match Serialization.read (node.ToJsonString()) with
+                            | Error _ -> None
+                            | Ok document ->
+                                match Mapping.fromDocument None document with
+                                | Error _ -> None
+                                | Ok entry -> Some entry)
+                    |> List.ofSeq
+                | _ -> []
+
+            match request.["entryId"] with
+            | null -> errorResult "missing 'entryId'"
+            | wanted ->
+                let id = wanted.ToString()
+
+                match entries |> List.tryFind (fun e -> EntryId.value e.Id = id) with
+                | None -> errorResult (sprintf "no entry '%s' is loaded" id)
+                | Some entry ->
+                    let node = JsonObject()
+                    node.Add("ok", JsonValue.Create true)
+                    node.Add("entryId", JsonValue.Create id)
+
+                    let view = Projection.toView displayPolicy [] entry
+                    node.Add("description", JsonValue.Create(Option.toObj view.Description))
+                    node.Add("classification", JsonValue.Create(classificationOf catalogue view))
+                    node.Add("displayTime", JsonValue.Create(displayTime view.DisplayHours view.DisplayMinutes))
+                    node.Add("countsTowardTotals", JsonValue.Create view.CountsTowardTotals)
+
+                    // History is newest first in the domain. Rendered oldest
+                    // first, because a history read top to bottom is a story
+                    // and a story starts at the beginning — and because
+                    // "what changed" only means anything against what came
+                    // before it.
+                    let oldestFirst = List.rev entry.History
+                    let revisions = JsonArray()
+
+                    oldestFirst
+                    |> List.iteri (fun index revision ->
+                        let item = JsonObject()
+                        let title, detail = changeWording revision.Change
+                        item.Add("change", JsonValue.Create title)
+                        item.Add("detail", JsonValue.Create(Option.toObj detail))
+
+                        item.Add(
+                            "recordedAt",
+                            JsonValue.Create(
+                                displayMoment offsetMinutes (Instant.epochMilliseconds revision.RecordedAt)
+                            )
+                        )
+
+                        item.Add("recordedBy", JsonValue.Create(UserId.value revision.RecordedBy))
+                        item.Add("device", JsonValue.Create(DeviceLabel.value revision.Device))
+
+                        let previous =
+                            if index = 0 then
+                                None
+                            else
+                                Some (List.item (index - 1) oldestFirst).Facts
+
+                        let changes = JsonArray()
+
+                        for field, before, after in differences previous revision.Facts do
+                            let change = JsonObject()
+                            change.Add("field", JsonValue.Create field)
+                            change.Add("from", JsonValue.Create before)
+                            change.Add("to", JsonValue.Create after)
+                            changes.Add change
+
+                        item.Add("changed", changes)
+                        revisions.Add item)
+
+                    node.Add("revisions", revisions)
+                    node.ToJsonString(jsonOptions)
+    with ex ->
+        errorResult (ex.GetType().Name + ": " + ex.Message)
+
+
 /// Whether a day's record is complete enough to stand behind.
 ///
 /// `review.html` lists named checks with a tick or a warning. The checks are

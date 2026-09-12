@@ -47,4 +47,5 @@
 | WI-0042 | TE-042 Conflict review: show the saved entry's values beside the proposed ones (TE-R-071's review step) | complete |  | medium |
 | WI-0043 | TE-043 Conflict reconciliation on the today screen, and a stale-bundle guard for the browser harness | complete |  | medium |
 | WI-0044 | TE-044 Month view: period summary in Tier 3, wired on the today screen | complete |  | medium |
-| WI-0045 | TE-045 Daily review screen wired against the domain's obligations | ready |  | medium |
+| WI-0045 | TE-045 Daily review screen wired against the domain's obligations | complete |  | medium |
+| WI-0046 | TE-046 Entry history (TE-R-052): what changed, why, when, by whom, from which device | ready |  | medium |
