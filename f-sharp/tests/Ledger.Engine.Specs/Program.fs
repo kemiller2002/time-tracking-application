@@ -47,6 +47,7 @@ let private storageResult (correlationId: string) (outcomeKind: string) (value: 
 let loadSuccess value = storageResult "load" "Success" value None
 let loadFailure reason = storageResult "load" "Failure" None (Some reason)
 let saveFailure reason = storageResult "save" "Failure" None (Some reason)
+let saveUnknown reason = storageResult "save" "Unknown" None (Some reason)
 
 let todayAt hour minute =
     let today = DateTime.UtcNow.Date
@@ -136,6 +137,12 @@ let tests : (string * (unit -> unit)) list =
         createTodayActivity 9 10 |> ignore
         let response = sendJson (saveFailure "quota exceeded")
         assertTrue (stringView response "persistenceError" <> "") "save failure did not surface a persistence error"
+
+      "an unknown save outcome surfaces persistenceError rather than being treated as success or silently lost", fun () ->
+        reset ()
+        createTodayActivity 9 10 |> ignore
+        let response = sendJson (saveUnknown "connection dropped before a response arrived")
+        assertTrue (stringView response "persistenceError" <> "") "unknown save outcome was not surfaced"
 
       "SplitActivity dispatch produces replacement rows and marks the source Superseded", fun () ->
         reset ()

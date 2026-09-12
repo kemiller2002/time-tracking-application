@@ -1,3 +1,9 @@
+// SDE Tier 4 (Host / External Effects) — owns the DOM and localStorage
+// (.sde/architecture/FOUR-TIER-ARCHITECTURE.md). Reports what actually
+// happened, including "unknown" as a first-class outcome where the host can
+// produce one (see Protocol.fs's StorageOutcome) rather than a swallowed
+// exception.
+//
 // A minimal, first-party replacement for `@echelon-foundry/typescript-wasm-kernel`'s
 // `BrowserKernel` (which cannot be depended on here — see docs/DOMAIN-REQUIREMENTS.md's
 // implementation notes and the plan this repo was built from: the package is a

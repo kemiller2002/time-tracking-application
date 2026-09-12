@@ -2,6 +2,11 @@ namespace Ledger.Domain
 
 open System
 
+/// SDE Tier 1 (Semantic Model): entities, value types, and pure derived
+/// calculations (billing, capabilities, the timer state machine). Must not
+/// know about JSON, WASM, browser, or storage — see
+/// `.sde/architecture/FOUR-TIER-ARCHITECTURE.md`.
+///
 /// Project, Activity Type, and Tag all share this shape in the JS implementation
 /// (schemas/domain/{project,activity-type,tag}.schema.json) — one reference-item
 /// type covers all three reference directories.

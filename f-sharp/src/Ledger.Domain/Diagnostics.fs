@@ -1,5 +1,7 @@
 namespace Ledger.Domain
 
+/// SDE Tier 1 (Semantic Model): stable failure-reason codes. Pure values —
+/// must not know about JSON, WASM, browser, or storage (`.sde/architecture/FOUR-TIER-ARCHITECTURE.md`).
 module DiagnosticCode =
     [<Literal>]
     let ActivityTypeRequired = "ACTIVITY_TYPE_REQUIRED"

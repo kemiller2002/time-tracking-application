@@ -79,7 +79,11 @@ type AttestDayCommand =
 
 type StartTimerCommand = { ActivityTypeId: string; ProjectId: string; Description: string }
 
-/// Every business rule in `worker/src/store.js`, reimplemented per
+/// SDE Tier 2 (State Transition / Domain Execution): legal transitions,
+/// guards, and invariants — pure `Environment -> LedgerDocument -> Command ->
+/// CommandResult`, never performs I/O itself (`.sde/architecture/FOUR-TIER-ARCHITECTURE.md`).
+///
+/// Every business rule the application enforces, per
 /// `docs/DOMAIN-REQUIREMENTS.md` — including the three fixes this port adds:
 /// restore re-validation, merge same-date/contiguity, and (in `Summary.fs`) the
 /// derived six-minute billing figure.

@@ -4,9 +4,13 @@ open System
 open Ledger.Domain
 open Ledger.Engine.Protocol
 
+/// SDE Tier 3 (Application / Projection / Orchestration): coordinates
+/// commands, projections, and requested effects; must never become a second
+/// semantic authority (`.sde/architecture/FOUR-TIER-ARCHITECTURE.md`) — all
+/// domain legality lives in `Ledger.Domain.Commands` (Tier 2).
+///
 /// The single entry point crossing the WASM boundary (via the `Ledger.Wasm`
-/// C# JSExport shim). Owns command routing; all domain legality still lives
-/// in `Ledger.Domain.Commands`.
+/// C# JSExport shim, Tier 4). Owns command routing only.
 module Dispatch =
 
     let private storageKey = "business-activity-ledger:v1"
@@ -331,8 +335,17 @@ module Dispatch =
                 | diagnostics -> { state with PersistenceError = Some $"Saved data failed validation: {firstMessage diagnostics}" }
         | StorageResult("load", StorageSuccess None) -> state // nothing saved yet — first visit
         | StorageResult("load", StorageFailure reason) -> { state with PersistenceError = Some $"Could not load saved activities ({reason})." }
+        | StorageResult("load", StorageUnknown reason) -> { state with PersistenceError = Some $"Could not confirm whether saved activities loaded ({reason}). Reload to retry." }
         | StorageResult("save", StorageSuccess _) -> { state with PersistenceError = None }
         | StorageResult("save", StorageFailure reason) -> { state with PersistenceError = Some $"Changes could not be saved ({reason}). They will be lost on reload." }
+        /// An unknown save outcome must never collapse into success or failure
+        /// (SDE Tier-4 doctrine; `docs/DOMAIN-REQUIREMENTS.md`'s persistence
+        /// contract's fourth save outcome) — today's synchronous localStorage
+        /// host cannot actually produce this case, but a later GitHub-backed
+        /// host (a network write whose response never arrives) will, and this
+        /// is where its reconciliation surfaces once built.
+        | StorageResult("save", StorageUnknown reason) ->
+            { state with PersistenceError = Some $"Changes may not have saved ({reason}). Do not assume they were lost — reload to check before re-entering them." }
         | StorageResult(_, _) -> state
         | HttpResult _ -> state
 

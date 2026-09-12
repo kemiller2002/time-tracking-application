@@ -2,9 +2,12 @@ namespace Ledger.Engine
 
 open System.Text.Json.Nodes
 
-/// Domain-agnostic wire protocol between the browser bridge and the WASM
-/// engine. Small explicit DTOs and hand-written JSON encode/decode — no
-/// reflection-driven marshalling, no shared object graph with the domain.
+/// The SDE Host Contract (`.sde/architecture/BOUNDARY-PRESERVATION.md`)
+/// between Tier 3 (`Ledger.Engine`) and Tier 4 (`Ledger.Wasm` + `web/`):
+/// small explicit DTOs, a closed effect algebra (one constructor per legal
+/// operation), and hand-written JSON encode/decode — never a host
+/// language's or framework's default serializer, no shared object graph
+/// with the domain.
 module Protocol =
 
     type SemanticEvent = { Name: string; Key: string option; Value: string option }
@@ -16,10 +19,18 @@ module Protocol =
         | OutcomeUnknown of reason: string
 
     /// `value` is the read value for a "get" (None means the key was absent —
-    /// a normal outcome, not a failure).
+    /// a normal outcome, not a failure). `StorageUnknown` exists for SDE Tier-4
+    /// conformance (`.sde/method/VERIFICATION-METHOD.md`'s "unknown external
+    /// outcome" row) and to match `docs/DOMAIN-REQUIREMENTS.md`'s persistence
+    /// contract's four-way save outcome — today's synchronous `localStorage`
+    /// host almost never needs it (a `setItem` call fails immediately and
+    /// legibly), but the wire contract already speaks the vocabulary a future
+    /// network-backed host (the GitHub-backed ledger) will require, so that
+    /// swap is a new Tier-4 host implementation, not a Tier-2/3 contract change.
     type StorageOutcome =
         | StorageSuccess of value: string option
         | StorageFailure of reason: string
+        | StorageUnknown of reason: string
 
     type EffectResult =
         | HttpResult of correlationId: string * outcome: EffectOutcome
@@ -90,6 +101,7 @@ module Protocol =
                     match outcomeObj.["kind"].GetValue<string>() with
                     | "Success" -> StorageSuccess(optionalString outcomeObj "value")
                     | "Failure" -> StorageFailure(outcomeObj.["reason"].GetValue<string>())
+                    | "Unknown" -> StorageUnknown(outcomeObj.["reason"].GetValue<string>())
                     | other -> failwithf "unknown StorageOutcome kind '%s'" other
                 EffectResultMessage(StorageResult(correlationId, outcome))
             | other -> failwithf "unknown EffectResult kind '%s'" other
