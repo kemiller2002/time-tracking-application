@@ -24,6 +24,22 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/HealthResponse'}
+  /session:
+    get:
+      operationId: getSession
+      description: >-
+        Returns the caller's session status. authenticated is currently
+        always true in this implementation — a request that fails
+        authentication is already rejected with 401 before reaching this
+        route, so this field cannot presently return false.
+      responses:
+        '200':
+          description: Session status
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SessionResponse'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /config:
     get:
       operationId: getConfig
@@ -633,6 +649,22 @@ components:
           required: [status]
           properties:
             status: {enum: [ok, degraded]}
+        meta: {$ref: '#/components/schemas/Meta'}
+    SessionResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [authenticated, user, csrf_required]
+          properties:
+            authenticated: {type: boolean}
+            user:
+              type: object
+              required: [id]
+              properties:
+                id: {type: string, minLength: 1}
+            csrf_required: {type: boolean}
         meta: {$ref: '#/components/schemas/Meta'}
     ConfigResponse:
       type: object
