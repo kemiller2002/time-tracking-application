@@ -162,6 +162,10 @@ test('void, restore, evidence, day and month projections reconcile',async()=>{
   const restored=(await call(b,`/activities/${activity.activity_id}/restore`,{method:'POST',payload:{base_version:evidenceOnVoided.body.data.activity.version,reason:'Not a duplicate'}})).body.data;assert.equal(restored.voided,false);
   const day=(await call(b,'/days/2026-08-02')).body.data;assert.equal(day.total_exact_ms,3600000);assert.equal(day.evidence_coverage,1);
   const month=(await call(b,'/months/2026-08')).body.data;assert.equal(month.decimal_hours,1);
+  const jsonReport=(await call(b,'/reports/daily/2026-08-02')).body.data;assert.equal(jsonReport.format,'json');assert.equal(jsonReport.source.total_exact_ms,3600000);
+  const markdownReport=(await call(b,'/reports/daily/2026-08-02?format=markdown')).body.data;assert.equal(markdownReport.format,'markdown');assert.ok(markdownReport.content.includes('software-development'));assert.ok(markdownReport.content.includes('Build service'));
+  const csvReport=(await call(b,'/reports/monthly/2026-08?format=csv')).body.data;assert.equal(csvReport.format,'csv');assert.ok(csvReport.content.startsWith('activity_id,'));assert.ok(csvReport.content.includes('Build service'));
+  const badFormat=await call(b,'/reports/daily/2026-08-02?format=xml');assert.equal(badFormat.status,400);assert.equal(badFormat.body.error.code,'invalid_format');
   const attested=await call(b,'/days/2026-08-02/attest',{method:'POST',payload:{projection_version:day.projection_version,statement:'Accurate to the best of my knowledge'}});assert.equal(attested.status,200);
 });
 
