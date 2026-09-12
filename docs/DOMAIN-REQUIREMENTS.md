@@ -43,9 +43,8 @@ multi-person.
   version (`schemas/domain/project.schema.json`).
 - **Activity Type**: a stable id, a name, an active/inactive status, and a
   version (`schemas/domain/activity-type.schema.json`).
-- **Tag**: a stable id, a name, and an active/inactive status. Not yet
-  represented in `schemas/domain/` — add a `tag.schema.json` mirroring
-  `activity-type.schema.json` when tag management is implemented.
+- **Tag**: a stable id, a name, and an active/inactive status, and a
+  version (`schemas/domain/tag.schema.json`).
 - **Activity**: one record of the owner's time — a start time, a duration,
   a project, an activity type, a description, a business purpose, zero or
   more tags, zero or more evidence links, a lifecycle status, a revision,
