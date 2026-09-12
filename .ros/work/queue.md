@@ -40,4 +40,5 @@
 | WI-0035 | TE-035 Correction, removal and restoration wired on the today screen, with kernel-decided visibility | complete |  | medium |
 | WI-0036 | TE-036 Split on the today screen, with the kernel-computed preview TE-R-044 requires | complete |  | medium |
 | WI-0037 | TE-037 Merge on the today screen: multi-entry selection and the kernel-computed combined-time preview | complete |  | medium |
-| WI-0038 | TE-038 Evidence attachment on the today screen | ready |  | medium |
+| WI-0038 | TE-038 Evidence attachment on the today screen | complete |  | medium |
+| WI-0039 | TE-039 Credential port: the browser's token is one implementation, so the mechanism can change (DF-TE-0011) | ready |  | medium |

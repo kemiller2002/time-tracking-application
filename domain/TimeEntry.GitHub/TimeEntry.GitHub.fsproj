@@ -20,6 +20,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="Credential.fs" />
     <Compile Include="Store.fs" />
     <Compile Include="HttpProtocol.fs" />
     <Compile Include="Interpreter.fs" />

@@ -92,6 +92,10 @@ let retryDelaySeconds (attempt: int) (error: StoreError) : int option =
     | HeadMoved _
     | NotFound _
     | Unauthorized _
+    // Never retried: no request was sent, and none will succeed until the
+    // credential itself changes. Retrying would turn "you are not signed in"
+    // into a silent delay (DF-TE-0011).
+    | CredentialMissing _
     | UnexpectedResponse _ -> None
 
 /// Check every write's precondition against a tree listing.

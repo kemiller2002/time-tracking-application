@@ -516,3 +516,79 @@ offered and `restoreEntry` rejects with
 - Should the existing event log ever be imported, `activity.voided` events
   whose reason marks them as merge or split consequences must map to
   `Superseded`, not `Void`.
+
+---
+
+## DF-TE-0011
+
+**Title:** The browser authenticates with a token, behind a port that lets the mechanism change
+
+**Status:** accepted · **Resolves:** `OQ-8` · **Source:** explicit user instruction
+
+### Context
+
+`OQ-8` recorded that the instruction fixes GitHub as the storage and
+integration mechanism but says nothing about how a browser proves its right to
+act on the repository. Three mechanisms were plausible and they differ in ways
+that reach the transport:
+
+| Mechanism | Lifetime | Header |
+|---|---|---|
+| Token supplied to the page | fixed until replaced | `Authorization: Bearer …` |
+| OAuth device flow | expires, refreshes | the same, but not the same value twice |
+| GitHub App installation token | ~1 hour, re-minted | the same, but not the same value twice |
+| Same-origin proxy holding the session | n/a | **none** — a cookie travels instead |
+
+The user has now settled the question: **the browser supplies a token**, and
+stated that this may change.
+
+### Decision
+
+Two parts, and the second is the substantive one.
+
+1. The browser authenticates by supplying a token, sent as
+   `Authorization: Bearer`.
+
+2. That is *one implementation of a port*, not the shape the rest of the
+   system is written against. `TimeEntry.GitHub.Credential` defines
+   `CredentialSource`, and `Credential.token` is today's implementation
+   alongside `Credential.ambient` and the general `Credential.ofAsync`.
+
+### Why the port is shaped the way it is
+
+Three choices, each of which a token alone would not have forced:
+
+**Asked per request, not once per session.** A fixed token could be set as a
+default header when the client is built — which is exactly what this code did
+before. A device-flow or installation token cannot: it expires, and the
+refresh has to happen somewhere. Acquiring per request costs one function call
+and is the only shape that admits both. A test (`a credential is acquired per
+request, not once per client`) fails if the header is ever fixed on the client
+again; it was confirmed to fail against precisely that change.
+
+**"No header" is a case, not an empty string.** `AmbientAuthority` is what a
+same-origin proxy needs: the request must arrive with no `Authorization` at
+all. Representing it as an empty token would send `Authorization: Bearer ` and
+earn a confusing 401.
+
+**Failing to obtain a credential is its own outcome.** `CredentialMissing` is
+a client-side fact discovered before any request is sent;
+`StoreError.Unauthorized` is what a server said. "You are not signed in" and
+"your access was refused" call for different responses, and collapsing them
+would both lose that distinction and spend a round trip to learn something the
+client already knew. `retryDelaySeconds` never retries `CredentialMissing`,
+because no number of attempts makes a credential appear.
+
+### Consequences
+
+- Changing mechanism is a change to one function and the host's construction
+  of it. `HttpStore`, `Interpreter`, and every tier below are untouched — a
+  claim four tests exercise rather than assert.
+- `CredentialSource.Describe` carries a short non-secret name so a diagnostic
+  can report which mechanism is in use without anything being tempted to log
+  the credential in order to answer.
+- The token still has to reach the browser, and nothing yet performs an effect
+  for it to authenticate. That is `WI-0033`, which this unblocks.
+- A token held in a browser is readable by anyone with the page. That is a
+  property of the mechanism chosen, not of this port, and is the reason the
+  port exists: the proxy option remains available without a rewrite.

@@ -35,6 +35,7 @@ open System.Text
 open System.Text.Json
 open System.Text.Json.Nodes
 open TimeEntry.GitHub.Store
+open TimeEntry.GitHub.Credential
 open TimeEntry.GitHub.HttpProtocol
 
 /// Git's file mode for a non-executable blob.
@@ -53,8 +54,30 @@ let private headerInt (response: HttpResponseMessage) (name: string) =
     | _ -> None
 
 /// Issue a request and classify anything that is not a success.
-let private send (client: HttpClient) (request: HttpRequestMessage) =
+///
+/// The credential is acquired HERE, per request, rather than fixed on the
+/// client at construction. A static token would not need that; a device-flow
+/// or installation token does, because it expires and the refresh has to
+/// happen somewhere. Asking every time is what lets the mechanism change
+/// without this file changing (DF-TE-0011).
+let private send (credential: CredentialSource) (client: HttpClient) (request: HttpRequestMessage) =
     async {
+        let! authorization = credential.Acquire()
+
+        match authorization with
+        // No request is sent. A missing credential is a fact the client
+        // already knows, and spending a round trip to be told 401 would both
+        // waste it and lose the distinction.
+        | Error error -> return Error(CredentialMissing(describeError error))
+        | Ok granted ->
+
+        match granted with
+        | AuthorizationHeader(scheme, parameter) ->
+            request.Headers.Authorization <- Headers.AuthenticationHeaderValue(scheme, parameter)
+        // Deliberately sets no header at all rather than an empty one: a
+        // proxy holding the session needs the request to arrive unadorned.
+        | AmbientAuthority -> ()
+
         try
             let! response = client.SendAsync request |> Async.AwaitTask
             let! body = response.Content.ReadAsStringAsync() |> Async.AwaitTask
@@ -76,17 +99,27 @@ let private send (client: HttpClient) (request: HttpRequestMessage) =
             return Error(TransportFailure("timed out: " + ex.Message))
     }
 
-let private get (client: HttpClient) (url: string) =
+/// A client paired with the credential its requests should carry.
+///
+/// Carried together because every request needs both, and passing them
+/// separately through a dozen helpers is how one of them eventually gets
+/// forgotten.
+[<NoEquality; NoComparison>]
+type Session =
+    { Client: HttpClient
+      Credential: CredentialSource }
+
+let private get (session: Session) (url: string) =
     async {
         use request = new HttpRequestMessage(HttpMethod.Get, url)
-        return! send client request
+        return! send session.Credential session.Client request
     }
 
-let private json (client: HttpClient) (method: HttpMethod) (url: string) (body: JsonObject) =
+let private json (session: Session) (method: HttpMethod) (url: string) (body: JsonObject) =
     async {
         use request = new HttpRequestMessage(method, url)
         request.Content <- new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json")
-        return! send client request
+        return! send session.Credential session.Client request
     }
 
 let private parse (body: string) : Result<JsonNode, StoreError> =
@@ -102,25 +135,31 @@ let private field (name: string) (node: JsonNode) : Result<string, StoreError> =
     | null -> Error(UnexpectedResponse(200, sprintf "response missing '%s'" name))
     | value -> Ok(value.ToString())
 
-/// Configure an `HttpClient` for the GitHub API. The caller owns its lifetime;
-/// this does not create one, because a client per request exhausts sockets.
-let configure (client: HttpClient) (token: string) =
-    client.DefaultRequestHeaders.Authorization <-
-        Headers.AuthenticationHeaderValue("Bearer", token)
-
+/// Configure an `HttpClient` for the GitHub API and pair it with a
+/// credential source. The caller owns the client's lifetime; this does not
+/// create one, because a client per request exhausts sockets.
+///
+/// Note what is NOT set here: the `Authorization` header. It is applied per
+/// request from the credential source, so that a mechanism which refreshes
+/// works without re-configuring the client (DF-TE-0011). The headers that
+/// genuinely are constant — the API version, the accept type, the user agent —
+/// stay defaults.
+let configure (client: HttpClient) (credential: CredentialSource) : Session =
     client.DefaultRequestHeaders.Accept.Add(Headers.MediaTypeWithQualityHeaderValue "application/vnd.github+json")
     client.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28")
     // GitHub rejects requests without a User-Agent.
     client.DefaultRequestHeaders.UserAgent.Add(Headers.ProductInfoHeaderValue("echelon-ledger", "1.0"))
-    client
+
+    { Client = client
+      Credential = credential }
 
 // ---------------------------------------------------------------------------
 // Reads
 // ---------------------------------------------------------------------------
 
-let private readFile (client: HttpClient) (target: RepositoryRef) (path: string) =
+let private readFile (session: Session) (target: RepositoryRef) (path: string) =
     async {
-        let! body = get client (Url.contents target path)
+        let! body = get session (Url.contents target path)
 
         match body with
         // A missing file is a legitimate answer, not a failure: it is how
@@ -149,9 +188,9 @@ let private readFile (client: HttpClient) (target: RepositoryRef) (path: string)
                 return decoded
     }
 
-let private readHead (client: HttpClient) (target: RepositoryRef) =
+let private readHead (session: Session) (target: RepositoryRef) =
     async {
-        let! body = get client (Url.ref target)
+        let! body = get session (Url.ref target)
 
         match body |> Result.bind parse with
         | Error error -> return Error error
@@ -161,9 +200,9 @@ let private readHead (client: HttpClient) (target: RepositoryRef) =
             | objectNode -> return field "sha" objectNode
     }
 
-let private readTreeSha (client: HttpClient) (target: RepositoryRef) (commitSha: string) =
+let private readTreeSha (session: Session) (target: RepositoryRef) (commitSha: string) =
     async {
-        let! body = get client (Url.commit target commitSha)
+        let! body = get session (Url.commit target commitSha)
 
         match body |> Result.bind parse with
         | Error error -> return Error error
@@ -174,19 +213,19 @@ let private readTreeSha (client: HttpClient) (target: RepositoryRef) (commitSha:
     }
 
 /// Every blob path in the branch's tree, with its blob SHA.
-let private readTree (client: HttpClient) (target: RepositoryRef) =
+let private readTree (session: Session) (target: RepositoryRef) =
     async {
-        let! head = readHead client target
+        let! head = readHead session target
 
         match head with
         | Error error -> return Error error
         | Ok headSha ->
-            let! treeSha = readTreeSha client target headSha
+            let! treeSha = readTreeSha session target headSha
 
             match treeSha with
             | Error error -> return Error error
             | Ok tree ->
-                let! body = get client (Url.tree target tree)
+                let! body = get session (Url.tree target tree)
 
                 match body |> Result.bind parse with
                 | Error error -> return Error error
@@ -210,17 +249,17 @@ let private readTree (client: HttpClient) (target: RepositoryRef) =
 // Writing
 // ---------------------------------------------------------------------------
 
-let private createBlob (client: HttpClient) (target: RepositoryRef) (content: string) =
+let private createBlob (session: Session) (target: RepositoryRef) (content: string) =
     async {
         let body = JsonObject()
         body.Add("content", JsonValue.Create content)
         body.Add("encoding", JsonValue.Create "utf-8")
-        let! response = json client HttpMethod.Post (Url.blobs target) body
+        let! response = json session HttpMethod.Post (Url.blobs target) body
         return response |> Result.bind parse |> Result.bind (field "sha")
     }
 
 let private createTree
-    (client: HttpClient)
+    (session: Session)
     (target: RepositoryRef)
     (baseTree: string)
     (entries: (string * string) list)
@@ -239,12 +278,12 @@ let private createTree
         let body = JsonObject()
         body.Add("base_tree", JsonValue.Create baseTree)
         body.Add("tree", items)
-        let! response = json client HttpMethod.Post (Url.trees target) body
+        let! response = json session HttpMethod.Post (Url.trees target) body
         return response |> Result.bind parse |> Result.bind (field "sha")
     }
 
 let private createCommit
-    (client: HttpClient)
+    (session: Session)
     (target: RepositoryRef)
     (message: string)
     (treeSha: string)
@@ -257,7 +296,7 @@ let private createCommit
         body.Add("message", JsonValue.Create message)
         body.Add("tree", JsonValue.Create treeSha)
         body.Add("parents", parents)
-        let! response = json client HttpMethod.Post (Url.commits target) body
+        let! response = json session HttpMethod.Post (Url.commits target) body
         return response |> Result.bind parse |> Result.bind (field "sha")
     }
 
@@ -268,12 +307,12 @@ let private createCommit
 /// head, so a concurrent write anywhere on the branch rejects it. Setting
 /// `force = true` here would silently overwrite a newer correction, which
 /// TE-R-070 forbids outright.
-let private updateRef (client: HttpClient) (target: RepositoryRef) (expectedHead: string) (commitSha: string) =
+let private updateRef (session: Session) (target: RepositoryRef) (expectedHead: string) (commitSha: string) =
     async {
         let body = JsonObject()
         body.Add("sha", JsonValue.Create commitSha)
         body.Add("force", JsonValue.Create false)
-        let! response = json client (HttpMethod "PATCH") (Url.refUpdate target) body
+        let! response = json session (HttpMethod "PATCH") (Url.refUpdate target) body
 
         return
             match response with
@@ -282,9 +321,9 @@ let private updateRef (client: HttpClient) (target: RepositoryRef) (expectedHead
             | Error error -> Error error
     }
 
-let private commit (client: HttpClient) (target: RepositoryRef) (request: CommitRequest) =
+let private commit (session: Session) (target: RepositoryRef) (request: CommitRequest) =
     async {
-        let! tree = readTree client target
+        let! tree = readTree session target
 
         match tree with
         | Error error -> return Error error
@@ -292,14 +331,14 @@ let private commit (client: HttpClient) (target: RepositoryRef) (request: Commit
             match checkPreconditions entries request.Writes with
             | Some violation -> return Error violation
             | None ->
-                let! head = readHead client target
+                let! head = readHead session target
 
                 match head with
                 | Error error -> return Error error
                 | Ok headSha when headSha <> request.ExpectedHeadSha ->
                     return Error(HeadMoved(request.ExpectedHeadSha, headSha))
                 | Ok headSha ->
-                    let! treeSha = readTreeSha client target headSha
+                    let! treeSha = readTreeSha session target headSha
 
                     match treeSha with
                     | Error error -> return Error error
@@ -309,7 +348,7 @@ let private commit (client: HttpClient) (target: RepositoryRef) (request: Commit
                             request.Writes
                             |> List.map (fun write ->
                                 async {
-                                    let! sha = createBlob client target write.Content
+                                    let! sha = createBlob session target write.Content
                                     return sha |> Result.map (fun s -> write.Path, s)
                                 })
                             |> Async.Sequential
@@ -332,18 +371,18 @@ let private commit (client: HttpClient) (target: RepositoryRef) (request: Commit
                                     | Error _ -> None)
                                 |> List.ofArray
 
-                            let! newTree = createTree client target baseTree written
+                            let! newTree = createTree session target baseTree written
 
                             match newTree with
                             | Error error -> return Error error
                             | Ok treeResult ->
                                 let! newCommit =
-                                    createCommit client target request.Message treeResult headSha
+                                    createCommit session target request.Message treeResult headSha
 
                                 match newCommit with
                                 | Error error -> return Error error
                                 | Ok commitSha ->
-                                    let! moved = updateRef client target headSha commitSha
+                                    let! moved = updateRef session target headSha commitSha
 
                                     match moved with
                                     | Error error -> return Error error
@@ -363,17 +402,17 @@ open TimeEntry.Persistence
 /// Build a `GitHubStore` backed by the REST API.
 ///
 /// The caller supplies and owns the `HttpClient` (see `configure`).
-let create (client: HttpClient) (target: RepositoryRef) : GitHubStore =
-    { ReadFile = readFile client target
+let create (session: Session) (target: RepositoryRef) : GitHubStore =
+    { ReadFile = readFile session target
       ListEntryPaths =
         fun () ->
             async {
-                let! tree = readTree client target
+                let! tree = readTree session target
 
                 return
                     tree
                     |> Result.map (fun entries ->
                         entries |> List.map fst |> List.filter Layout.isEntryPath)
             }
-      ReadHead = fun () -> readHead client target
-      Commit = commit client target }
+      ReadHead = fun () -> readHead session target
+      Commit = commit session target }

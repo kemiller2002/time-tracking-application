@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "time-tracking-application",
-  "nextSeq": 39,
+  "nextSeq": 40,
   "items": [
     {
       "id": "WI-0001",
@@ -606,6 +606,20 @@
       "attachments": [],
       "createdAt": "2026-09-12T01:30:16Z",
       "updatedAt": "2026-09-12T01:30:16Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0039",
+      "title": "TE-039 Credential port: the browser's token is one implementation, so the mechanism can change (DF-TE-0011)",
+      "description": null,
+      "tags": [],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T01:37:12Z",
+      "updatedAt": "2026-09-12T01:37:12Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null

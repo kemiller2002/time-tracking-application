@@ -53,7 +53,14 @@ type StoreError =
     /// The branch ref moved between read and commit.
     | HeadMoved of expected: string * actual: string
     | NotFound of path: string
+    /// The server refused what was sent. Distinct from `CredentialMissing`:
+    /// this one cost a round trip and means the credential is wrong, not
+    /// absent.
     | Unauthorized of detail: string
+    /// No credential could be produced, so no request was sent. Carries the
+    /// client-side reason (`Credential.CredentialError`, rendered) rather than
+    /// a status code, because there was no response to get one from.
+    | CredentialMissing of detail: string
     /// GitHub's secondary rate limit or abuse detection; carries the advised
     /// wait where the response gave one.
     | RateLimited of retryAfterSeconds: int option
