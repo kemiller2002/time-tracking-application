@@ -36,10 +36,8 @@ type private Recorder(reply: string) =
         response.Content <- new StringContent(reply)
         System.Threading.Tasks.Task.FromResult response
 
-let private target: TimeEntry.GitHub.HttpProtocol.RepositoryRef =
-    { Owner = "owner"
-      Repository = "repo"
-      Branch = "main" }
+let private target =
+    TimeEntry.GitHub.HttpProtocol.RepositoryRef.gitHub "owner" "repo" "main"
 
 /// A HEAD read is the smallest operation that issues exactly one request.
 let private readHeadWith (credential: CredentialSource) (recorder: Recorder) =

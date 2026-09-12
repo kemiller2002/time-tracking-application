@@ -12,16 +12,43 @@ open TimeEntry.GitHub.Store
 
 /// Which repository and branch the ledger lives in.
 type RepositoryRef =
-    { Owner: string
+    { /// The API root, without a trailing slash.
+      ///
+      /// Part of addressing a repository rather than a separate concern: a
+      /// repository on GitHub Enterprise Server is not reachable at
+      /// api.github.com, so "which repository" is not answerable without it.
+      ///
+      /// It is also what lets a test stand a stub in front of the transport
+      /// instead of reaching the real API — which the browser verification
+      /// otherwise does, in CI, on every run.
+      ApiRoot: string
+      Owner: string
       Repository: string
       Branch: string }
 
 [<Literal>]
-let ApiRoot = "https://api.github.com"
+let DefaultApiRoot = "https://api.github.com"
+
+module RepositoryRef =
+    /// A repository on github.com.
+    let gitHub (owner: string) (repository: string) (branch: string) =
+        { ApiRoot = DefaultApiRoot
+          Owner = owner
+          Repository = repository
+          Branch = branch }
+
+    /// A repository on some other host — GitHub Enterprise Server, or a stub.
+    /// A trailing slash is trimmed so callers need not care whether they left
+    /// one on.
+    let at (apiRoot: string) (owner: string) (repository: string) (branch: string) =
+        { ApiRoot = apiRoot.TrimEnd('/')
+          Owner = owner
+          Repository = repository
+          Branch = branch }
 
 module Url =
     let private repo (target: RepositoryRef) =
-        sprintf "%s/repos/%s/%s" ApiRoot target.Owner target.Repository
+        sprintf "%s/repos/%s/%s" target.ApiRoot target.Owner target.Repository
 
     /// Contents API, used only for reads: it returns the blob SHA alongside
     /// the content, which is the concurrency token.

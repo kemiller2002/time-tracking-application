@@ -49,12 +49,10 @@ let token =
     | "" -> failwith "GITHUB_TOKEN is required"
     | value -> value
 
-let target: HttpProtocol.RepositoryRef =
-    { Owner = "kemiller2002"
-      Repository = "time-tracking-application"
-      Branch = branch }
+let target =
+    HttpProtocol.RepositoryRef.gitHub "kemiller2002" "time-tracking-application" branch
 
-let store = HttpStore.create (HttpStore.configure (new HttpClient()) token) target
+let store = HttpStore.create (HttpStore.configure (new HttpClient()) (Credential.token token)) target
 
 let mutable failures = 0
 let mutable skipped = 0
@@ -138,7 +136,7 @@ let blobProbe =
                 "application/json"
             )
 
-        let client = HttpStore.configure (new HttpClient()) token
+        let client = HttpStore.configure (new HttpClient()) (Credential.token token)
         let! response = client.SendAsync request |> Async.AwaitTask
         let! body = response.Content.ReadAsStringAsync() |> Async.AwaitTask
         return int response.StatusCode, body

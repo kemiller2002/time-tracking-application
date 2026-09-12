@@ -109,7 +109,11 @@ const sendAndPersist = async (command) => {
   const connection = readConnection()
   const answer = JSON.parse(
     await kernel.Persist(
-      JSON.stringify({ ...requestFor(command), repository: connection.repository, token: connection.token })
+      JSON.stringify({
+        ...requestFor(command),
+        repository: connection.repository,
+        token: connection.token
+      })
     )
   )
   return answer
@@ -835,7 +839,11 @@ document.getElementById('repo-form')?.addEventListener('submit', (event) => {
     repository: {
       owner: value('repo-owner'),
       repo: value('repo-name'),
-      branch: value('repo-branch')
+      branch: value('repo-branch'),
+      // Blank means github.com. A GitHub Enterprise Server repository is not
+      // reachable at api.github.com, so the field exists; leaving it empty is
+      // the common case and must not be a configuration step.
+      apiRoot: value('repo-api-root')
     },
     token: value('repo-token')
   })

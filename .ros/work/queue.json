@@ -644,10 +644,10 @@
       "description": null,
       "tags": [],
       "priority": "medium",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-12T01:53:44Z",
-      "updatedAt": "2026-09-12T01:53:44Z",
+      "updatedAt": "2026-09-12T01:57:49Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null

@@ -853,10 +853,20 @@ let private sessionFrom (request: JsonNode) =
         |> Result.bind (fun (owner, repo) ->
             field "branch" |> Result.map (fun branch -> owner, repo, branch))
         |> Result.map (fun (owner, repo, branch) ->
-            let target: HttpProtocol.RepositoryRef =
-                { Owner = owner
-                  Repository = repo
-                  Branch = branch }
+            // `apiRoot` is optional and defaults to github.com. A GitHub
+            // Enterprise Server repository is not reachable at
+            // api.github.com, so the field exists; omitting it is the common
+            // case and must not be a configuration step.
+            let target =
+                match repository.["apiRoot"] with
+                | null -> HttpProtocol.RepositoryRef.gitHub owner repo branch
+                | value ->
+                    let raw = value.ToString()
+
+                    if System.String.IsNullOrWhiteSpace raw then
+                        HttpProtocol.RepositoryRef.gitHub owner repo branch
+                    else
+                        HttpProtocol.RepositoryRef.at raw owner repo branch
 
             // A request with no token gets the token source anyway, holding an
             // empty string: `Credential.token` then answers

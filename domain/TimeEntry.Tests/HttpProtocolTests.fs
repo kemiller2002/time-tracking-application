@@ -12,9 +12,7 @@ open TimeEntry.GitHub.Store
 open TimeEntry.GitHub.HttpProtocol
 
 let private target =
-    { Owner = "kemiller2002"
-      Repository = "time-tracking-application"
-      Branch = "main" }
+    RepositoryRef.gitHub "kemiller2002" "time-tracking-application" "main"
 
 // --- URLs ------------------------------------------------------------------
 

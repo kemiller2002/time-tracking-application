@@ -14,10 +14,12 @@
 
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { createServer } from 'node:http'
 import { chromium } from 'playwright'
 
 const BUNDLE = 'browser/TimeEntry.Host/bin/Release/net8.0/browser-wasm/AppBundle'
 const PORT = 8099
+const STUB_PORT = 8098
 
 if (!existsSync(`${BUNDLE}/index.html`)) {
   console.error(`no app bundle at ${BUNDLE} — run: dotnet publish browser/TimeEntry.Host -c Release`)
@@ -36,7 +38,56 @@ const server = spawn('python3', ['-m', 'http.server', String(PORT)], {
   stdio: 'ignore'
 })
 
-const shutdown = () => server.kill()
+// A stand-in for the GitHub API.
+//
+// Earlier this section pointed the page at api.github.com with an invalid
+// token, which made every CI run issue a real request to a third party to
+// observe a 401. The API root is now part of addressing a repository, so a
+// stub can stand in — and it can be asked what the page actually sent, which
+// the real API could never be.
+const apiRequests = []
+
+const cors = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-methods': 'GET, POST, PATCH, OPTIONS',
+  'access-control-allow-headers': '*'
+}
+
+const stub = createServer((request, response) => {
+  // The page is on a different origin, so every call is preceded by a CORS
+  // preflight. Answering those with the same 404 as everything else made the
+  // browser reject the preflight and never send the real request — so the
+  // stub saw only OPTIONS, with no credential on them, and the check below
+  // failed for a reason that had nothing to do with the credential.
+  if (request.method === 'OPTIONS') {
+    response.writeHead(204, cors)
+    response.end()
+    return
+  }
+
+  let body = ''
+  request.on('data', (chunk) => (body += chunk))
+  request.on('end', () => {
+    apiRequests.push({
+      method: request.method,
+      url: request.url,
+      authorization: request.headers.authorization ?? null
+    })
+    // Everything 404s. The page must report that honestly rather than appear
+    // to have saved; what it does with a success is covered by the F# tests,
+    // which can assert on the store.
+    response.writeHead(404, { 'content-type': 'application/json', ...cors })
+    response.end('{"message":"Not Found"}')
+  })
+})
+
+stub.listen(STUB_PORT)
+
+const shutdown = () => {
+  server.kill()
+  stub.close()
+}
+
 process.on('exit', shutdown)
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -627,6 +678,7 @@ const errorsBeforeConnecting = [...errors]
 if (ready) {
   await page.fill('#repo-owner', 'owner')
   await page.fill('#repo-name', 'repo')
+  await page.fill('#repo-api-root', `http://localhost:${STUB_PORT}`)
   await page.fill('#repo-token', 'ghp_not_a_real_token')
   await page.click('#repo-form button[type=submit]')
 
@@ -661,6 +713,21 @@ if (ready) {
 
   check('connecting reads the ledger, and reports a failed read', loadReported,
     (await page.textContent('#create-message'))?.trim())
+
+  // The stub can be asked what arrived, which the real API never could. This
+  // is the only place the credential's whole journey is observable: typed
+  // into a form, through sessionStorage, into F#, out of the transport, onto
+  // the wire.
+  check(
+    'the request reaches the configured API root, not github.com',
+    apiRequests.length > 0 && apiRequests.every((r) => r.url.startsWith('/repos/owner/repo')),
+    JSON.stringify(apiRequests.slice(0, 2))
+  )
+  check(
+    'and carries the token as a bearer credential',
+    apiRequests.every((r) => r.authorization === 'Bearer ghp_not_a_real_token'),
+    apiRequests[0]?.authorization
+  )
 
   // With a connection, a command takes the persist path. It cannot succeed —
   // there is no such repository — but it must FAIL AUDIBLY rather than appear
