@@ -29,9 +29,24 @@ module Session =
     /// `Folder`, not a free-form file path: the target repository is not
     /// assumed to belong to this app alone, so the ledger's data is never
     /// placed at the repo root or at a path the user could point at an
-    /// unrelated existing file — it always lives at `<Folder>/ledger.json`
-    /// (see `GitHubSync.dataFilePath`), confined to a folder this app owns.
-    type GitHubSyncConfig = { Owner: string; Repo: string; Folder: string; Branch: string; Token: string }
+    /// unrelated existing file. It's also not assumed to belong to this
+    /// *person* alone — the same repository/folder can be shared by
+    /// several people, each getting their own `<Folder>/<Login>/` — so the
+    /// data always lives at `<Folder>/<Login>/ledger.json` (see
+    /// `GitHubSync.dataFilePath`), never at `<Folder>/ledger.json` directly.
+    type GitHubSyncConfig =
+        { Owner: string
+          Repo: string
+          Folder: string
+          Branch: string
+          Token: string
+          /// Resolved once via GitHub's `/user` endpoint right after the
+          /// token is saved — never typed by the user, so it can't collide
+          /// or be mistyped the way a free-text name could. `None` until
+          /// that resolves; Pull/Push are blocked until then, since the
+          /// per-person folder path is built from it.
+          Login: string option
+          DisplayName: string option }
 
     /// Accumulates one field at a time as the browser flushes each changed form
     /// control before the form's own submit event arrives.
@@ -81,20 +96,26 @@ module Session =
           /// decision; see `.sde/architecture/FOUR-TIER-ARCHITECTURE.md`'s
           /// note that presentation-only routing is still Tier 3's to own.
           CurrentScreen: string
-          /// Keyed "create"/"amend"/"void"/"restore"/"split"/"merge"/"evidence"/"timer"/"attest"/"githubConfig"/"githubSync".
+          /// Keyed "create"/"amend"/"void"/"restore"/"split"/"merge"/"evidence"/"timer"/"attest"/"githubConfig"/"githubSync"/"githubMetadata".
           Errors: Map<string, string>
           PersistenceError: string option
-          /// None until `SaveGitHubConfig` succeeds. Persisted to its own
-          /// localStorage key (never the synced document) so it survives a
-          /// reload without the token ever entering GitHub-tracked content.
+          /// None until `SaveGitHubConfig` succeeds. Session-only today — a
+          /// reload clears it and the identity lookup re-runs on the next
+          /// save; `GitHubSync.encodeConfig`/`decodeConfig` exist for a
+          /// localStorage-backed version of this but nothing yet calls them
+          /// from `Dispatch.fs` (see manifest.md's Known gaps).
           GitHubSync: GitHubSyncConfig option
-          /// The Contents API blob `sha` from the last successful pull or
-          /// push — GitHub's own optimistic-concurrency token, reused as the
-          /// next write's `sha` exactly the way `docs/DOMAIN-REQUIREMENTS.md`'s
-          /// persistence contract asks a caller to state the version it last
-          /// read. `None` means "never synced" (the next push creates the file).
+          /// The ledger file's Contents API blob `sha` from the last
+          /// successful pull or push — GitHub's own optimistic-concurrency
+          /// token, reused as the next write's `sha` exactly the way
+          /// `docs/DOMAIN-REQUIREMENTS.md`'s persistence contract asks a
+          /// caller to state the version it last read. `None` means "never
+          /// synced" (the next push creates the file).
           GitHubDocumentSha: string option
-          /// "idle" | "pulling" | "pushing" | "synced" | "conflict" | "unknown" | "error"
+          /// The same, for `metadata.json` — a separate blob with its own
+          /// independent version history, never conflated with the ledger's.
+          GitHubMetadataSha: string option
+          /// "idle" | "identifying" | "pulling" | "pushing" | "synced" | "conflict" | "unknown" | "error"
           GitHubSyncStatus: string
           GitHubLastSyncedAt: DateTimeOffset option }
 
@@ -149,6 +170,7 @@ module Session =
           PersistenceError = None
           GitHubSync = None
           GitHubDocumentSha = None
+          GitHubMetadataSha = None
           GitHubSyncStatus = "idle"
           GitHubLastSyncedAt = None }
 

@@ -293,11 +293,31 @@ GitHub sync, per the Persistence contract section above:
   alone — it may hold unrelated content the user already has there. The
   ledger's data is therefore always confined to one folder inside it,
   never placed at the repo root or at a user-chosen filename: the file
-  path is always `<folder>/ledger.json` (`GitHubSync.dataFilePath`), where
-  `<folder>` defaults to `time-tracking-data` when left blank. Neither the
-  folder default nor the fixed filename are user-overridable beyond
-  choosing the folder's name, precisely so this app cannot be pointed at
-  an existing, unrelated file.
+  path is always `<folder>/<login>/ledger.json`
+  (`GitHubSync.dataFilePath`), where `<folder>` defaults to
+  `time-tracking-data` when left blank. Neither the folder default nor the
+  fixed filenames (`ledger.json`, `metadata.json`) are user-overridable
+  beyond choosing the folder's name, precisely so this app cannot be
+  pointed at an existing, unrelated file.
+- That same folder is also never assumed to belong to one person alone —
+  several people can point the same repository and folder at this app and
+  each still gets their own `<login>` subfolder they write to, never one
+  shared file several people's browsers race to overwrite. `<login>` is
+  GitHub's own account login, resolved once per saved token via a `GET
+  /user` call right after `SaveGitHubConfig` (never a name the user
+  types), so it can't collide or be mistyped the way a free-text name
+  could. Pull/Push are blocked, with a clear message, until that lookup
+  resolves.
+- Alongside `ledger.json`, this app also writes `metadata.json` into the
+  same per-person folder — `{login, displayName, lastSyncedAt}`
+  (`GitHubSync.buildMetadataJson`), refreshed on every push. It exists so
+  a human (or other tooling) browsing a shared repository's
+  `<folder>/<login>/` entries can tell whose folder is whose; nothing
+  in-app ever reads it back. It is a separate Contents API file with its
+  own independent `sha`/version history — a metadata write failure is
+  reported under its own status, distinct from (and never overwriting) the
+  ledger's own sync status, since it's lower-stakes than the ledger data
+  itself.
 - The Contents API's blob `sha` *is* the version this contract asks a
   caller to state on every save — GitHub's own optimistic concurrency check
   (a stale `sha` on a push returns 409, surfaced as this app's `conflict`
@@ -321,9 +341,16 @@ GitHub sync, per the Persistence contract section above:
   background/automatic pull (only an explicit "Pull latest" or a page
   reload after which `Storage.get` still serves the local cache), no merge
   of concurrent edits (a pull replaces the in-memory document outright,
-  a push conflict must be resolved by pulling first), and no reconciliation
+  a push conflict must be resolved by pulling first), no reconciliation
   queue for a request whose outcome came back `unknown` (the user is told
-  to pull and check, not offered an automatic retry-and-confirm flow). Any
-  of these would need real design work, not just wiring, and are a
-  reasonable later increment rather than something this pass needed
-  to build.
+  to pull and check, not offered an automatic retry-and-confirm flow), no
+  atomic multi-file commit (`ledger.json` and `metadata.json` are two
+  independent Contents API writes, not one commit touching both — a
+  metadata write can fail or lag behind the ledger write without losing
+  ledger data, but the two files' histories are not guaranteed to move
+  together), and no persistence of the saved sync settings themselves
+  across a reload (`GitHubSync.encodeConfig`/`decodeConfig` exist for this,
+  but `Dispatch.fs` doesn't yet call them — a reload clears `GitHubSync`
+  and the identity lookup re-runs on the next save). Any of these would
+  need real design work, not just wiring, and are a reasonable later
+  increment rather than something this pass needed to build.

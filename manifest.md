@@ -38,13 +38,17 @@ cannot import Tier 3/4 even by accident).
 - **Capabilities / authority**: `Model.fs`'s `Capability.forActivity`.
 - **Important effects and effect contracts**: `f-sharp/src/Ledger.Engine/Protocol.fs`'s
   `EffectRequest`/`EffectResult` — `StorageEffect` (the `localStorage` cache,
-  always live) and `HttpEffect` (the GitHub Contents API, live once the user
+  always live) and `HttpEffect` (the GitHub REST API, live once the user
   configures sync from the More screen; built/parsed by
   `f-sharp/src/Ledger.Engine/GitHubSync.fs`, routed by `Dispatch.fs`'s
-  `"github-pull"`/`"github-push"` cases). `GitHubSync.dataFilePath` confines
-  every sync to `<folder>/ledger.json` inside the configured repo — never
-  the repo root or a user-chosen filename, since that repo is never assumed
-  to belong to this app alone. `f-sharp/src/Ledger.Domain/Services.fs`'s
+  `"github-whoami"`/`"github-pull"`/`"github-push"`/`"github-metadata-push"`
+  cases). `GitHubSync.dataFilePath`/`metadataFilePath` confine every sync to
+  `<folder>/<login>/{ledger,metadata}.json` inside the configured repo —
+  never the repo root, a user-chosen filename, or a file shared by more
+  than one person, since neither the repo nor a folder inside it are ever
+  assumed to belong to this app (or one person) alone. `<login>` comes only
+  from a `GET /user` call against the saved token (`"github-whoami"`),
+  never a typed name. `f-sharp/src/Ledger.Domain/Services.fs`'s
   `LedgerStore` (a named, unimplemented `Async`-shaped port for a future
   in-process backend adapter — not on the live path; GitHub sync is built
   through the effect-request/effect-result mechanism instead, since the
@@ -117,8 +121,14 @@ cannot import Tier 3/4 even by accident).
 
 ## Maintenance
 
-- Owner: repository owner (single-owner application; see
-  `docs/DOMAIN-REQUIREMENTS.md`'s Scope and terminology section).
+- Owner: repository owner (single-owner *per browser session* — one
+  session's `Session.State` still has exactly one `Environment`/`Document`
+  for the person using that browser tab; see `docs/DOMAIN-REQUIREMENTS.md`'s
+  Scope and terminology section. GitHub sync lets several such independent
+  single-user sessions share one GitHub repository as their storage
+  backend, each confined to their own `<folder>/<login>/` — that's several
+  people each running their own copy of this single-user app against a
+  shared repo, not this app becoming multi-tenant within one session).
 - Last checked against implementation: 2026-09-12.
 - Known gaps:
   - No automated architecture check (an equivalent of
@@ -142,15 +152,24 @@ cannot import Tier 3/4 even by accident).
   - GitHub sync has no background/automatic pull, no merge of concurrent
     edits (a pull replaces the document outright; a push conflict — a stale
     `sha`, surfaced as GitHub's own 409 — must be resolved by pulling
-    first, not auto-merged), and no reconciliation queue for a request
-    whose outcome came back `unknown` (the user is told to pull and check,
-    not offered an automatic retry-and-confirm flow). All three are
-    documented, deliberate scope decisions in
+    first, not auto-merged), no reconciliation queue for a request whose
+    outcome came back `unknown` (the user is told to pull and check, not
+    offered an automatic retry-and-confirm flow), and no atomic multi-file
+    commit (`ledger.json`/`metadata.json` are two independent Contents API
+    writes, so a metadata write can fail or lag the ledger write without
+    losing ledger data, but the two files' histories aren't guaranteed to
+    move together). All are documented, deliberate scope decisions in
     [`docs/DOMAIN-REQUIREMENTS.md`](docs/DOMAIN-REQUIREMENTS.md)'s
     Implementation section, not gaps discovered after the fact.
-  - The GitHub personal access token lives in this browser's `localStorage`
-    (its own key, separate from the synced document, never echoed into the
-    rendered view) — by the explicit architecture decision behind this
-    feature (browser-embedded, no server component), not an oversight. Its
-    exposure is bounded by this browser/device, same as any other
-    browser-stored credential.
+  - The GitHub personal access token lives in this browser's session state
+    only — `GitHubSync.encodeConfig`/`decodeConfig` exist for a
+    `localStorage`-backed version of the saved sync settings (owner/repo/
+    folder/branch/token/login/displayName), but nothing in `Dispatch.fs`
+    calls them yet, so a reload clears `Session.State.GitHubSync` and the
+    `GET /user` identity lookup re-runs on the next `SaveGitHubConfig`. When
+    this is wired up, the same "explicit architecture decision, not an
+    oversight" reasoning as before applies to the token's storage: it's
+    kept in this browser's `localStorage`, separate from the synced
+    document, never echoed into the rendered view, and its exposure is
+    bounded by this browser/device — by the explicit decision behind this
+    feature (browser-embedded, no server component).

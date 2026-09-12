@@ -406,10 +406,14 @@
             </section>
             <section class="surface surface-pad" aria-labelledby="github-sync-title">
               <h2 class="section-title" id="github-sync-title">GitHub sync</h2>
-              <p class="page-intro">Local storage stays the fast, offline-safe cache. Your personal access token is stored only in this browser and sent directly to GitHub's API &mdash; there is no server in between. This app's data stays confined to its own folder in the repository you choose &mdash; it never assumes the repository belongs to this app alone.</p>
+              <p class="page-intro">Local storage stays the fast, offline-safe cache. Your personal access token is stored only in this browser and sent directly to GitHub's API &mdash; there is no server in between. This app's data stays confined to its own folder in the repository you choose, and inside that folder to one subfolder per person (identified from your token, not typed) &mdash; several people can point the same repository at this app without colliding.</p>
 
-              <div class="notice" data-if="gitHubSyncConfigured" hidden>
-                <p class="notice-title">Syncing <span data-text="gitHubSyncOwner"></span>/<span data-text="gitHubSyncRepo"></span></p>
+              <div class="notice" data-if="gitHubSyncAwaitingIdentity" hidden>
+                <p class="notice-title">Identifying your GitHub account&hellip;</p>
+                <p class="notice-copy">Resolving who this token belongs to for <span data-text="gitHubSyncOwner"></span>/<span data-text="gitHubSyncRepo"></span>. This only takes a moment.</p>
+              </div>
+              <div class="notice" data-if="gitHubSyncIdentified" hidden>
+                <p class="notice-title">Syncing as <span data-text="gitHubSyncLogin"></span> to <span data-text="gitHubSyncOwner"></span>/<span data-text="gitHubSyncRepo"></span></p>
                 <p class="notice-copy"><span data-text="gitHubSyncFilePath"></span> on branch <span data-text="gitHubSyncBranch"></span>. Status: <span data-text="gitHubSyncStatus"></span>. Last synced: <span data-text="gitHubLastSyncedLabel"></span>.</p>
               </div>
 
@@ -429,6 +433,7 @@
                 </div>
                 <p class="field-error" role="alert" aria-live="assertive" data-if="githubConfigError" data-text="githubConfigError" hidden></p>
                 <p class="field-error" role="alert" aria-live="assertive" data-if="githubSyncError" data-text="githubSyncError" hidden></p>
+                <p class="field-error" role="alert" aria-live="assertive" data-if="githubMetadataError" data-text="githubMetadataError" hidden></p>
               </fieldset>
             </section>
           </aside>

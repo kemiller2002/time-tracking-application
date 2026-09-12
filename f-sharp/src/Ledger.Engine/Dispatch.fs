@@ -307,7 +307,10 @@ module Dispatch =
     /// `Folder` is deliberately not required here — an omitted or blank
     /// folder falls back to `GitHubSync.defaultFolder` (see `dataFilePath`),
     /// never to the repo root, since the target repository is never assumed
-    /// to be dedicated to this app alone.
+    /// to be dedicated to this app alone. `Login`/`DisplayName` always reset
+    /// to `None` on a (re-)save — even if unchanged, GitHub is asked again
+    /// via the "github-whoami" effect `handle` emits alongside this, since a
+    /// re-save may mean a different token (and so a different person).
     let private handleSaveGitHubConfig (state: Session.State) : Session.State =
         let d = state.Draft
         match d.GitHubOwner, d.GitHubRepo, d.GitHubToken with
@@ -317,21 +320,33 @@ module Dispatch =
                   Repo = repo
                   Folder = d.GitHubFolder |> Option.filter (fun f -> f <> "") |> Option.defaultValue GitHubSync.defaultFolder
                   Branch = d.GitHubBranch |> Option.filter (fun b -> b <> "") |> Option.defaultValue "main"
-                  Token = token }
-            { state with GitHubSync = Some config; Draft = Session.Draft.empty } |> clearError "githubConfig"
+                  Token = token
+                  Login = None
+                  DisplayName = None }
+            { state with
+                GitHubSync = Some config
+                GitHubDocumentSha = None
+                GitHubMetadataSha = None
+                GitHubSyncStatus = "identifying"
+                Draft = Session.Draft.empty }
+            |> clearError "githubConfig"
+            |> clearError "githubSync"
+            |> clearError "githubMetadata"
         | _ -> state |> withError "githubConfig" "Owner, repository, and a token are all required."
 
-    /// These only validate that sync is configured and mark the status as
-    /// in-flight — the actual `HttpEffect` request is built in `handle`,
-    /// which is where every other requested effect is decided too.
+    /// These only validate preconditions and mark the status as in-flight —
+    /// the actual `HttpEffect` request is built in `handle`, which is where
+    /// every other requested effect is decided too.
     let private handlePullFromGitHub (state: Session.State) : Session.State =
         match state.GitHubSync with
-        | Some _ -> { state with GitHubSyncStatus = "pulling" } |> clearError "githubSync"
+        | Some { Login = Some _ } -> { state with GitHubSyncStatus = "pulling" } |> clearError "githubSync"
+        | Some { Login = None } -> state |> withError "githubSync" "Still identifying your GitHub account from your token — try again in a moment."
         | None -> state |> withError "githubSync" "Save your GitHub sync settings first."
 
     let private handlePushToGitHub (state: Session.State) : Session.State =
         match state.GitHubSync with
-        | Some _ -> { state with GitHubSyncStatus = "pushing" } |> clearError "githubSync"
+        | Some { Login = Some _ } -> { state with GitHubSyncStatus = "pushing" } |> clearError "githubSync"
+        | Some { Login = None } -> state |> withError "githubSync" "Still identifying your GitHub account from your token — try again in a moment."
         | None -> state |> withError "githubSync" "Save your GitHub sync settings first."
 
     let private handleEvent (state: Session.State) (event: SemanticEvent) : Session.State =
@@ -440,6 +455,49 @@ module Dispatch =
         | HttpResult("github-push", OutcomeUnknown reason) ->
             { state with GitHubSyncStatus = "unknown" }
             |> withError "githubSync" $"Changes may not have synced to GitHub ({reason}). Do not assume they were lost — pull latest to check before re-entering them."
+
+        /// Resolves who the saved token belongs to, never trusting a typed
+        /// name — see `Session.GitHubSyncConfig.Login`'s doc comment. Every
+        /// per-person path (`GitHubSync.dataFilePath`/`metadataFilePath`)
+        /// depends on this having resolved.
+        | HttpResult("github-whoami", OutcomeSuccess(status, Some body)) when status >= 200 && status < 300 ->
+            match GitHubSync.parseWhoAmIResponse body with
+            | Ok identity ->
+                { state with
+                    GitHubSync = state.GitHubSync |> Option.map (fun c -> { c with Login = Some identity.Login; DisplayName = identity.Name })
+                    GitHubSyncStatus = "idle" }
+                |> clearError "githubSync"
+            | Error message -> { state with GitHubSyncStatus = "error" } |> withError "githubSync" message
+        | HttpResult("github-whoami", OutcomeSuccess(status, None)) when status >= 200 && status < 300 ->
+            { state with GitHubSyncStatus = "error" } |> withError "githubSync" "GitHub's response had no content."
+        | HttpResult("github-whoami", OutcomeSuccess(status, bodyOpt)) ->
+            { state with GitHubSyncStatus = "error" }
+            |> withError "githubSync" $"Could not identify your GitHub account (GitHub returned {status}: {GitHubSync.errorMessage bodyOpt})."
+        | HttpResult("github-whoami", OutcomeFailure reason) ->
+            { state with GitHubSyncStatus = "error" } |> withError "githubSync" $"Could not identify your GitHub account ({reason})."
+        | HttpResult("github-whoami", OutcomeCancelled) -> state
+        | HttpResult("github-whoami", OutcomeUnknown reason) ->
+            { state with GitHubSyncStatus = "unknown" }
+            |> withError "githubSync" $"Could not confirm your GitHub identity ({reason}). Save your settings again to retry."
+
+        /// `metadata.json` is a separate, lower-stakes write from the ledger
+        /// itself (see `GitHubSync.buildMetadataJson`) — its own error key,
+        /// `githubMetadata`, keeps a metadata hiccup from overwriting the
+        /// ledger sync status the user actually cares about.
+        | HttpResult("github-metadata-push", OutcomeSuccess(status, Some body)) when status = 200 || status = 201 ->
+            match GitHubSync.parsePutResponse body with
+            | Ok sha -> { state with GitHubMetadataSha = Some sha } |> clearError "githubMetadata"
+            | Error message -> state |> withError "githubMetadata" message
+        | HttpResult("github-metadata-push", OutcomeSuccess(status, None)) when status = 200 || status = 201 ->
+            state |> withError "githubMetadata" "GitHub's response had no content for the profile metadata file."
+        | HttpResult("github-metadata-push", OutcomeSuccess(status, bodyOpt)) ->
+            state |> withError "githubMetadata" $"GitHub returned {status} saving profile metadata: {GitHubSync.errorMessage bodyOpt}"
+        | HttpResult("github-metadata-push", OutcomeFailure reason) ->
+            state |> withError "githubMetadata" $"Could not reach GitHub to save profile metadata ({reason})."
+        | HttpResult("github-metadata-push", OutcomeCancelled) -> state
+        | HttpResult("github-metadata-push", OutcomeUnknown reason) ->
+            state |> withError "githubMetadata" $"Profile metadata may not have synced to GitHub ({reason})."
+
         | HttpResult(_, _) -> state
 
     /// Returns the new state and the effects it requests. LocalStorage stays
@@ -448,9 +506,13 @@ module Dispatch =
     /// that actually changed the document, and again after a GitHub pull
     /// replaces the document — so the cache never goes stale relative to
     /// whichever source last won. GitHub itself is only ever reached through
-    /// explicit `PullFromGitHub`/`PushToGitHub` events or an auto-push
-    /// immediately following a mutating command, never from an effect result,
-    /// so at most one GitHub request is ever in flight at a time.
+    /// `SaveGitHubConfig` (identity lookup), explicit `PullFromGitHub`/
+    /// `PushToGitHub` events, or an auto-push immediately following a
+    /// mutating command, never from an effect result, so at most one GitHub
+    /// request is ever in flight at a time. A push always writes both
+    /// `ledger.json` and `metadata.json` — two independent Contents API
+    /// calls, not one atomic commit (see `GitHubSync.buildMetadataPutEffect`'s
+    /// doc comment and `docs/DOMAIN-REQUIREMENTS.md`'s documented scope).
     let private handleMessage (state: Session.State) (message: BrowserToEngineMessage) : Session.State * EffectRequest list =
         match message with
         | Initialize _ -> state, [ StorageEffect("load", StorageGet, storageKey) ]
@@ -460,12 +522,21 @@ module Dispatch =
             let documentChanged = newState.Document.EventSequence <> previousSequence
             let cacheEffects =
                 if documentChanged then [ StorageEffect("save", StorageSet(DocumentCodec.encode newState.Document), storageKey) ] else []
+            let pushEffects (config: Session.GitHubSyncConfig) (login: string) =
+                let now = newState.Environment.Clock()
+                let metadataJson = GitHubSync.buildMetadataJson login config.DisplayName now
+                [ GitHubSync.buildPutEffect config login newState.GitHubDocumentSha (DocumentCodec.encode newState.Document)
+                  GitHubSync.buildMetadataPutEffect config login newState.GitHubMetadataSha metadataJson ]
             let githubEffects =
-                match event.Name, newState.GitHubSync with
-                | "PullFromGitHub", Some config -> [ GitHubSync.buildGetEffect config ]
-                | "PushToGitHub", Some config -> [ GitHubSync.buildPutEffect config newState.GitHubDocumentSha (DocumentCodec.encode newState.Document) ]
-                | _, Some config when documentChanged -> [ GitHubSync.buildPutEffect config newState.GitHubDocumentSha (DocumentCodec.encode newState.Document) ]
-                | _ -> []
+                match newState.GitHubSync with
+                | None -> []
+                | Some config ->
+                    match event.Name, config.Login with
+                    | "SaveGitHubConfig", _ -> [ GitHubSync.buildWhoAmIEffect config ]
+                    | "PullFromGitHub", Some login -> [ GitHubSync.buildGetEffect config login ]
+                    | "PushToGitHub", Some login -> pushEffects config login
+                    | _, Some login when documentChanged -> pushEffects config login
+                    | _ -> []
             newState, cacheEffects @ githubEffects
         | EffectResultMessage result ->
             let newState = handleEffectResult state result
