@@ -332,35 +332,64 @@ paths:
   /reports/daily/{date}:
     get:
       operationId: getDailyReport
-      description: Only the JSON format is implemented; the execution contract's Markdown/CSV export (Capability 15) does not exist yet.
+      description: >-
+        format=json (the default) wraps the day summary as structured data;
+        markdown and csv instead return a rendered content string built from
+        the same activities. Content is always delivered inside the usual
+        JSON envelope (data.content), not as a raw file download or a
+        different Content-Type — there is no separate download endpoint.
       parameters:
         - name: date
           in: path
           required: true
           schema: {type: string, format: date}
+        - name: format
+          in: query
+          required: false
+          schema: {enum: [json, markdown, csv], default: json}
       responses:
         '200':
-          description: Daily report wrapping the day summary
+          description: Daily report
           content:
             application/json:
               schema: {$ref: '#/components/schemas/DailyReportResponse'}
+        '400':
+          description: format is not one of json, markdown, csv (invalid_format; details.allowed)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
         '401':
           $ref: '#/components/responses/Unauthorized'
   /reports/monthly/{month}:
     get:
       operationId: getMonthlyReport
-      description: Only the JSON format is implemented; the execution contract's Markdown/CSV export (Capability 15) does not exist yet.
+      description: >-
+        format=json (the default) wraps the month summary as structured
+        data; markdown and csv instead return a rendered content string
+        built from the same activities. Content is always delivered inside
+        the usual JSON envelope (data.content), not as a raw file download
+        or a different Content-Type — there is no separate download
+        endpoint.
       parameters:
         - name: month
           in: path
           required: true
           schema: {type: string, pattern: '^\d{4}-\d{2}$'}
+        - name: format
+          in: query
+          required: false
+          schema: {enum: [json, markdown, csv], default: json}
       responses:
         '200':
-          description: Monthly report wrapping the month summary
+          description: Monthly report
           content:
             application/json:
               schema: {$ref: '#/components/schemas/MonthlyReportResponse'}
+        '400':
+          description: format is not one of json, markdown, csv (invalid_format; details.allowed)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
         '401':
           $ref: '#/components/responses/Unauthorized'
   /activities/{activityId}:
@@ -1075,14 +1104,21 @@ components:
         data: {$ref: '#/components/schemas/Attestation'}
         meta: {$ref: '#/components/schemas/Meta'}
     DailyReport:
-      type: object
-      required: [report_id, format, source]
-      properties:
-        report_id: {type: string, minLength: 1}
-        format:
-          const: json
-          description: Only JSON is implemented; the execution contract's Markdown/CSV export (Capability 15) does not exist yet.
-        source: {$ref: '#/components/schemas/DaySummary'}
+      oneOf:
+        - type: object
+          required: [report_id, format, source]
+          properties:
+            report_id: {type: string, minLength: 1}
+            format: {const: json}
+            source: {$ref: '#/components/schemas/DaySummary'}
+        - type: object
+          required: [report_id, format, content]
+          properties:
+            report_id: {type: string, minLength: 1}
+            format: {enum: [markdown, csv]}
+            content:
+              type: string
+              description: The rendered report — a Markdown document or CSV text, matching format.
     DailyReportResponse:
       type: object
       required: [data, meta]
@@ -1090,14 +1126,21 @@ components:
         data: {$ref: '#/components/schemas/DailyReport'}
         meta: {$ref: '#/components/schemas/Meta'}
     MonthlyReport:
-      type: object
-      required: [report_id, format, source]
-      properties:
-        report_id: {type: string, minLength: 1}
-        format:
-          const: json
-          description: Only JSON is implemented; the execution contract's Markdown/CSV export (Capability 15) does not exist yet.
-        source: {$ref: '#/components/schemas/MonthSummary'}
+      oneOf:
+        - type: object
+          required: [report_id, format, source]
+          properties:
+            report_id: {type: string, minLength: 1}
+            format: {const: json}
+            source: {$ref: '#/components/schemas/MonthSummary'}
+        - type: object
+          required: [report_id, format, content]
+          properties:
+            report_id: {type: string, minLength: 1}
+            format: {enum: [markdown, csv]}
+            content:
+              type: string
+              description: The rendered report — a Markdown document or CSV text, matching format.
     MonthlyReportResponse:
       type: object
       required: [data, meta]
