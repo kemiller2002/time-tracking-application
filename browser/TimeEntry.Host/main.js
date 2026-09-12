@@ -26,7 +26,7 @@ const ask = (fn, request) => JSON.parse(fn(JSON.stringify(request)))
 // splits, and a merge needs two sources that were each read at a known
 // version. Nothing the page creates has a version until effects are actually
 // performed (WI-0033, OQ-8), so the fixture has to supply them.
-const [storedEntry, secondEntry, thirdEntry, catalogue, versionFixture] = await Promise.all([
+let [storedEntry, secondEntry, thirdEntry, catalogue, versionFixture] = await Promise.all([
   fetch('./sample-entry.json').then((r) => r.json()),
   fetch('./sample-entry-2.json').then((r) => r.json()),
   fetch('./sample-entry-3.json').then((r) => r.json()),
@@ -130,11 +130,15 @@ let state = Object.freeze({
   selectedForMerge: [],
   message: null,
   effects: [],
-  performed: []
+  performed: [],
+  // Bumped on every state change. An asynchronous read that resolves after
+  // the page has moved on is stale, and applying it would silently discard
+  // whatever moved it.
+  revision: 0
 })
 
 const update = (change) => {
-  state = Object.freeze({ ...state, ...change })
+  state = Object.freeze({ ...state, ...change, revision: state.revision + 1 })
   render()
 }
 
@@ -777,6 +781,54 @@ const renderConnection = () => {
   )
 }
 
+// Load the real ledger from the repository, replacing the fixture.
+//
+// Everything the page holds is replaced together — entries, versions and the
+// catalogue — because they are read at one moment and describe one state. A
+// partial swap would leave the version map describing entries that are no
+// longer there.
+const loadFromRepository = async (connection) => {
+  // A load describes the repository at one moment. If anything changed the
+  // page while the request was in flight — a command the person submitted, a
+  // later load — this answer is already stale, and applying it would throw
+  // their work away without saying so.
+  const startedAt = state.revision
+  const answer = JSON.parse(
+    await kernel.LoadLedger(
+      JSON.stringify({
+        repository: connection.repository,
+        token: connection.token,
+        date: DATE
+      })
+    )
+  )
+
+  if (state.revision !== startedAt) return
+
+  if (answer.ok !== true) {
+    update({ message: answer.error, effects: [], performed: [] })
+    return
+  }
+
+  // The catalogue may be unreadable while the entries are fine. It is never
+  // replaced with an empty one: an empty catalogue refuses every project,
+  // which reads as "all your projects were archived" rather than "the
+  // catalogue could not be read" (TE-R-084).
+  if (answer.catalogue) catalogue = answer.catalogue
+
+  for (const key of Object.keys(versions)) delete versions[key]
+  Object.assign(versions, answer.versions ?? {})
+
+  update({
+    entries: answer.entries,
+    view: derive(answer.entries, state.visibility),
+    selectedForMerge: [],
+    message: answer.catalogueError ?? null,
+    effects: [],
+    performed: []
+  })
+}
+
 document.getElementById('repo-form')?.addEventListener('submit', (event) => {
   event.preventDefault()
   writeConnection({
@@ -792,6 +844,9 @@ document.getElementById('repo-form')?.addEventListener('submit', (event) => {
   const field = document.getElementById('repo-token')
   if (field) field.value = ''
   renderConnection()
+  loadFromRepository(readConnection()).catch((error) =>
+    update({ message: String(error), effects: [], performed: [] })
+  )
 })
 
 document.getElementById('repo-forget')?.addEventListener('click', () => {

@@ -780,3 +780,93 @@ let ``persist without a repository is refused before anything is applied`` () =
 
     Assert.Equal("false", field answer "ok")
     Assert.Equal("missing 'repository'", field answer "error")
+
+// ---------------------------------------------------------------------------
+// Reading the ledger
+// ---------------------------------------------------------------------------
+
+let private loadRequest =
+    """{ "repository": { "owner": "owner", "repo": "repo", "branch": "main" },
+         "token": "ghp_example", "date": "2026-09-10" }"""
+
+let private loaded (fake: FakeStore.Fake) (request: string) =
+    TimeEntry.Kernel.loadLedgerWith (fun _ _ -> fake.Store) request
+    |> Async.RunSynchronously
+    |> JsonNode.Parse
+
+let private ledgerWith (entries: (string * TimeEntry) list) extra =
+    FakeStore.Fake(
+        [ for path, entry in entries -> path, Serialization.write (Mapping.toDocument entry) ]
+        @ extra
+    )
+
+[<Fact>]
+let ``reading the ledger returns each entry with the version it was read at`` () =
+    // The blob SHA the read observed IS the token a later command must name
+    // (TE-R-070). Returning entries without it would force a second read to
+    // learn the version, reopening the window the token exists to close.
+    let path = "ledger/entries/e1/e1.json"
+    let fake = ledgerWith [ path, persistedEntry "e1" (minutes 30) "ignored" ] []
+
+    let result = loaded fake loadRequest
+
+    Assert.Equal("true", field result "ok")
+    Assert.Equal(1, List.length (storedEntries result))
+    Assert.Equal(fake.ShaOf path, Some(result.["versions"].["e1"].ToString()))
+
+[<Fact>]
+let ``a corrupt file becomes one unreadable entry, not a failed load`` () =
+    // TE-R-084. A caller told "1 entry, 1 unreadable" can act; one silently
+    // given a single entry cannot, and would quietly under-report the day.
+    let good = "ledger/entries/e1/e1.json"
+    let bad = "ledger/entries/e2/e2.json"
+
+    let fake =
+        ledgerWith [ good, persistedEntry "e1" (minutes 30) "ignored" ] [ bad, "{ not json" ]
+
+    let result = loaded fake loadRequest
+
+    Assert.Equal("true", field result "ok")
+    Assert.Equal(1, List.length (storedEntries result))
+    Assert.Equal("1", field result "unreadable")
+    Assert.Contains(bad, result.["unreadableDetail"].ToJsonString())
+
+[<Fact>]
+let ``an unreadable catalogue is reported, never returned as an empty one`` () =
+    // An empty catalogue refuses every project, so reporting one would read as
+    // "all your projects were archived" rather than "the catalogue could not
+    // be read". The distinction is the whole reason `CatalogueUnreadable`
+    // exists separately from `Failed`.
+    let fake = ledgerWith [] [ "ledger/catalogue.json", "{ not json" ]
+
+    let result = loaded fake loadRequest
+
+    Assert.Equal("true", field result "ok")
+    // A JSON null reaches JsonNode as a null reference, so this is the direct
+    // check that no catalogue came back — not an empty one.
+    Assert.Null(result.["catalogue"])
+    Assert.NotNull(result.["catalogueError"])
+
+[<Fact>]
+let ``reading a ledger returns the catalogue alongside the entries`` () =
+    let catalogueJson = Serialization.writeCatalogue (Mapping.catalogueToDocument catalogue)
+    let fake = ledgerWith [] [ "ledger/catalogue.json", catalogueJson ]
+
+    let result = loaded fake loadRequest
+
+    Assert.NotNull(result.["catalogue"])
+    Assert.Contains("echelon-foundry", result.["catalogue"].ToJsonString())
+
+[<Fact>]
+let ``reading without a date is refused rather than given an invented one`` () =
+    // `LoadEntries` carries a date the interpreter does not use to narrow the
+    // read. Fabricating one to satisfy the field is how a field stops meaning
+    // anything, so the caller must supply it.
+    let fake = ledgerWith [] []
+
+    let result =
+        loaded fake """{ "repository": { "owner": "o", "repo": "r", "branch": "main" },
+                         "token": "t" }"""
+
+    Assert.Equal("false", field result "ok")
+    Assert.Equal("missing 'date'", field result "error")

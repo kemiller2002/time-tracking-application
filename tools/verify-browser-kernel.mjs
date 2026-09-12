@@ -640,6 +640,23 @@ if (ready) {
   const markup = await page.content()
   check('the token never reaches the DOM', !markup.includes('ghp_not_a_real_token'))
 
+  // Connecting also reads the ledger from the repository. There is no such
+  // repository, so that read fails — and the page must say so rather than
+  // silently keeping the fixture and looking connected.
+  const loadReported = await page
+    .waitForFunction(
+      () => {
+        const msg = document.getElementById('create-message')
+        return msg && !msg.hidden && msg.textContent.length > 0
+      },
+      { timeout: 30000 }
+    )
+    .then(() => true)
+    .catch(() => false)
+
+  check('connecting reads the ledger, and reports a failed read', loadReported,
+    (await page.textContent('#create-message'))?.trim())
+
   // With a connection, a command takes the persist path. It cannot succeed —
   // there is no such repository — but it must FAIL AUDIBLY rather than appear
   // to save.

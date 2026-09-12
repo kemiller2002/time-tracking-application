@@ -50,6 +50,18 @@ public static partial class Interop
             FSharpOption<CancellationToken>.None);
 
     /// <summary>
+    /// Forwards a request to read the ledger and catalogue from the
+    /// repository. Asynchronous for the same reason as Persist.
+    /// </summary>
+    [JSExport]
+    [return: JSMarshalAs<JSType.Promise<JSType.String>>]
+    internal static Task<string> LoadLedger(string requestJson) =>
+        FSharpAsync.StartAsTask(
+            TimeEntry.Kernel.loadLedger(requestJson),
+            FSharpOption<TaskCreationOptions>.None,
+            FSharpOption<CancellationToken>.None);
+
+    /// <summary>
     /// Forwards a split preview request.
     /// </summary>
     [JSExport]

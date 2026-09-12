@@ -994,6 +994,116 @@ let persistWith
     }
 
 
+/// Read the whole ledger and the catalogue from the repository.
+///
+/// The symmetric half of `persist`. Both go through the interpreter rather
+/// than touching the store directly, so the two effects the domain already
+/// defines for loading — `LoadEntries` and `LoadProjects` — are the only way
+/// in, and nothing here decides what a readable ledger is.
+///
+/// Entries come back in their **stored** form plus a `versions` map, because
+/// the blob SHA the read observed is precisely the token a later command must
+/// name (TE-R-070). Reading and then having to re-read to learn the version
+/// would reopen the window the token exists to close.
+///
+/// `unreadable` is reported rather than hidden: one corrupt file must become
+/// one unreadable entry, not a failed load (TE-R-084). A caller that is told
+/// "412 entries, 1 unreadable" can act; one silently given 412 cannot.
+let loadLedgerWith
+    (storeFor: HttpProtocol.RepositoryRef -> Credential.CredentialSource -> Store.GitHubStore)
+    (requestJson: string)
+    : Async<string> =
+    async {
+        try
+            match JsonNode.Parse requestJson with
+            | null -> return errorResult "empty request"
+            | request ->
+                match sessionFrom request with
+                | Error detail -> return errorResult detail
+                | Ok(target, credential) ->
+
+                // `LoadEntries` carries a date, and the caller supplies it
+                // rather than this fabricating one. The interpreter does not
+                // use it to narrow the read — paths are keyed by identity, not
+                // date (see `Layout`) — but inventing a value to satisfy a
+                // required field is how a field stops meaning anything.
+                // Filtering stays in the projection, where
+                // `EntryQuery.DateRange` already does it.
+                match
+                    (match request.["date"] with
+                     | null -> Error "missing 'date'"
+                     | value -> CommandParsing.parseDate (value.ToString()))
+                with
+                | Error detail -> return errorResult detail
+                | Ok day ->
+                    let store = storeFor target credential
+
+                    let! entriesOutcome = Interpreter.interpret store (LoadEntries day)
+
+                    let! catalogueOutcome = Interpreter.interpret store LoadProjects
+
+                    let node = JsonObject()
+
+                    match entriesOutcome with
+                    | Interpreter.EntriesLoaded(entries, unreadable) ->
+                        node.Add("ok", JsonValue.Create true)
+                        let documents = JsonArray()
+                        let versions = JsonObject()
+
+                        for entry in entries do
+                            documents.Add(JsonNode.Parse(Serialization.write (Mapping.toDocument entry)))
+
+                            match entry.Version with
+                            | Some token ->
+                                versions.Add(
+                                    EntryId.value entry.Id,
+                                    JsonValue.Create(VersionToken.value token)
+                                )
+                            | None -> ()
+
+                        node.Add("entries", documents)
+                        node.Add("versions", versions)
+                        node.Add("unreadable", JsonValue.Create(List.length unreadable))
+
+                        let details = JsonArray()
+
+                        for item in unreadable do
+                            let entry = JsonObject()
+                            entry.Add("path", JsonValue.Create item.Path)
+                            entry.Add("detail", JsonValue.Create item.Detail)
+                            details.Add entry
+
+                        node.Add("unreadableDetail", details)
+
+                        match catalogueOutcome with
+                        | Interpreter.CatalogueLoaded catalogue ->
+                            node.Add(
+                                "catalogue",
+                                JsonNode.Parse(
+                                    Serialization.writeCatalogue (Mapping.catalogueToDocument catalogue)
+                                )
+                            )
+                        | Interpreter.CatalogueUnreadable detail ->
+                            // Never reported as an EMPTY catalogue: an empty
+                            // catalogue refuses every project, which would look
+                            // like "all your projects were archived" rather than
+                            // "the catalogue could not be read".
+                            node.Add("catalogue", null)
+                            node.Add("catalogueError", JsonValue.Create detail)
+                        | Interpreter.Failed error ->
+                            node.Add("catalogue", null)
+                            node.Add("catalogueError", JsonValue.Create(sprintf "%A" error))
+                        | other ->
+                            node.Add("catalogue", null)
+                            node.Add("catalogueError", JsonValue.Create(sprintf "%A" other))
+
+                        return node.ToJsonString(jsonOptions)
+                    | Interpreter.Failed error -> return errorResult (sprintf "%A" error)
+                    | other -> return errorResult (sprintf "%A" other)
+        with ex ->
+            return errorResult (ex.GetType().Name + ": " + ex.Message)
+    }
+
 /// The store this runs against in a browser: the real GitHub transport.
 ///
 /// Separated from `persistWith` so the wiring above — dispatch, interpret,
@@ -1011,3 +1121,6 @@ let private httpStore (target: HttpProtocol.RepositoryRef) (credential: Credenti
 
 /// Apply a command and perform its effects against the real repository.
 let persist (requestJson: string) : Async<string> = persistWith httpStore requestJson
+
+/// Read the ledger and catalogue from the real repository.
+let loadLedger (requestJson: string) : Async<string> = loadLedgerWith httpStore requestJson
