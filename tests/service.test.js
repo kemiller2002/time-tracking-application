@@ -92,9 +92,13 @@ test('void, restore, evidence, day and month projections reconcile',async()=>{
 test('split preserves duration and merge prevents report double counting',async()=>{
   const b=bindings();const source=(await call(b,'/activities',{method:'POST',payload:{activity_type_id:'research',project_id:'general',description:'Mixed work',business_purpose:'Business development',started_at:'2026-08-02T12:00:00Z',ended_at:'2026-08-02T13:00:00Z'}})).body.data;
   const split=(await call(b,`/activities/${source.activity_id}/split`,{method:'POST',payload:{base_version:source.version,reason:'Two activities',parts:[{duration_ms:36*60000,activity_type_id:'research',project_id:'general',description:'Research',business_purpose:'Planning'},{duration_ms:24*60000,activity_type_id:'linkedin-marketing',project_id:'echelon-foundry',description:'LinkedIn',business_purpose:'Marketing'}]}})).body.data;
-  assert.equal(split.replacements.length,2);assert.equal(split.source.voided,true);assert.equal((await call(b,'/days/2026-08-02')).body.data.total_exact_ms,3600000);
+  assert.equal(split.replacements.length,2);assert.equal(split.source.voided,true);assert.equal(split.source.superseded,true);assert.equal((await call(b,'/days/2026-08-02')).body.data.total_exact_ms,3600000);
+  const restoreSplitSource=await call(b,`/activities/${source.activity_id}/restore`,{method:'POST',payload:{base_version:split.source.version,reason:'try to undo the split'}});
+  assert.equal(restoreSplitSource.status,409);assert.equal(restoreSplitSource.body.error.code,'activity_superseded');
   const [a,c]=split.replacements;const merged=(await call(b,'/activities/merge',{method:'POST',payload:{source_ids:[a.activity_id,c.activity_id],base_versions:[a.version,c.version],activity_type_id:'research',project_id:'general',description:'Combined session',business_purpose:'Planning and marketing',reason:'Should be one session'}})).body.data;
-  assert.equal(merged.sources.every(x=>x.voided),true);assert.equal((await call(b,'/days/2026-08-02')).body.data.total_exact_ms,3600000);
+  assert.equal(merged.sources.every(x=>x.voided&&x.superseded),true);assert.equal((await call(b,'/days/2026-08-02')).body.data.total_exact_ms,3600000);
+  const restoreMergeSource=await call(b,`/activities/${a.activity_id}/restore`,{method:'POST',payload:{base_version:merged.sources[0].version,reason:'try to undo the merge'}});
+  assert.equal(restoreMergeSource.status,409);assert.equal(restoreMergeSource.body.error.code,'activity_superseded');
 });
 
 test('authentication seam blocks unauthenticated requests',async()=>{
