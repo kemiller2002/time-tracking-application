@@ -188,7 +188,9 @@ paths:
       description: >-
         Records a new activity. started_at and ended_at are exact to the
         minute — six-minute controls, if used by a client, are an input
-        convenience only and must not alter what is sent here.
+        convenience only and must not alter what is sent here. The interval
+        must fall on a single calendar day and must not overlap any other
+        Recorded activity on that date.
       requestBody:
         required: true
         content:
@@ -202,8 +204,16 @@ paths:
               schema: {$ref: '#/components/schemas/ActivityResponse'}
         '400':
           description: >-
-            A required field is missing (validation_failed), or ended_at is
-            not after started_at (invalid_time_range)
+            A required field is missing (validation_failed), ended_at is not
+            after started_at (invalid_time_range), or started_at/ended_at
+            fall on different calendar days (crosses_midnight)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '409':
+          description: >-
+            The interval overlaps another Recorded activity on the same date
+            (overlapping_activity); details.conflicting_activity_id names it
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorResponse'}
@@ -494,7 +504,8 @@ paths:
         '400':
           description: >-
             parts or reason missing (validation_failed), fewer than two parts
-            (invalid_split), or part durations don't sum to the source's
+            (invalid_split), the source is under two minutes long
+            (too_short_to_split), or part durations don't sum to the source's
             exact_duration_ms (duration_invariant_failed; details.expected /
             details.actual)
           content:

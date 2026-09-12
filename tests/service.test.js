@@ -36,6 +36,28 @@ test('a timer stopped at 30 seconds or more is recorded normally',async()=>{
   assert.equal(stopped.body.data.status,'stopped');assert.equal(stopped.body.data.discarded,false);assert.equal(stopped.body.data.exact_duration_ms,30000);
 });
 
+test('creating an activity that crosses midnight is rejected',async()=>{
+  const b=bindings();
+  const result=await call(b,'/activities',{method:'POST',payload:{activity_type_id:'research',project_id:'general',description:'Late work',business_purpose:'Deadline',started_at:'2026-08-02T23:50:00Z',ended_at:'2026-08-03T00:10:00Z'}});
+  assert.equal(result.status,400);assert.equal(result.body.error.code,'crosses_midnight');
+});
+
+test('creating an activity that overlaps an existing recorded activity on the same date is rejected',async()=>{
+  const b=bindings();
+  await call(b,'/activities',{method:'POST',payload:{activity_type_id:'research',project_id:'general',description:'First',business_purpose:'Planning',started_at:'2026-08-02T09:00:00Z',ended_at:'2026-08-02T10:00:00Z'}});
+  const overlapping=await call(b,'/activities',{method:'POST',payload:{activity_type_id:'research',project_id:'general',description:'Second',business_purpose:'Planning',started_at:'2026-08-02T09:30:00Z',ended_at:'2026-08-02T10:30:00Z'}});
+  assert.equal(overlapping.status,409);assert.equal(overlapping.body.error.code,'overlapping_activity');
+  const adjacent=await call(b,'/activities',{method:'POST',payload:{activity_type_id:'research',project_id:'general',description:'Third',business_purpose:'Planning',started_at:'2026-08-02T10:00:00Z',ended_at:'2026-08-02T10:30:00Z'}});
+  assert.equal(adjacent.status,201);
+});
+
+test('splitting an activity shorter than two minutes is rejected',async()=>{
+  const b=bindings();
+  const source=(await call(b,'/activities',{method:'POST',payload:{activity_type_id:'research',project_id:'general',description:'Quick note',business_purpose:'Planning',started_at:'2026-08-02T09:00:00Z',ended_at:'2026-08-02T09:01:00Z'}})).body.data;
+  const split=await call(b,`/activities/${source.activity_id}/split`,{method:'POST',payload:{base_version:source.version,reason:'try to split',parts:[{duration_ms:30000,activity_type_id:'research',project_id:'general',description:'a',business_purpose:'b'},{duration_ms:30000,activity_type_id:'research',project_id:'general',description:'c',business_purpose:'d'}]}});
+  assert.equal(split.status,400);assert.equal(split.body.error.code,'too_short_to_split');
+});
+
 test('activities are append-only projections with optimistic corrections',async()=>{
   const b=bindings();const created=(await call(b,'/activities',{method:'POST',payload:{activity_type_id:'research',project_id:'visual-engineering',description:'Read research',business_purpose:'Inform product design',started_at:'2026-08-02T09:00:00Z',ended_at:'2026-08-02T09:42:00Z',entry_method:'manual',reconstruction_reason:'Recorded after completion'}})).body.data;
   assert.equal(created.exact_duration_ms,42*60000);assert.equal(created.version,'v1');

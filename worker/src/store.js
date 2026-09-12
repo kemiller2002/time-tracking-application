@@ -4,6 +4,7 @@ const clone = value => structuredClone(value);
 const iso = value => new Date(value).toISOString();
 const version = seq => `v${seq}`;
 const MIN_RECORDABLE_TIMER_MS = 30000;
+const MIN_SPLITTABLE_MS = 120000;
 
 export class MemoryLedgerStore {
   constructor({ now = () => Date.now() } = {}) { this.now = now; this.events = []; this.timers = new Map(); this.requests = new Map(); this.attestations = []; }
@@ -33,8 +34,15 @@ export class MemoryLedgerStore {
     const id=input.activity_id??crypto.randomUUID();
     const start=Date.parse(requireField(input.started_at,'started_at')); const end=Date.parse(requireField(input.ended_at,'ended_at'));
     if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start)throw new ServiceError('invalid_time_range','End time must be after start time.');
+    if(iso(start).slice(0,10)!==iso(end).slice(0,10))throw new ServiceError('crosses_midnight','An activity must not extend past midnight.');
+    this.#assertNoOverlap(start,end,input.overlap_exclude_ids??[]);
     const record={ activity_id:id, activity_type_id:requireField(input.activity_type_id,'activity_type_id'), project_id:requireField(input.project_id,'project_id'), description:requireField(input.description,'description'), business_purpose:requireField(input.business_purpose,'business_purpose'), outcome:input.outcome??'', tags:input.tags??[], entry_method:input.entry_method??'manual', reconstruction_reason:input.reconstruction_reason??null, started_at:iso(start), ended_at:iso(end), exact_duration_ms:end-start, client_timestamp:input.client_timestamp??null, server_received_at:iso(this.now()) };
     const event=this.append('activity.created',id,record,actor); return this.activity(id,event.sequence);
+  }
+  #assertNoOverlap(start,end,excludeIds){
+    const dateKey=iso(start).slice(0,10);
+    const conflict=this.activities().find(a=>!a.voided&&!excludeIds.includes(a.activity_id)&&a.started_at.slice(0,10)===dateKey&&start<Date.parse(a.ended_at)&&Date.parse(a.started_at)<end);
+    if(conflict)throw new ServiceError('overlapping_activity','This time interval overlaps another recorded activity.',{status:409,details:{conflicting_activity_id:conflict.activity_id}});
   }
   amendActivity(id, input, actor='owner') { const current=this.assertVersion(id,input.base_version); const changes=clone(requireField(input.changes,'changes')); delete changes.activity_id; delete changes.entry_method; const event=this.append('activity.amended',id,{changes,reason:requireField(input.reason,'reason'),prior_version:current.version},actor); return this.activity(id,event.sequence); }
   voidActivity(id,input,actor='owner'){const current=this.assertVersion(id,input.base_version);if(current.voided)throw new ServiceError('already_voided','Activity is already removed from totals.',{status:409});const event=this.append('activity.voided',id,{reason:requireField(input.reason,'reason'),prior_version:current.version},actor);return this.activity(id,event.sequence);}
@@ -43,14 +51,15 @@ export class MemoryLedgerStore {
   detachEvidence(id,evidenceId,input,actor='owner'){const current=this.assertVersion(id,input.base_version);if(!current.evidence.some(x=>x.evidence_link_id===evidenceId))throw new ServiceError('evidence_not_found','Evidence link was not found.',{status:404});const event=this.append('evidence.detached',id,{evidence_link_id:evidenceId,reason:requireField(input.reason,'reason'),prior_version:current.version},actor);return this.activity(id,event.sequence);}
   splitActivity(id,input,actor='owner'){
     const current=this.assertVersion(id,input.base_version); const parts=requireField(input.parts,'parts'); if(!Array.isArray(parts)||parts.length<2)throw new ServiceError('invalid_split','At least two split parts are required.');
+    if(current.exact_duration_ms<MIN_SPLITTABLE_MS)throw new ServiceError('too_short_to_split','Activity must be at least two minutes long to split.');
     const total=parts.reduce((sum,p)=>sum+Number(p.duration_ms),0);if(total!==current.exact_duration_ms)throw new ServiceError('duration_invariant_failed','Split durations must equal the source duration.',{details:{expected:current.exact_duration_ms,actual:total}});
-    let cursor=Date.parse(current.started_at); const replacements=parts.map(part=>{const next=cursor+Number(part.duration_ms);const activity=this.createActivity({...current,...part,activity_id:crypto.randomUUID(),started_at:iso(cursor),ended_at:iso(next),entry_method:'split'},actor);cursor=next;return activity;});
+    let cursor=Date.parse(current.started_at); const replacements=parts.map(part=>{const next=cursor+Number(part.duration_ms);const activity=this.createActivity({...current,...part,activity_id:crypto.randomUUID(),started_at:iso(cursor),ended_at:iso(next),entry_method:'split',overlap_exclude_ids:[id]},actor);cursor=next;return activity;});
     this.append('activity.split',id,{replacement_ids:replacements.map(x=>x.activity_id),reason:requireField(input.reason,'reason')},actor);this.append('activity.voided',id,{reason:'Replaced by split',prior_version:this.activity(id).version},actor);return {source:this.activity(id),replacements};
   }
   mergeActivities(input,actor='owner'){
     const ids=requireField(input.source_ids,'source_ids');if(!Array.isArray(ids)||ids.length<2)throw new ServiceError('invalid_merge','At least two source activities are required.');
     const sources=ids.map((id,index)=>this.assertVersion(id,input.base_versions?.[index]));const startedAt=new Date(Math.min(...sources.map(x=>Date.parse(x.started_at))));const endedAt=new Date(Math.max(...sources.map(x=>Date.parse(x.ended_at))));
-    const merged=this.createActivity({activity_type_id:requireField(input.activity_type_id,'activity_type_id'),project_id:requireField(input.project_id,'project_id'),description:requireField(input.description,'description'),business_purpose:requireField(input.business_purpose,'business_purpose'),started_at:startedAt,ended_at:endedAt,entry_method:'merge'},actor);
+    const merged=this.createActivity({activity_type_id:requireField(input.activity_type_id,'activity_type_id'),project_id:requireField(input.project_id,'project_id'),description:requireField(input.description,'description'),business_purpose:requireField(input.business_purpose,'business_purpose'),started_at:startedAt,ended_at:endedAt,entry_method:'merge',overlap_exclude_ids:ids},actor);
     this.append('activity.merged',merged.activity_id,{source_ids:ids,reason:requireField(input.reason,'reason')},actor);for(const source of sources)this.append('activity.voided',source.activity_id,{reason:`Merged into ${merged.activity_id}`,prior_version:this.activity(source.activity_id).version},actor);return {merged:this.activity(merged.activity_id),sources:ids.map(id=>this.activity(id))};
   }
   assertVersion(id,base){const current=this.activity(id);if(!current)throw new ServiceError('activity_not_found','Activity was not found.',{status:404});if(base&&base!==current.version)throw new ServiceError('stale_projection','This activity changed after it was opened.',{status:409,details:{current}});return current;}
