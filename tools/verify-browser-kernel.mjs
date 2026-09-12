@@ -818,6 +818,39 @@ if (ready) {
   )
 
   // -------------------------------------------------------------------------
+  // Evidence reassignment on a split (TE-R-045)
+  // -------------------------------------------------------------------------
+
+  // 'Client proposal outline' gained evidence a moment ago, so its split
+  // control now offers that item per part. An entry with no evidence gets no
+  // such heading, which is why this is checked on the one that has some.
+  const evidenced2 = row('Client proposal outline').locator('details', { hasText: 'Split' })
+  await evidenced2.locator('summary').click()
+
+  check(
+    'a split offers the source\'s evidence, once per part',
+    (await evidenced2.locator('input[id*="-evidence-"]').count()) === 2,
+    `${await evidenced2.locator('input[id*="-evidence-"]').count()} boxes`
+  )
+  check(
+    'and names it by its label rather than its URI',
+    (await evidenced2.textContent())?.includes('The brief') === true
+  )
+
+  // An entry with no evidence offers no such control — an empty "Evidence"
+  // heading on every split would be noise.
+  const bare = row('Client proposal pricing').locator('details', { hasText: 'Split' })
+  await bare.locator('summary').click()
+  check(
+    'an entry with no evidence offers nothing to move',
+    (await bare.locator('input[id*="-evidence-"]').count()) === 0
+  )
+
+  // Close them again so the merge section below sees the page as it expects.
+  await evidenced2.locator('summary').click()
+  await bare.locator('summary').click()
+
+  // -------------------------------------------------------------------------
   // Merge
   // -------------------------------------------------------------------------
 
@@ -826,8 +859,10 @@ if (ready) {
   // this session created has none.
   check('the merge panel is hidden until something is selected', await page.isHidden('#merge-panel'))
 
-  const tick = (text) =>
-    row(text).locator('input[type=checkbox]').check()
+  // Scoped to the MERGE checkbox by id. A record can now contain evidence
+  // checkboxes too, inside its split control, so `input[type=checkbox]`
+  // alone is ambiguous.
+  const tick = (text) => row(text).locator('input[id^="merge-"]').check()
 
   await tick('Client proposal outline')
   check('selecting one entry opens the panel', await page.isVisible('#merge-panel'))

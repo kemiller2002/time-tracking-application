@@ -305,6 +305,39 @@ let private restore (command: JsonNode) =
 
             RestoreEntry request))
 
+/// Evidence a split child claims from its source.
+///
+/// The whole item is sent back, not just a URI, because the transition
+/// requires an exact match — a split moves evidence and may not relabel it on
+/// the way. The page echoes what the kernel gave it.
+let private reassignedEvidence (child: JsonNode) =
+    match child.["reassignedEvidence"] with
+    | :? JsonArray as items ->
+        items
+        |> Seq.fold
+            (fun acc item ->
+                match acc, item with
+                | Error e, _ -> Error e
+                | Ok _, null -> Error "'reassignedEvidence' contains a null element"
+                | Ok collected, node ->
+                    evidenceOf node (Instant.ofEpochMilliseconds 0L)
+                    |> Result.bind (fun _ ->
+                        // Re-read with the item's own timestamp: an existing
+                        // piece of evidence keeps the moment it was attached,
+                        // and substituting "now" would make it look newly
+                        // attached.
+                        match node.["attachedAtMs"] with
+                        | null -> Error "missing 'attachedAtMs' on reassigned evidence"
+                        | value ->
+                            match System.Int64.TryParse(value.ToString()) with
+                            | true, ms ->
+                                evidenceOf node (Instant.ofEpochMilliseconds ms)
+                                |> Result.map (fun e -> e :: collected)
+                            | _ -> Error "attachedAtMs must be an integer"))
+            (Ok [])
+        |> Result.map List.rev
+    | _ -> Ok []
+
 let private splitChildOf (child: JsonNode) =
     entryIdField child "entryId"
     |> Result.bind (fun entryId ->
@@ -317,19 +350,22 @@ let private splitChildOf (child: JsonNode) =
     |> Result.bind (fun (entryId, duration, project, activity) ->
         optionalDescription child "description"
         |> Result.bind (fun description ->
-            RevisionId.create (revisionFor entryId "r1")
-            |> describe
-            |> Result.map (fun revision ->
-                { NewEntryId = entryId
-                  NewRevisionId = revision
-                  Duration = duration
-                  Project = project
-                  ActivityType = activity
-                  Description = description
-                  // Evidence reassignment is a separate decision the split
-                  // screen makes per item (TE-R-045); nothing is moved unless
-                  // the request says so.
-                  ReassignedEvidence = [] })))
+            reassignedEvidence child
+            |> Result.bind (fun evidence ->
+                RevisionId.create (revisionFor entryId "r1")
+                |> describe
+                |> Result.map (fun revision ->
+                    { NewEntryId = entryId
+                      NewRevisionId = revision
+                      Duration = duration
+                      Project = project
+                      ActivityType = activity
+                      Description = description
+                      // A decision the split screen makes per item
+                      // (TE-R-045); nothing moves unless the request says so,
+                      // and the transition refuses anything the source does
+                      // not hold.
+                      ReassignedEvidence = evidence }))))
 
 let private split (command: JsonNode) =
     entryIdField command "entryId"

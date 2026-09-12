@@ -61,6 +61,12 @@ type Rejection =
     | SplitNeedsAtLeastTwoChildren of supplied: int
     /// Two children, or a child and the source, were given the same identity.
     | SplitChildIdentityNotUnique of duplicated: EntryId
+    /// TE-R-045: a split may REASSIGN the source's evidence to its children.
+    /// Reassignment moves what exists; it does not create. A child claiming
+    /// evidence the source never held would be attaching new evidence under
+    /// the name of a move, and doing so without the revision an attachment
+    /// would have produced (TE-R-033).
+    | EvidenceNotOnSource of uri: string
     /// The entry the command names was not supplied to the transition.
     | EntryNotLoaded of EntryId
     /// A merge needs something to merge.

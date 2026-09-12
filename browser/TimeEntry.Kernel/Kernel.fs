@@ -286,6 +286,31 @@ let viewDay (requestJson: string) : string =
                     item.Add("activityTypeId", JsonValue.Create(ActivityTypeId.value row.ActivityType))
                     item.Add("classification", JsonValue.Create(classificationOf catalogue row))
 
+                    // The evidence this entry holds, so a split can offer it
+                    // for reassignment. Sent whole because the transition
+                    // requires an exact match on the way back (TE-R-045).
+                    let evidence = JsonArray()
+
+                    for item' in (row: EntryView).Evidence do
+                        let rendered = JsonObject()
+                        rendered.Add("uri", JsonValue.Create item'.Uri)
+
+                        rendered.Add(
+                            "label",
+                            match item'.Label with
+                            | Some label -> JsonValue.Create(Description.value label)
+                            | None -> null
+                        )
+
+                        rendered.Add(
+                            "attachedAtMs",
+                            JsonValue.Create(Instant.epochMilliseconds item'.AttachedAt)
+                        )
+
+                        evidence.Add rendered
+
+                    item.Add("evidence", evidence)
+
                     let badges = JsonArray()
 
                     for badge in row.Badges do

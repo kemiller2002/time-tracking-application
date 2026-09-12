@@ -332,10 +332,10 @@
         "domain"
       ],
       "priority": "medium",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-11T23:28:01.735Z",
-      "updatedAt": "2026-09-11T23:28:01.735Z",
+      "updatedAt": "2026-09-12T02:50:37Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null
@@ -348,10 +348,10 @@
         "ui"
       ],
       "priority": "medium",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-11T23:28:02.011Z",
-      "updatedAt": "2026-09-11T23:28:02.011Z",
+      "updatedAt": "2026-09-12T02:50:37Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null
@@ -364,10 +364,10 @@
         "blocker"
       ],
       "priority": "high",
-      "status": "captured",
+      "status": "abandoned",
       "attachments": [],
       "createdAt": "2026-09-11T23:28:02.278Z",
-      "updatedAt": "2026-09-11T23:28:02.278Z",
+      "updatedAt": "2026-09-12T02:50:37Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null
@@ -756,10 +756,10 @@
       "description": null,
       "tags": [],
       "priority": "medium",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-12T02:48:46Z",
-      "updatedAt": "2026-09-12T02:48:46Z",
+      "updatedAt": "2026-09-12T02:56:00Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null

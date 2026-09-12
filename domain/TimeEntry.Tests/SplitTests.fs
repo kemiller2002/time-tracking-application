@@ -146,3 +146,113 @@ let ``a split of many children preserves the total`` () =
     Assert.Equal(3600000L, entries |> List.sumBy TimeEntry.contributedMilliseconds)
 
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Evidence reassignment (TE-R-045)
+// ---------------------------------------------------------------------------
+
+let private withEvidence (uri: string) (entry: TimeEntry) =
+    let item =
+        { Uri = uri
+          Label = Some(description "The brief")
+          AttachedAt = instant 1788000000L }
+
+    { entry with
+        Effective =
+            { entry.Effective with
+                Evidence = item :: entry.Effective.Evidence } },
+    item
+
+[<Fact>]
+let ``a split moves the source's evidence onto the child that claims it`` () =
+    let source, item = withEvidence "https://example.invalid/brief.pdf" (persistedEntry "e1" (minutes 30) "sha-1")
+
+    let outcome =
+        splitEntry
+            catalogue
+            { EntryId = entryId "e1"
+              ExpectedVersion = version "sha-1"
+              Children =
+                [ { splitChild "e1a" (minutes 12) with ReassignedEvidence = [ item ] }
+                  splitChild "e1b" (minutes 18) ]
+              Attribution = attribution "e1-split" }
+            source
+
+    let entries, _ = accepted outcome
+    let child id = entries |> List.find (fun e -> e.Id = entryId id)
+
+    Assert.Equal<EvidenceRef list>([ item ], (child "e1a").Effective.Evidence)
+    Assert.Empty((child "e1b").Effective.Evidence)
+
+[<Fact>]
+let ``a child cannot claim evidence the source never held`` () =
+    // Reassignment moves what exists; it does not create. A child claiming
+    // unknown evidence would be attaching new evidence under the name of a
+    // move, and without the revision an attachment would have produced
+    // (TE-R-033).
+    let source = persistedEntry "e1" (minutes 30) "sha-1"
+
+    let invented =
+        { Uri = "https://example.invalid/not-attached.pdf"
+          Label = None
+          AttachedAt = instant 1788000000L }
+
+    let outcome =
+        splitEntry
+            catalogue
+            { EntryId = entryId "e1"
+              ExpectedVersion = version "sha-1"
+              Children =
+                [ { splitChild "e1a" (minutes 12) with ReassignedEvidence = [ invented ] }
+                  splitChild "e1b" (minutes 18) ]
+              Attribution = attribution "e1-split" }
+            source
+
+    match rejection outcome with
+    | EvidenceNotOnSource uri -> Assert.Equal("https://example.invalid/not-attached.pdf", uri)
+    | other -> failwithf "expected EvidenceNotOnSource, got %A" other
+
+[<Fact>]
+let ``a split may not relabel the evidence it moves`` () =
+    // Matched on the whole item, not its URI: a split moves evidence, it is
+    // not an opportunity to edit it. Relabelling is a different intention and
+    // should look like one.
+    let source, item = withEvidence "https://example.invalid/brief.pdf" (persistedEntry "e1" (minutes 30) "sha-1")
+    let relabelled = { item with Label = Some(description "Something else") }
+
+    let outcome =
+        splitEntry
+            catalogue
+            { EntryId = entryId "e1"
+              ExpectedVersion = version "sha-1"
+              Children =
+                [ { splitChild "e1a" (minutes 12) with ReassignedEvidence = [ relabelled ] }
+                  splitChild "e1b" (minutes 18) ]
+              Attribution = attribution "e1-split" }
+            source
+
+    match rejection outcome with
+    | EvidenceNotOnSource _ -> ()
+    | other -> failwithf "expected EvidenceNotOnSource, got %A" other
+
+[<Fact>]
+let ``the superseded source keeps the evidence it had`` () =
+    // TE-R-030: nothing is removed from a record that is being superseded.
+    // The child gains a copy; the source's own history is untouched.
+    let source, item = withEvidence "https://example.invalid/brief.pdf" (persistedEntry "e1" (minutes 30) "sha-1")
+
+    let outcome =
+        splitEntry
+            catalogue
+            { EntryId = entryId "e1"
+              ExpectedVersion = version "sha-1"
+              Children =
+                [ { splitChild "e1a" (minutes 12) with ReassignedEvidence = [ item ] }
+                  splitChild "e1b" (minutes 18) ]
+              Attribution = attribution "e1-split" }
+            source
+
+    let entries, _ = accepted outcome
+    let superseded = entries |> List.find (fun e -> e.Id = entryId "e1")
+
+    Assert.Contains(item, superseded.Effective.Evidence)

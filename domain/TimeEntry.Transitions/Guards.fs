@@ -45,6 +45,27 @@ let requireVersion (expected: VersionToken) (entry: TimeEntry) : Result<unit, Re
     | Some current when VersionToken.matches current expected -> Ok()
     | current -> Error(VersionConflict(expected, current))
 
+/// Every piece of evidence a child claims must be evidence the source holds.
+///
+/// Matched on the whole `EvidenceRef` rather than on its URI alone. A split
+/// moves evidence; it is not an opportunity to relabel it, and requiring the
+/// item to match exactly means a caller can only hand back what it was given.
+/// A relabelling is a different intention and should look like one.
+///
+/// Deliberately NOT checked here: whether two children may claim the same
+/// item. The same document can genuinely support two pieces of work, and no
+/// repository requirement says otherwise, so forbidding it would be inventing
+/// a rule (recorded as OQ-11).
+let requireReassignedEvidenceExists
+    (source: EntryFacts)
+    (children: SplitChild list)
+    : Result<unit, Rejection> =
+    let claimed = children |> List.collect (fun child -> child.ReassignedEvidence)
+
+    match claimed |> List.tryFind (fun item -> not (List.contains item source.Evidence)) with
+    | Some stranger -> Error(EvidenceNotOnSource stranger.Uri)
+    | None -> Ok()
+
 let requireAtLeastTwoChildren (children: SplitChild list) : Result<unit, Rejection> =
     let count = List.length children
 

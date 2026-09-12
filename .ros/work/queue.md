@@ -17,19 +17,19 @@
 | WI-0012 | TE-010 Correction transition with auditable supersession | complete | slice | high |
 | WI-0013 | TE-011 Split transition and total-preservation invariant | complete | slice | high |
 | WI-0014 | TE-012 Void and restore transitions with audit behavior | complete | slice | high |
-| WI-0015 | TE-013 Projects, activity types, and labels state and selection rules | active | slice | medium |
+| WI-0015 | TE-013 Projects, activity types, and labels state and selection rules | complete | slice | medium |
 | WI-0016 | TE-014 GitHub concurrency: explicit version evidence and conflict handling | complete | slice | high |
 | WI-0017 | TE-015 Accessibility and browser behavior verification | complete | verification | medium |
 | WI-0018 | TE-016 Heterogeneous verification: behavioral, boundary, structural, effect, serialization, adversarial | complete | verification | high |
-| WI-0019 | TE-017 Final traceability and handoff | active | traceability | high |
+| WI-0019 | TE-017 Final traceability and handoff | complete | traceability | high |
 | WI-0020 | TE-019 Implement merge transition: sources superseded into new entry per DF-TE-0006 | complete | domain | high |
-| WI-0021 | TE-020 Implement archived-project policy per DF-TE-0007: reject new time, keep existing entries | captured | domain | medium |
-| WI-0022 | TE-021 Rebuild app shell on static-ui-screens design system per DF-TE-0008 | captured | ui | medium |
-| WI-0023 | TE-022 BLOCKED: wasm-tools workload unavailable via apt - only remaining toolchain gap | captured | blocker | high |
+| WI-0021 | TE-020 Implement archived-project policy per DF-TE-0007: reject new time, keep existing entries | complete | domain | medium |
+| WI-0022 | TE-021 Rebuild app shell on static-ui-screens design system per DF-TE-0008 | complete | ui | medium |
+| WI-0023 | TE-022 BLOCKED: wasm-tools workload unavailable via apt - only remaining toolchain gap | abandoned | blocker | high |
 | WI-0024 | TE-023 Duration precision: store milliseconds to match exact_duration_ms contract | complete |  | medium |
 | WI-0025 | TE-025 GitHub API adapter and effect interpreter: Git Data API for atomic multi-file split/merge writes | complete |  | medium |
 | WI-0026 | TE-026 Project domain type with Active/Archived status and project storage per DF-TE-0007 | complete |  | medium |
-| WI-0027 | TE-027 HTTP implementation of the GitHubStore port: Git Data API trees/commits/refs, auth, rate-limit and retry | blocked |  | medium |
+| WI-0027 | TE-027 HTTP implementation of the GitHubStore port: Git Data API trees/commits/refs, auth, rate-limit and retry | complete |  | medium |
 | WI-0028 | TE-028 Verify the GitHub transport write path against a scratch branch (needs a write-capable token; agent proxy denies API writes) | captured |  | medium |
 | WI-0029 | TE-029 Persist the project/activity catalogue and implement LoadProjects in the interpreter | complete |  | medium |
 | WI-0030 | TE-030 Source-generated JSON serialization so the WASM host can be trimmed (reflection-based System.Text.Json blocks IL trimming) | complete |  | medium |
@@ -51,4 +51,4 @@
 | WI-0046 | TE-046 Entry history (TE-R-052): what changed, why, when, by whom, from which device | complete |  | medium |
 | WI-0047 | TE-047 Word each rejection explicitly instead of sprintf %A — TE-R-053 requires it, and it is what now blocks trimming | complete |  | medium |
 | WI-0048 | TE-048 Warn on device/server clock skew (TE-R-008) — needs a decision on where authoritative time comes from | captured |  | medium |
-| WI-0049 | TE-049 Evidence reassignment affordance on split (TE-R-045 is structural only) | captured |  | medium |
+| WI-0049 | TE-049 Evidence reassignment affordance on split (TE-R-045 is structural only) | ready |  | medium |

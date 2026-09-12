@@ -46,6 +46,14 @@ type EntryView =
       DisplayHours: int
       DisplayMinutes: int
       CountsTowardTotals: bool
+      /// The evidence this entry holds.
+      ///
+      /// The badge reports the COUNT, which is all a list row needs. The
+      /// items themselves are carried because a split has to offer them for
+      /// reassignment, and the transition requires an exact match on the way
+      /// back (TE-R-045) — so the caller must be able to hand back precisely
+      /// what it was given.
+      Evidence: EvidenceRef list
       Badges: EntryBadge list
       /// TE-R-097: what the user may do, decided here.
       Capabilities: EntryCapability list
@@ -165,6 +173,7 @@ module Projection =
           DisplayHours = hours
           DisplayMinutes = minutes
           CountsTowardTotals = TimeEntry.countsTowardTotals entry
+          Evidence = entry.Effective.Evidence
           Badges = badgesFor entry
           Capabilities = Capabilities.available entry.State
           Obligations = Obligation.intrinsic entry @ extraObligations }

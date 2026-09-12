@@ -186,6 +186,7 @@ let splitEntry (catalogue: Catalogue) (request: SplitEntryRequest) (entry: TimeE
         |> Result.bind (fun () -> requireVersion request.ExpectedVersion entry)
         |> Result.bind (fun () -> requireAtLeastTwoChildren request.Children)
         |> Result.bind (fun () -> requireUniqueIdentities entry.Id request.Children)
+        |> Result.bind (fun () -> requireReassignedEvidenceExists entry.Effective request.Children)
         |> Result.bind (fun () -> requireTotalPreserved entry.Effective.Duration request.Children)
 
     match validated with

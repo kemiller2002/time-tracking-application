@@ -180,6 +180,9 @@ let rejection (rejection: Rejection) =
     | SplitNeedsAtLeastTwoChildren supplied ->
         sprintf "A split needs at least two parts; %d was given." supplied
 
+    | EvidenceNotOnSource uri ->
+        sprintf "This entry does not hold %s, so a split cannot move it to a part." uri
+
     | SplitChildIdentityNotUnique duplicated ->
         sprintf "Two parts were given the same identity (%s)." (EntryId.value duplicated)
 

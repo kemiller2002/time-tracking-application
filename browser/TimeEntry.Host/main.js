@@ -479,6 +479,19 @@ const historyControl = (entryId) => {
   return details
 }
 
+// Which evidence a split part was ticked for.
+//
+// A loop rather than `.filter`, which the architecture check bans in this
+// file. The ban is about filtering a list of ENTRIES — the kernel's job — and
+// this is a set of checkboxes, but the rule is deliberately blunt so that it
+// cannot be argued with case by case. Writing the loop costs three lines and
+// keeps the rule absolute.
+const chosenEvidence = (part) => {
+  const chosen = []
+  for (const choice of part.evidence) if (choice.box.checked) chosen.push(choice.item)
+  return chosen
+}
+
 // Splitting an entry. `split.html` calls the pieces "Part 1", "Part 2"; this
 // keeps that language and that structure.
 //
@@ -548,7 +561,33 @@ const splitControl = (row) => {
       labelled(`split-${row.id}-${index}-description`, 'What did you do?', description)
     )
 
-    rows.push({ index, duration, project, activity, description })
+    // Which of the source's evidence moves to this part (TE-R-045). Offered
+    // only when there is evidence to move, because an empty "Evidence"
+    // heading on every split would be noise.
+    //
+    // The whole item is kept, not just its URI: the transition requires an
+    // exact match, so what goes back must be exactly what came out.
+    const evidence = []
+
+    if ((row.evidence ?? []).length > 0) {
+      const list = el('div', 'field field-full')
+      list.append(el('p', 'field-label', 'Evidence to move here'))
+
+      for (const [position, item] of (row.evidence ?? []).entries()) {
+        const label = document.createElement('label')
+        const box = document.createElement('input')
+        box.type = 'checkbox'
+        box.id = `split-${row.id}-${index}-evidence-${position}`
+        label.htmlFor = box.id
+        label.append(box, document.createTextNode(` ${item.label ?? item.uri}`))
+        list.append(label)
+        evidence.push({ box, item })
+      }
+
+      fields.append(list)
+    }
+
+    rows.push({ index, duration, project, activity, description, evidence })
     parts.append(fields)
     refresh()
   }
@@ -574,7 +613,10 @@ const splitControl = (row) => {
           durationUnits: Number(part.duration.value) || null,
           projectId: part.project.value,
           activityTypeId: part.activity.value,
-          description: part.description.value
+          description: part.description.value,
+          // Echoed back exactly as the kernel gave it. The page does not
+          // construct evidence; it chooses which of the source's items move.
+          reassignedEvidence: chosenEvidence(part)
         }))
     })
   })
