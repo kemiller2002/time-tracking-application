@@ -20,6 +20,7 @@ open TimeEntry.Transitions.Commands
 open TimeEntry.Transitions.Effects
 open TimeEntry.Transitions.Transitions
 open TimeEntry.Persistence
+open TimeEntry.GitHub
 open TimeEntry.Browser
 
 /// Rounding policy for display. A single place, so the browser cannot pick
@@ -689,99 +690,324 @@ let private mergeById (loaded: TimeEntry list) (changed: TimeEntry list) : TimeE
 ///
 /// A rejection is a normal answer, not an error: the UI needs to render
 /// "an archived project cannot take new time" as readily as a success.
+/// Read the three things every command request carries beside the command
+/// itself: the catalogue it was chosen against, the entries it was composed
+/// against, and the version each of those was read at.
+///
+/// Extracted so `dispatch` and `persist` cannot drift apart on what a request
+/// means. They differ in exactly one way — whether the effects are performed —
+/// and nothing else should be able to differ by accident.
+let private prepare (request: JsonNode) : Result<Catalogue * TimeEntry list * Command, string> =
+    let catalogue =
+        match request.["catalogue"] with
+        | null -> Ok Catalogue.empty
+        | node ->
+            match Serialization.readCatalogue (node.ToJsonString()) with
+            | Error e -> Error(sprintf "%A" e)
+            | Ok document -> Mapping.catalogueFromDocument document |> describe
+
+    // Version tokens arrive alongside the documents, never inside them: the
+    // token is a hash OF the document, so storing it in the content would be
+    // circular (see `Persistence.Documents`). The transport knows path -> blob
+    // SHA, so it supplies a map keyed by entry id.
+    //
+    // An entry loaded without a token gets `Version = None`, and every
+    // mutating transition then refuses it with `VersionConflict`. That is the
+    // correct outcome, not a gap: a caller that cannot say which version it
+    // read must not be allowed to overwrite (TE-R-070).
+    let versionFor =
+        match request.["versions"] with
+        | :? JsonObject as tokens ->
+            fun (entryId: string) ->
+                match tokens.[entryId] with
+                | null -> None
+                | value -> VersionToken.create (value.ToString()) |> Result.toOption
+        | _ -> fun _ -> None
+
+    let loaded =
+        match request.["entries"] with
+        | :? JsonArray as items ->
+            items
+            |> Seq.choose (fun item ->
+                match item with
+                | null -> None
+                | node ->
+                    match Serialization.read (node.ToJsonString()) with
+                    | Error _ -> None
+                    | Ok document ->
+                        match Mapping.fromDocument (versionFor document.entry_id) document with
+                        | Error _ -> None
+                        | Ok entry -> Some entry)
+            |> List.ofSeq
+        | _ -> []
+
+    catalogue
+    |> Result.bind (fun cat ->
+        match request.["command"] with
+        | null -> Error "missing 'command'"
+        | command -> CommandParsing.parse command |> Result.map (fun parsed -> cat, loaded, parsed))
+
+/// A rejection, as a normal answer. The UI needs to render "an archived
+/// project cannot take new time" as readily as a success.
+let private rejectedNode (rejection: Rejection) =
+    let node = JsonObject()
+    node.Add("ok", JsonValue.Create true)
+    node.Add("accepted", JsonValue.Create false)
+    node.Add("rejection", JsonValue.Create(sprintf "%A" rejection))
+    node
+
+/// An acceptance: the whole resulting set in stored form, the ids touched, and
+/// the effects the domain asked for.
+let private acceptedNode (loaded: TimeEntry list) (changed: TimeEntry list) (effects: Effect list) =
+    let node = JsonObject()
+    node.Add("ok", JsonValue.Create true)
+    node.Add("accepted", JsonValue.Create true)
+
+    let stored = JsonArray()
+
+    for entry in mergeById loaded changed do
+        stored.Add(JsonNode.Parse(Serialization.write (Mapping.toDocument entry)))
+
+    node.Add("entries", stored)
+
+    let touched = JsonArray()
+
+    for entry in changed do
+        touched.Add(JsonValue.Create(EntryId.value entry.Id))
+
+    node.Add("changed", touched)
+
+    let requested = JsonArray()
+
+    for effect in effects do
+        requested.Add(JsonValue.Create(effectName effect))
+
+    node.Add("effects", requested)
+    node
+
+/// Apply a command WITHOUT performing its effects.
+///
+/// Input carries the loaded catalogue, the loaded entries, and the command.
+/// Output carries the whole resulting set in its stored form — the loaded
+/// entries with the command's changes folded in — plus the ids the command
+/// touched and the effects the domain requested, NAMED, never performed
+/// (TE-R-093).
+///
+/// This is the right entry point when there is no credential, and the only one
+/// that cannot touch the network.
 let dispatch (requestJson: string) : string =
     try
         match JsonNode.Parse requestJson with
         | null -> errorResult "empty request"
         | request ->
-
-        let catalogue =
-            match request.["catalogue"] with
-            | null -> Ok Catalogue.empty
-            | node ->
-                match Serialization.readCatalogue (node.ToJsonString()) with
-                | Error e -> Error(sprintf "%A" e)
-                | Ok document -> Mapping.catalogueFromDocument document |> describe
-
-        // Version tokens arrive alongside the documents, never inside them:
-        // the token is a hash OF the document, so storing it in the content
-        // would be circular (see `Persistence.Documents`). The transport
-        // knows path -> blob SHA, so it supplies a map keyed by entry id.
-        //
-        // An entry loaded without a token gets `Version = None`, and every
-        // mutating transition then refuses it with `VersionConflict`. That is
-        // the correct outcome, not a gap: a caller that cannot say which
-        // version it read must not be allowed to overwrite (TE-R-070).
-        let versionFor =
-            match request.["versions"] with
-            | :? JsonObject as tokens ->
-                fun (entryId: string) ->
-                    match tokens.[entryId] with
-                    | null -> None
-                    | value -> VersionToken.create (value.ToString()) |> Result.toOption
-            | _ -> fun _ -> None
-
-        let loaded =
-            match request.["entries"] with
-            | :? JsonArray as items ->
-                items
-                |> Seq.choose (fun item ->
-                    match item with
-                    | null -> None
-                    | node ->
-                        match Serialization.read (node.ToJsonString()) with
-                        | Error _ -> None
-                        | Ok document ->
-                            match Mapping.fromDocument (versionFor document.entry_id) document with
-                            | Error _ -> None
-                            | Ok entry -> Some entry)
-                |> List.ofSeq
-            | _ -> []
-
-        let built =
-            catalogue
-            |> Result.bind (fun cat ->
-                match request.["command"] with
-                | null -> Error "missing 'command'"
-                | command -> CommandParsing.parse command |> Result.map (fun parsed -> cat, parsed))
-
-        match built with
-        | Error detail -> errorResult detail
-        | Ok(cat, command) ->
-            match apply cat loaded command with
-            | Rejected rejection ->
-                let node = JsonObject()
-                node.Add("ok", JsonValue.Create true)
-                node.Add("accepted", JsonValue.Create false)
-                // A typed rejection, rendered as text for the page. The page
-                // displays it; it does not interpret it.
-                node.Add("rejection", JsonValue.Create(sprintf "%A" rejection))
-                node.ToJsonString(jsonOptions)
-            | Accepted(changed, effects) ->
-                let node = JsonObject()
-                node.Add("ok", JsonValue.Create true)
-                node.Add("accepted", JsonValue.Create true)
-
-                let stored = JsonArray()
-
-                for entry in mergeById loaded changed do
-                    stored.Add(JsonNode.Parse(Serialization.write (Mapping.toDocument entry)))
-
-                node.Add("entries", stored)
-
-                let touched = JsonArray()
-
-                for entry in changed do
-                    touched.Add(JsonValue.Create(EntryId.value entry.Id))
-
-                node.Add("changed", touched)
-
-                let requested = JsonArray()
-
-                for effect in effects do
-                    requested.Add(JsonValue.Create(effectName effect))
-
-                node.Add("effects", requested)
-                node.ToJsonString(jsonOptions)
+            match prepare request with
+            | Error detail -> errorResult detail
+            | Ok(catalogue, loaded, command) ->
+                match apply catalogue loaded command with
+                | Rejected rejection -> (rejectedNode rejection).ToJsonString(jsonOptions)
+                | Accepted(changed, effects) ->
+                    (acceptedNode loaded changed effects).ToJsonString(jsonOptions)
     with ex ->
         errorResult (ex.GetType().Name + ": " + ex.Message)
+
+
+// ---------------------------------------------------------------------------
+// Performing the effects
+// ---------------------------------------------------------------------------
+
+/// Where the ledger lives, and how this page proves it may write there.
+///
+/// The credential is built through `Credential`'s port, so the mechanism is
+/// replaceable without this module changing (DF-TE-0011). Today the page sends
+/// a token; a device flow or a same-origin proxy would send something else, or
+/// nothing, and only the construction below would move.
+let private sessionFrom (request: JsonNode) =
+    let text (name: string) =
+        match request.[name] with
+        | null -> Error(sprintf "missing '%s'" name)
+        | value ->
+            let raw = value.ToString()
+
+            if System.String.IsNullOrWhiteSpace raw then
+                Error(sprintf "'%s' is empty" name)
+            else
+                Ok raw
+
+    match request.["repository"] with
+    | null -> Error "missing 'repository'"
+    | repository ->
+        let field (name: string) =
+            match repository.[name] with
+            | null -> Error(sprintf "missing 'repository.%s'" name)
+            | value ->
+                let raw = value.ToString()
+
+                if System.String.IsNullOrWhiteSpace raw then
+                    Error(sprintf "'repository.%s' is empty" name)
+                else
+                    Ok raw
+
+        field "owner"
+        |> Result.bind (fun owner ->
+            field "repo" |> Result.map (fun repo -> owner, repo))
+        |> Result.bind (fun (owner, repo) ->
+            field "branch" |> Result.map (fun branch -> owner, repo, branch))
+        |> Result.map (fun (owner, repo, branch) ->
+            let target: HttpProtocol.RepositoryRef =
+                { Owner = owner
+                  Repository = repo
+                  Branch = branch }
+
+            // A request with no token gets the token source anyway, holding an
+            // empty string: `Credential.token` then answers
+            // `CredentialUnavailable` client-side and no request is sent. The
+            // alternative — falling back to `ambient` — would quietly turn
+            // "not signed in" into an unauthenticated request and a confusing
+            // 401 (DF-TE-0011).
+            let credential =
+                match text "token" with
+                | Ok value -> Credential.token value
+                | Error _ -> Credential.token ""
+
+            target, credential)
+
+/// One effect's result, as the page needs to see it.
+///
+/// `Persisted` carries the new blob SHAs, which matters more than it looks:
+/// they are the version tokens for the entries just written, so the page can
+/// go on to correct or remove them. Without this, anything created in the
+/// browser could never be changed again — which is exactly the gap that
+/// existed while effects were only named.
+let private outcomeNode (effect: Effect) (outcome: Interpreter.EffectOutcome) =
+    let node = JsonObject()
+    node.Add("effect", JsonValue.Create(effectName effect))
+
+    match outcome with
+    | Interpreter.Persisted versions ->
+        node.Add("outcome", JsonValue.Create "persisted")
+        let written = JsonObject()
+
+        for entryId, token in versions do
+            written.Add(EntryId.value entryId, JsonValue.Create(VersionToken.value token))
+
+        node.Add("versions", written)
+    | Interpreter.Conflicted conflict ->
+        // TE-R-072: a stale write is an outcome the domain reconciles, not a
+        // failure to retry. The page must re-read and decide, so it is told
+        // which entry and which versions disagreed.
+        node.Add("outcome", JsonValue.Create "conflicted")
+        node.Add("path", JsonValue.Create conflict.Path)
+
+        node.Add(
+            "entryId",
+            match conflict.EntryId with
+            | Some id -> JsonValue.Create(EntryId.value id)
+            | None -> null
+        )
+
+        node.Add(
+            "expectedVersion",
+            match conflict.Expected with
+            | Some token -> JsonValue.Create(VersionToken.value token)
+            | None -> null
+        )
+
+        node.Add(
+            "actualVersion",
+            match conflict.Actual with
+            | Some token -> JsonValue.Create(VersionToken.value token)
+            | None -> null
+        )
+    | Interpreter.Failed error ->
+        node.Add("outcome", JsonValue.Create "failed")
+        node.Add("detail", JsonValue.Create(sprintf "%A" error))
+    | Interpreter.EntriesLoaded(entries, _) ->
+        node.Add("outcome", JsonValue.Create "loaded")
+        node.Add("count", JsonValue.Create(List.length entries))
+    | Interpreter.CatalogueLoaded _ -> node.Add("outcome", JsonValue.Create "catalogueLoaded")
+    | Interpreter.CatalogueUnreadable detail ->
+        node.Add("outcome", JsonValue.Create "catalogueUnreadable")
+        node.Add("detail", JsonValue.Create detail)
+
+    node
+
+/// Apply a command AND perform the effects it asks for.
+///
+/// The same request as `dispatch`, plus `repository` and `token`. The answer is
+/// the same too, plus `performed` — one entry per effect — and `versions`,
+/// the new blob SHA of every entry written.
+///
+/// The domain still decides everything and still only *asks* for effects; this
+/// is the interpreter running them, which is a host responsibility (TE-R-093).
+/// A rejected command performs nothing at all: effects exist only inside an
+/// `Accepted`, so there is no path here that writes on a refusal.
+let persistWith
+    (storeFor: HttpProtocol.RepositoryRef -> Credential.CredentialSource -> Store.GitHubStore)
+    (requestJson: string)
+    : Async<string> =
+    async {
+        try
+            match JsonNode.Parse requestJson with
+            | null -> return errorResult "empty request"
+            | request ->
+                // The repository is checked BEFORE the command. A host that
+                // was started without one would otherwise report "missing
+                // 'entryId'" for every command a user typed correctly —
+                // blaming them for a configuration problem that is not
+                // theirs.
+                match sessionFrom request, prepare request with
+                | Error detail, _ -> return errorResult detail
+                | _, Error detail -> return errorResult detail
+                | Ok(target, credential), Ok(catalogue, loaded, command) ->
+                    match apply catalogue loaded command with
+                    | Rejected rejection -> return (rejectedNode rejection).ToJsonString(jsonOptions)
+                    | Accepted(changed, effects) ->
+                        let store = storeFor target credential
+
+                        let node = acceptedNode loaded changed effects
+                        let performed = JsonArray()
+                        let versions = JsonObject()
+
+                        // Sequentially, and deliberately: each effect is a
+                        // commit against a branch whose head the next one
+                        // reads. Running them concurrently would make every
+                        // commit after the first race the head it depends on.
+                        for effect in effects do
+                            let! outcome = Interpreter.interpret store effect
+                            performed.Add(outcomeNode effect outcome)
+
+                            match outcome with
+                            | Interpreter.Persisted written ->
+                                for entryId, token in written do
+                                    versions.Add(
+                                        EntryId.value entryId,
+                                        JsonValue.Create(VersionToken.value token)
+                                    )
+                            | _ -> ()
+
+                        node.Add("performed", performed)
+                        node.Add("versions", versions)
+                        node.Add("credential", JsonValue.Create credential.Describe)
+                        return node.ToJsonString(jsonOptions)
+        with ex ->
+            return errorResult (ex.GetType().Name + ": " + ex.Message)
+    }
+
+
+/// The store this runs against in a browser: the real GitHub transport.
+///
+/// Separated from `persistWith` so the wiring above — dispatch, interpret,
+/// collect the new versions — can be verified against a store double with no
+/// network at all. A `persist` that built its own `HttpClient` inline could
+/// only be tested by talking to GitHub, which would make the most important
+/// part of this file the least covered.
+let private httpStore (target: HttpProtocol.RepositoryRef) (credential: Credential.CredentialSource) =
+    // Not disposed: the store closes over it and is used after this returns.
+    // One client per persist rather than one per request — a client per
+    // request exhausts sockets, and in the browser it is a fetch wrapper
+    // holding nothing that needs releasing.
+    let client = new System.Net.Http.HttpClient()
+    HttpStore.create (HttpStore.configure client credential) target
+
+/// Apply a command and perform its effects against the real repository.
+let persist (requestJson: string) : Async<string> = persistWith httpStore requestJson

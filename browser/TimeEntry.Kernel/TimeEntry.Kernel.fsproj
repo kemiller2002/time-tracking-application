@@ -22,6 +22,7 @@
     <ProjectReference Include="../../domain/TimeEntry.Transitions/TimeEntry.Transitions.fsproj" />
     <ProjectReference Include="../../domain/TimeEntry.Projection/TimeEntry.Projection.fsproj" />
     <ProjectReference Include="../../domain/TimeEntry.Persistence/TimeEntry.Persistence.fsproj" />
+    <ProjectReference Include="../../domain/TimeEntry.GitHub/TimeEntry.GitHub.fsproj" />
   </ItemGroup>
 
 </Project>

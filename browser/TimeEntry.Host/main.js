@@ -45,6 +45,38 @@ const versions = versionFixture.versions
 const DATE = '2026-09-10'
 
 // ---------------------------------------------------------------------------
+// Where the ledger lives, and what may write to it
+// ---------------------------------------------------------------------------
+
+// Held for this tab only. `sessionStorage` rather than `localStorage` because
+// a token that outlives the tab outlives the reason it was entered; and it is
+// never read back into the page after being stored, so nothing renders it.
+//
+// This is the browser half of DF-TE-0011. The kernel takes a token today; a
+// device flow or a same-origin proxy would replace this block and nothing
+// below it.
+const CONNECTION_KEY = 'echelon-ledger.connection'
+
+const readConnection = () => {
+  try {
+    return JSON.parse(sessionStorage.getItem(CONNECTION_KEY) ?? 'null')
+  } catch {
+    // A blocked or cleared store is not an error worth stopping for: the page
+    // simply has no credential, which it already knows how to be.
+    return null
+  }
+}
+
+const writeConnection = (connection) => {
+  try {
+    if (connection) sessionStorage.setItem(CONNECTION_KEY, JSON.stringify(connection))
+    else sessionStorage.removeItem(CONNECTION_KEY)
+  } catch {
+    // Ignored for the same reason.
+  }
+}
+
+// ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
@@ -58,8 +90,30 @@ const derive = (entries, visibility) =>
 // Every command carries the same three things beside itself: the catalogue it
 // was chosen against, the entries it was composed against, and the versions
 // of those entries. One function, so no call site can omit one.
-const send = (command) =>
-  ask(kernel.Dispatch, { catalogue, entries: state.entries, versions, command })
+//
+// Two entry points, one shape. `Dispatch` names the effects and performs
+// none; `Persist` runs them through the interpreter. Which one is used turns
+// on whether there is a repository to write to — NOT on anything the page
+// decides about the command, which is why the request is identical either
+// way.
+const requestFor = (command) => ({
+  catalogue,
+  entries: state.entries,
+  versions,
+  command
+})
+
+const send = (command) => ask(kernel.Dispatch, requestFor(command))
+
+const sendAndPersist = async (command) => {
+  const connection = readConnection()
+  const answer = JSON.parse(
+    await kernel.Persist(
+      JSON.stringify({ ...requestFor(command), repository: connection.repository, token: connection.token })
+    )
+  )
+  return answer
+}
 
 // `visibility` is a request, not a decision: the kernel is what knows which
 // entries a given visibility admits, and what "counts toward totals" means.
@@ -75,7 +129,8 @@ let state = Object.freeze({
   // second opinion about the ledger (TE-R-098).
   selectedForMerge: [],
   message: null,
-  effects: []
+  effects: [],
+  performed: []
 })
 
 const update = (change) => {
@@ -190,15 +245,13 @@ const reasonControl = (entryId, kind, summaryText, buttonText, placeholder) => {
   form.append(labelled(`${kind}-reason-${entryId}`, 'Reason', input), button)
   form.addEventListener('submit', (event) => {
     event.preventDefault()
-    absorb(
-      send({
-        kind,
-        entryId,
-        expectedVersion: versions[entryId],
-        reason: input.value,
-        occurredAtMs: Date.now()
-      })
-    )
+    submitCommand({
+      kind,
+      entryId,
+      expectedVersion: versions[entryId],
+      reason: input.value,
+      occurredAtMs: Date.now()
+    })
   })
   details.append(form)
   return details
@@ -264,8 +317,7 @@ const correctionControl = (row) => {
   form.append(fields, button)
   form.addEventListener('submit', (event) => {
     event.preventDefault()
-    absorb(
-      send({
+    submitCommand({
         kind: 'correct',
         entryId: row.id,
         expectedVersion: versions[row.id],
@@ -276,8 +328,7 @@ const correctionControl = (row) => {
         description: description.value,
         reason: reason.value,
         occurredAtMs: Date.now()
-      })
-    )
+    })
   })
   details.append(form)
   return details
@@ -315,16 +366,14 @@ const evidenceControl = (entryId) => {
   form.append(fields, button)
   form.addEventListener('submit', (event) => {
     event.preventDefault()
-    absorb(
-      send({
-        kind: 'attachEvidence',
-        entryId,
-        expectedVersion: versions[entryId],
-        uri: uri.value,
-        label: label.value,
-        occurredAtMs: Date.now()
-      })
-    )
+    submitCommand({
+      kind: 'attachEvidence',
+      entryId,
+      expectedVersion: versions[entryId],
+      uri: uri.value,
+      label: label.value,
+      occurredAtMs: Date.now()
+    })
   })
   details.append(form)
   return details
@@ -440,8 +489,7 @@ const splitControl = (row) => {
 
   form.addEventListener('submit', (event) => {
     event.preventDefault()
-    absorb(
-      send({
+    submitCommand({
         kind: 'split',
         entryId: row.id,
         expectedVersion: versions[row.id],
@@ -455,8 +503,7 @@ const splitControl = (row) => {
           activityTypeId: part.activity.value,
           description: part.description.value
         }))
-      })
-    )
+    })
   })
 
   form.append(parts, status, addButton, submitButton)
@@ -594,7 +641,11 @@ const render = () => {
   renderNotice('create-message', state.message)
   renderNotice(
     'create-effects',
-    state.effects.length === 0 ? null : `Requested: ${state.effects.join(', ')}`
+    state.performed.length > 0
+      ? `Saved: ${state.performed.map((p) => `${p.effect} — ${p.outcome}`).join(', ')}`
+      : state.effects.length === 0
+        ? null
+        : `Requested: ${state.effects.join(', ')}`
   )
 }
 
@@ -605,6 +656,20 @@ render()
 // ---------------------------------------------------------------------------
 
 const value = (id) => document.getElementById(id)?.value ?? ''
+
+// Where a command goes. With a repository configured it is applied AND
+// persisted; without one it is applied only, and the page says so rather than
+// pretending the change was saved.
+const submitCommand = (command) => {
+  if (!readConnection()) {
+    absorb(send(command))
+    return
+  }
+
+  sendAndPersist(command)
+    .then(absorb)
+    .catch((error) => update({ message: String(error), effects: [] }))
+}
 
 // The one place a kernel answer becomes new page state. Three outcomes, and
 // the page treats a refusal as ordinary: an error is a malformed request, a
@@ -631,6 +696,11 @@ const absorb = (answer) => {
   // GitHub). The browser reports it and does not perform it (TE-R-093); the
   // interpreter owns that, and until it is wired here the change is in the
   // page only.
+  // Versions returned by a persist are the blob SHAs of what was just
+  // written, so an entry created here can go on to be corrected or removed.
+  // Merged in rather than replacing: a persist reports only what it wrote.
+  if (answer.versions) Object.assign(versions, answer.versions)
+
   update({
     entries: answer.entries,
     view: derive(answer.entries, state.visibility),
@@ -639,7 +709,11 @@ const absorb = (answer) => {
     // it is dropped rather than carried into a state it was not made in.
     selectedForMerge: [],
     message: null,
-    effects: answer.effects ?? []
+    effects: answer.effects ?? [],
+    // What was REQUESTED versus what was DONE are different facts, and the
+    // page reports whichever it has. A conflict is not an error: it means the
+    // entry moved under us and must be re-read (TE-R-072).
+    performed: answer.performed ?? []
   })
 }
 
@@ -650,18 +724,16 @@ const submit = (event) => {
   // duration was selected, no date validation. An incomplete command is sent
   // as-is and the kernel refuses it. That is the point — if the bridge
   // pre-validated, the rule would exist twice (TE-R-092).
-  absorb(
-    send({
-      kind: 'create',
-      entryId: crypto.randomUUID(),
-      projectId: value('manual-project'),
-      activityTypeId: value('manual-type'),
-      date: value('manual-date'),
-      durationUnits: state.selectedUnits,
-      description: value('manual-description'),
-      occurredAtMs: Date.now()
-    })
-  )
+  submitCommand({
+    kind: 'create',
+    entryId: crypto.randomUUID(),
+    projectId: value('manual-project'),
+    activityTypeId: value('manual-type'),
+    date: value('manual-date'),
+    durationUnits: state.selectedUnits,
+    description: value('manual-description'),
+    occurredAtMs: Date.now()
+  })
 }
 
 document.getElementById('create-form')?.addEventListener('submit', submit)
@@ -671,8 +743,7 @@ fillSelect('merge-activity', choices.activityTypes ?? [])
 
 document.getElementById('merge-form')?.addEventListener('submit', (event) => {
   event.preventDefault()
-  absorb(
-    send({
+  submitCommand({
       kind: 'merge',
       // Identity for the merged entry is minted here for the same reason a
       // split child's is: Tier 2 is pure and cannot mint it.
@@ -688,9 +759,49 @@ document.getElementById('merge-form')?.addEventListener('submit', (event) => {
         entryId,
         expectedVersion: versions[entryId]
       }))
-    })
-  )
+  })
 })
+
+const renderConnection = () => {
+  const connection = readConnection()
+  const repository = connection?.repository
+  setText(
+    'sync-status',
+    repository ? `${repository.owner}/${repository.repo}` : 'Not signed in'
+  )
+  setText(
+    'sync-meta',
+    repository
+      ? `Writing to ${repository.branch}.`
+      : 'Changes are held in this page only.'
+  )
+}
+
+document.getElementById('repo-form')?.addEventListener('submit', (event) => {
+  event.preventDefault()
+  writeConnection({
+    repository: {
+      owner: value('repo-owner'),
+      repo: value('repo-name'),
+      branch: value('repo-branch')
+    },
+    token: value('repo-token')
+  })
+  // Cleared from the DOM immediately. The value lives in sessionStorage and
+  // is never rendered back, so it cannot be read off the page afterwards.
+  const field = document.getElementById('repo-token')
+  if (field) field.value = ''
+  renderConnection()
+})
+
+document.getElementById('repo-forget')?.addEventListener('click', () => {
+  writeConnection(null)
+  const field = document.getElementById('repo-token')
+  if (field) field.value = ''
+  renderConnection()
+})
+
+renderConnection()
 
 document.getElementById('show-removed')?.addEventListener('change', (event) => {
   // A new question for the kernel, not a filter over the answer it already

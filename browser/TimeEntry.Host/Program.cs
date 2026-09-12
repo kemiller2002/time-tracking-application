@@ -1,5 +1,9 @@
 using System.Runtime.InteropServices.JavaScript;
 using System.Runtime.Versioning;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.FSharp.Control;
+using Microsoft.FSharp.Core;
 
 namespace TimeEntry.Host;
 
@@ -28,6 +32,22 @@ public static partial class Interop
     [JSExport]
     internal static string DurationGrid(string requestJson) =>
         TimeEntry.Kernel.durationGrid(requestJson);
+
+    /// <summary>
+    /// Forwards a command that should also be persisted. Returns a Task, which
+    /// reaches JavaScript as a Promise — the only export here that is not
+    /// synchronous, because it is the only one that performs I/O.
+    /// </summary>
+    [JSExport]
+    // The marshalling is stated rather than inferred: the interop source
+    // generator supports a Task only when told what it resolves to, and
+    // without this it silently generates a shim that cannot return the value.
+    [return: JSMarshalAs<JSType.Promise<JSType.String>>]
+    internal static Task<string> Persist(string requestJson) =>
+        FSharpAsync.StartAsTask(
+            TimeEntry.Kernel.persist(requestJson),
+            FSharpOption<TaskCreationOptions>.None,
+            FSharpOption<CancellationToken>.None);
 
     /// <summary>
     /// Forwards a split preview request.

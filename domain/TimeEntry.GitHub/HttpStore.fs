@@ -97,6 +97,20 @@ let private send (credential: CredentialSource) (client: HttpClient) (request: H
         | :? HttpRequestException as ex -> return Error(TransportFailure ex.Message)
         | :? System.Threading.Tasks.TaskCanceledException as ex ->
             return Error(TransportFailure("timed out: " + ex.Message))
+        // Anything else from the send is still a transport failure — that is
+        // what "the request did not complete" means, whatever type carried
+        // the news. Naming only the two expected exceptions let a third
+        // escape: in the browser a failed fetch arrives as an
+        // AggregateException wrapping a TypeError, which was not caught here
+        // and tore through the per-effect `Failed` outcome to become a
+        // whole-request error. One failing effect must not erase the
+        // reporting of the others.
+        | ex ->
+            let rec innermost (e: exn) =
+                if isNull e.InnerException then e else innermost e.InnerException
+
+            let root = innermost ex
+            return Error(TransportFailure(root.GetType().Name + ": " + root.Message))
     }
 
 /// A client paired with the credential its requests should carry.

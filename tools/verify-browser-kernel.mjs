@@ -148,6 +148,17 @@ if (ready) {
   // -------------------------------------------------------------------------
 
   check(
+    'the C# shim exports Persist as a promise-returning export',
+    kernel.exportKeys.includes('Persist'),
+    JSON.stringify(kernel.exportKeys)
+  )
+  check(
+    'the page reports that it is not connected to a repository',
+    (await page.textContent('#sync-status'))?.trim() === 'Not signed in',
+    (await page.textContent('#sync-status'))?.trim()
+  )
+
+  check(
     'the C# shim exports DurationGrid and CatalogueChoices',
     kernel.exportKeys.includes('DurationGrid') && kernel.exportKeys.includes('CatalogueChoices'),
     JSON.stringify(kernel.exportKeys)
@@ -598,7 +609,85 @@ if (ready) {
 
 }
 
-check('no page errors', errors.length === 0, errors.slice(0, 2).join(' | '))
+// ---------------------------------------------------------------------------
+// The credential seam, as far as it can be exercised without a repository
+// ---------------------------------------------------------------------------
+//
+// No GitHub write happens here and none is claimed. What IS asserted is the
+// part that can be: the token never reaches the DOM, connecting changes what
+// the page says about itself, and a command with a connection takes the
+// persist path — where it fails at the network rather than silently falling
+// back to the in-page one.
+
+if (ready) {
+  await page.fill('#repo-owner', 'owner')
+  await page.fill('#repo-name', 'repo')
+  await page.fill('#repo-token', 'ghp_not_a_real_token')
+  await page.click('#repo-form button[type=submit]')
+
+  check(
+    'connecting names the repository being written to',
+    (await page.textContent('#sync-status'))?.trim() === 'owner/repo',
+    (await page.textContent('#sync-status'))?.trim()
+  )
+  check(
+    'the token field is cleared once stored',
+    (await page.inputValue('#repo-token')) === '',
+    'still populated'
+  )
+  // The token lives in sessionStorage and is never rendered back. If it ever
+  // appears in the document, it is one screenshot away from being leaked.
+  const markup = await page.content()
+  check('the token never reaches the DOM', !markup.includes('ghp_not_a_real_token'))
+
+  // With a connection, a command takes the persist path. It cannot succeed —
+  // there is no such repository — but it must FAIL AUDIBLY rather than appear
+  // to save.
+  //
+  // The project is reset explicitly: an earlier check deliberately left the
+  // selection on the archived one, and a command the DOMAIN refuses never
+  // reaches the network. Without this the check below passes on a stale
+  // rejection message and proves nothing.
+  await page.selectOption('#manual-project', 'echelon-foundry')
+  await page.click('#duration-grid button:nth-child(3)')
+  await page.fill('#manual-description', 'Persist path smoke test')
+  await page.click('#create-form button[type=submit]')
+
+  const reported = await page
+    .waitForFunction(
+      () => {
+        const el = document.getElementById('create-effects')
+        const msg = document.getElementById('create-message')
+        return (
+          (el && !el.hidden && el.textContent.includes('Saved:')) ||
+          (msg && !msg.hidden && msg.textContent.length > 0)
+        )
+      },
+      { timeout: 30000 }
+    )
+    .then(() => true)
+    .catch(() => false)
+
+  check('a command with a connection takes the persist path and reports back', reported)
+
+  const effects = (await page.textContent('#create-effects'))?.trim() ?? ''
+  const message = (await page.textContent('#create-message'))?.trim() ?? ''
+  // Either a reported failure or a reported outcome — never the "Requested:"
+  // wording, which would mean it had quietly used the no-effect path.
+  // The whole point: an accepted command with a connection must report what
+  // the WRITE did, not what was requested. Against a repository that does not
+  // exist that is a failure — which is the correct, audible answer.
+  check(
+    'and reports what the write did, not what was requested',
+    effects.startsWith('Saved:') && effects.includes('failed'),
+    effects || message
+  )
+}
+
+// Page errors are collected throughout; a failed fetch to a nonexistent
+// repository is expected here and is not one of them.
+const unexpected = errors.filter((e) => !/Failed to fetch|api\.github\.com|net::/i.test(e))
+check('no page errors', unexpected.length === 0, unexpected.slice(0, 2).join(' | '))
 
 await browser.close()
 server.kill()

@@ -532,10 +532,10 @@
       "description": null,
       "tags": [],
       "priority": "medium",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-12T00:56:51Z",
-      "updatedAt": "2026-09-12T00:56:51Z",
+      "updatedAt": "2026-09-12T01:45:25Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null

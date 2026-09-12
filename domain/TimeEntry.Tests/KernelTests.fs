@@ -620,3 +620,163 @@ let ``a merge preview and the merge it precedes agree on the total`` () =
         sprintf "\"exact_duration_ms\":%s" (field previewed "combinedMilliseconds"),
         List.head merged
     )
+
+// ---------------------------------------------------------------------------
+// Performing the effects
+// ---------------------------------------------------------------------------
+//
+// `dispatch` names effects and performs none. `persist` performs them through
+// the interpreter. These run against a store double, so the wiring — dispatch,
+// interpret, collect the new versions — is covered without a network. A real
+// GitHub write is NOT exercised here and is not claimed to be.
+
+let private persistRequest (entries: TimeEntry list) (command: string) =
+    let node = JsonNode.Parse(requestFor entries command)
+    let repository = JsonObject()
+    repository.Add("owner", JsonValue.Create<string> "owner")
+    repository.Add("repo", JsonValue.Create<string> "repo")
+    repository.Add("branch", JsonValue.Create<string> "main")
+    node.["repository"] <- repository
+    node.["token"] <- JsonValue.Create<string> "ghp_example"
+    node.ToJsonString()
+
+/// Run `persist` against a fake store rather than the network.
+let private persisted (fake: FakeStore.Fake) (entries: TimeEntry list) (command: string) =
+    TimeEntry.Kernel.persistWith
+        (fun _ _ -> fake.Store)
+        (persistRequest entries command)
+    |> Async.RunSynchronously
+    |> JsonNode.Parse
+
+let private performed (node: JsonNode) =
+    match node.["performed"] with
+    | :? JsonArray as items -> items |> List.ofSeq
+    | _ -> []
+
+[<Fact>]
+let ``persist writes the entry and returns its new version`` () =
+    let fake = FakeStore.Fake([])
+
+    let result =
+        persisted
+            fake
+            []
+            """{ "kind": "create", "entryId": "e9", "projectId": "echelon-foundry",
+                 "activityTypeId": "research", "date": "2026-09-10",
+                 "durationUnits": 5, "occurredAtMs": 1789000000 }"""
+
+    Assert.True(isAccepted result)
+    Assert.Equal(1, fake.CommitCount)
+
+    let one = List.head (performed result)
+    Assert.Equal("PersistNewEntry", field one "effect")
+    Assert.Equal("persisted", field one "outcome")
+
+    // The new blob SHA comes back as a version token. This is what closes the
+    // gap that existed while effects were only named: without it, anything
+    // created in the browser could never be corrected or removed, because it
+    // could not say which version it was acting on (TE-R-070).
+    let version = result.["versions"].["e9"]
+    Assert.NotNull version
+    Assert.Equal(fake.ShaOf("ledger/entries/e9/e9.json"), Some(version.ToString()))
+
+[<Fact>]
+let ``a rejected command performs nothing at all`` () =
+    // Effects exist only inside an `Accepted`, so there is no path that writes
+    // on a refusal. Asserted on the STORE, not on the answer: an answer-only
+    // assertion would pass even if a write had happened.
+    let fake = FakeStore.Fake([])
+
+    let result =
+        persisted
+            fake
+            []
+            """{ "kind": "create", "entryId": "e9", "projectId": "retired-client",
+                 "activityTypeId": "research", "date": "2026-09-10",
+                 "durationUnits": 5, "occurredAtMs": 1789000000 }"""
+
+    Assert.Equal("false", field result "accepted")
+    Assert.Equal(0, fake.CommitCount)
+    Assert.Empty(fake.Paths)
+
+[<Fact>]
+let ``a stale write comes back as a conflict, not a failure`` () =
+    // TE-R-072: the domain reconciles a stale write; it is not retried and not
+    // reported as an error. The page is told which entry and which versions
+    // disagreed so it can re-read and decide (TE-R-071).
+    let entry = persistedEntry "e1" (minutes 30) "sha-1"
+    let stored = Serialization.write (Mapping.toDocument entry)
+    let path = "ledger/entries/e1/e1.json"
+
+    // The store holds this content, so its real SHA is whatever the content
+    // hashes to — not the "sha-1" the command will claim to have read.
+    let fake = FakeStore.Fake([ path, stored ])
+
+    let result =
+        persisted
+            fake
+            [ entry ]
+            """{ "kind": "void", "entryId": "e1", "expectedVersion": "sha-1",
+                 "reason": "Recorded twice.", "occurredAtMs": 1789000000 }"""
+
+    let one = List.head (performed result)
+    Assert.Equal("conflicted", field one "outcome")
+    Assert.Equal("e1", field one "entryId")
+    Assert.Equal(0, fake.CommitCount)
+
+[<Fact>]
+let ``a split persists its source and children in one commit`` () =
+    // TE-R-035: together or not at all. Three files, one commit — a store
+    // double is the only place this can be observed, because the count is
+    // invisible from the answer.
+    let entry = persistedEntry "e1" (minutes 30) "sha-1"
+    let stored = Serialization.write (Mapping.toDocument entry)
+    let path = "ledger/entries/e1/e1.json"
+    let fake = FakeStore.Fake([ path, stored ])
+    let actualSha = (fake.ShaOf path).Value
+
+    let result =
+        persisted
+            fake
+            [ { entry with Version = Some(version actualSha) } ]
+            (sprintf
+                """{ "kind": "split", "entryId": "e1", "expectedVersion": "%s",
+                     "occurredAtMs": 1789000000,
+                     "children": [
+                       { "entryId": "e1a", "durationUnits": 2, "projectId": "echelon-foundry",
+                         "activityTypeId": "research" },
+                       { "entryId": "e1b", "durationUnits": 3, "projectId": "echelon-foundry",
+                         "activityTypeId": "research" } ] }"""
+                actualSha)
+
+    Assert.True(isAccepted result)
+    Assert.Equal("persisted", field (List.head (performed result)) "outcome")
+    Assert.Equal(1, fake.CommitCount)
+    Assert.Equal(3, List.length fake.Paths)
+
+[<Fact>]
+let ``persist reports which credential mechanism was used, and not the secret`` () =
+    let fake = FakeStore.Fake([])
+
+    let result =
+        persisted
+            fake
+            []
+            """{ "kind": "create", "entryId": "e9", "projectId": "echelon-foundry",
+                 "activityTypeId": "research", "date": "2026-09-10",
+                 "durationUnits": 5, "occurredAtMs": 1789000000 }"""
+
+    Assert.Equal("token", field result "credential")
+    Assert.DoesNotContain("ghp_example", result.ToJsonString())
+
+[<Fact>]
+let ``persist without a repository is refused before anything is applied`` () =
+    let answer =
+        TimeEntry.Kernel.persistWith
+            (fun _ _ -> FakeStore.Fake([]).Store)
+            """{ "command": { "kind": "create" } }"""
+        |> Async.RunSynchronously
+        |> JsonNode.Parse
+
+    Assert.Equal("false", field answer "ok")
+    Assert.Equal("missing 'repository'", field answer "error")

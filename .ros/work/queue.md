@@ -35,10 +35,10 @@
 | WI-0030 | TE-030 Source-generated JSON serialization so the WASM host can be trimmed (reflection-based System.Text.Json blocks IL trimming) | captured |  | medium |
 | WI-0031 | TE-031 Kernel command dispatch: browser submits commands, F# decides, effects returned as data | complete |  | medium |
 | WI-0032 | TE-032 Kernel dispatch for the remaining transitions: correct, split, merge, restore, attach evidence | complete |  | medium |
-| WI-0033 | TE-033 Perform effects: wire TimeEntry.GitHub's interpreter behind the browser so PersistNewEntry/PersistVoid actually reach the repository, with the version token returned to the page | captured |  | medium |
+| WI-0033 | TE-033 Perform effects: wire TimeEntry.GitHub's interpreter behind the browser so PersistNewEntry/PersistVoid actually reach the repository, with the version token returned to the page | ready |  | medium |
 | WI-0034 | TE-034 Resolve OQ-6 (who the actor is on a browser change) — sign-in.html and settings.html exist but no document states where identity comes from; revisions are attributed to the literal 'browser' until it is settled | captured |  | medium |
 | WI-0035 | TE-035 Correction, removal and restoration wired on the today screen, with kernel-decided visibility | complete |  | medium |
 | WI-0036 | TE-036 Split on the today screen, with the kernel-computed preview TE-R-044 requires | complete |  | medium |
 | WI-0037 | TE-037 Merge on the today screen: multi-entry selection and the kernel-computed combined-time preview | complete |  | medium |
 | WI-0038 | TE-038 Evidence attachment on the today screen | complete |  | medium |
-| WI-0039 | TE-039 Credential port: the browser's token is one implementation, so the mechanism can change (DF-TE-0011) | ready |  | medium |
+| WI-0039 | TE-039 Credential port: the browser's token is one implementation, so the mechanism can change (DF-TE-0011) | complete |  | medium |
