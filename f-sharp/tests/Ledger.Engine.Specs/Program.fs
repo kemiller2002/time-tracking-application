@@ -107,9 +107,46 @@ let whoAmIBody (login: string) (name: string option) =
     o.ToJsonString()
 
 let githubWhoAmISuccess login name = httpResult "github-whoami" "Success" (Some 200) (Some(whoAmIBody login name)) None
-let githubMetadataPushSuccess status body = httpResult "github-metadata-push" "Success" (Some status) body None
-
 let resolveIdentity login name = sendJson (githubWhoAmISuccess login name)
+
+/// Shaped like a `GET git/refs/heads/{branch}` response — only `object.sha`
+/// (the commit the ref points at) is read by `GitHubSync.parseRefResponse`.
+let refBody (commitSha: string) =
+    let o = JsonObject()
+    let object = JsonObject()
+    object.["sha"] <- JsonValue.Create(commitSha)
+    object.["type"] <- JsonValue.Create("commit")
+    o.["ref"] <- JsonValue.Create("refs/heads/main")
+    o.["object"] <- object
+    o.ToJsonString()
+
+/// Shaped like a `GET git/commits/{sha}` response — only `tree.sha` is read
+/// by `GitHubSync.parseCommitBaseTreeResponse`.
+let commitGetBody (treeSha: string) =
+    let o = JsonObject()
+    let tree = JsonObject()
+    tree.["sha"] <- JsonValue.Create(treeSha)
+    o.["tree"] <- tree
+    o.ToJsonString()
+
+/// Shaped like a `POST git/trees` or `POST git/commits` response — both
+/// carry the new object's id in a bare top-level `sha`, read by
+/// `GitHubSync.parseShaResponse`.
+let shaBody (sha: string) =
+    let o = JsonObject()
+    o.["sha"] <- JsonValue.Create(sha)
+    o.ToJsonString()
+
+/// Shaped like a `PATCH git/refs/{ref}` response — the atomic commit
+/// chain's terminal step, read by `GitHubSync.parsePutResponse`'s
+/// `object.sha` fallback.
+let refUpdateBody (newCommitSha: string) =
+    let o = JsonObject()
+    let object = JsonObject()
+    object.["sha"] <- JsonValue.Create(newCommitSha)
+    o.["ref"] <- JsonValue.Create("refs/heads/main")
+    o.["object"] <- object
+    o.ToJsonString()
 
 /// Saves settings and resolves identity in one go — the state every
 /// pull/push-capable test needs before it can proceed, since `handle`
@@ -372,20 +409,74 @@ let tests : (string * (unit -> unit)) list =
         assertTrue (stringView response "githubSyncError" <> "") "a 404 pull gave no guidance to the user"
         assertTrue ((itemsView response "dayActivities").Count = 0) "a 404 pull fabricated an activity"
 
-      "a mutating command auto-pushes both ledger.json and metadata.json once identified, alongside the usual Storage cache save", fun () ->
+      "a mutating command kicks off the atomic commit chain once identified, alongside the usual Storage cache save", fun () ->
         reset ()
         configureGitHub "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" "kemiller2002" (Some "Kevin Miller") |> ignore
         let response = createTodayActivity 9 10
-        let effects = effectsOf response
-        assertTrue (effects.Count = 3) $"expected a Storage save, a ledger PUT, and a metadata PUT, got {effects.Count}"
-        let httpEffects = effects |> Seq.map (fun e -> e.AsObject()) |> Seq.filter (fun e -> e.["kind"].GetValue<string>() = "Http") |> List.ofSeq
-        assertTrue (httpEffects.Length = 2) $"expected exactly two Http effects, got {httpEffects.Length}"
-        assertTrue (httpEffects |> List.forall (fun e -> e.["method"].GetValue<string>() = "PUT")) "auto-push effects were not both PUTs"
-        let ledgerPush = httpEffects |> List.find (fun e -> (e.["url"].GetValue<string>()).Contains "ledger.json")
-        let metadataPush = httpEffects |> List.find (fun e -> (e.["url"].GetValue<string>()).Contains "metadata.json")
-        assertTrue (ledgerPush.["body"].GetValue<string>().Contains "\"branch\":\"main\"") "ledger push body missing expected shape"
-        let metadataBody = metadataPush.["body"].GetValue<string>()
-        assertTrue (metadataBody.Contains "\"branch\":\"main\"") "metadata push body missing expected shape"
+        let effects = effectsOf response |> Seq.map (fun e -> e.AsObject()) |> List.ofSeq
+        assertTrue (effects.Length = 2) $"expected a Storage save and the commit chain's first step, got {effects.Length}"
+        assertTrue (effects |> List.exists (fun e -> e.["kind"].GetValue<string>() = "Storage")) "the document was not cached locally"
+        let refGet = effects |> List.find (fun e -> e.["kind"].GetValue<string>() = "Http")
+        assertTrue
+            (refGet.["correlationId"].GetValue<string>() = "github-commit-ref"
+             && refGet.["method"].GetValue<string>() = "GET"
+             && (refGet.["url"].GetValue<string>()).Contains "/git/refs/heads/main")
+            "a mutating command did not start the atomic commit chain by reading the branch's ref"
+
+      "the atomic commit chain reads the branch, builds a tree with both files, creates a commit, and moves the branch onto it", fun () ->
+        reset ()
+        configureGitHub "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" "kemiller2002" (Some "Kevin Miller") |> ignore
+        createTodayActivity 9 10 |> ignore
+
+        let step2 = sendJson (httpResult "github-commit-ref" "Success" (Some 200) (Some(refBody "parent-commit-sha")) None)
+        let baseGet = effectsOf step2 |> Seq.map (fun e -> e.AsObject()) |> Seq.exactlyOne
+        assertTrue
+            (baseGet.["correlationId"].GetValue<string>() = "github-commit-base" && (baseGet.["url"].GetValue<string>()).Contains "/git/commits/parent-commit-sha")
+            "reading the branch's ref did not fetch that commit's base tree"
+
+        let step3 = sendJson (httpResult "github-commit-base" "Success" (Some 200) (Some(commitGetBody "base-tree-sha")) None)
+        let treeCreate = effectsOf step3 |> Seq.map (fun e -> e.AsObject()) |> Seq.exactlyOne
+        assertTrue
+            (treeCreate.["correlationId"].GetValue<string>() = "github-commit-tree" && treeCreate.["method"].GetValue<string>() = "POST")
+            "reading the base tree did not create a new tree"
+        let treeBody = JsonNode.Parse(treeCreate.["body"].GetValue<string>()).AsObject()
+        assertTrue (treeBody.["base_tree"].GetValue<string>() = "base-tree-sha") "the new tree was not built on the fetched base tree"
+        let entries = treeBody.["tree"].AsArray() |> Seq.map (fun e -> e.["path"].GetValue<string>()) |> Set.ofSeq
+        assertTrue (entries |> Set.exists (fun p -> p.EndsWith "ledger.json")) "the new tree did not include ledger.json"
+        assertTrue (entries |> Set.exists (fun p -> p.EndsWith "metadata.json")) "the new tree did not include metadata.json"
+
+        let step4 = sendJson (httpResult "github-commit-tree" "Success" (Some 201) (Some(shaBody "new-tree-sha")) None)
+        let commitCreate = effectsOf step4 |> Seq.map (fun e -> e.AsObject()) |> Seq.exactlyOne
+        assertTrue
+            (commitCreate.["correlationId"].GetValue<string>() = "github-commit-create" && commitCreate.["method"].GetValue<string>() = "POST")
+            "creating the new tree did not create a new commit"
+        let commitCreateBody = JsonNode.Parse(commitCreate.["body"].GetValue<string>()).AsObject()
+        assertTrue (commitCreateBody.["tree"].GetValue<string>() = "new-tree-sha") "the new commit did not reference the new tree"
+        assertTrue
+            ((commitCreateBody.["parents"].AsArray() |> Seq.head).GetValue<string>() = "parent-commit-sha")
+            "the new commit's parent was not the branch's original commit"
+
+        let step5 = sendJson (httpResult "github-commit-create" "Success" (Some 201) (Some(shaBody "new-commit-sha")) None)
+        let refUpdate = effectsOf step5 |> Seq.map (fun e -> e.AsObject()) |> Seq.exactlyOne
+        assertTrue
+            (refUpdate.["correlationId"].GetValue<string>() = "github-push" && refUpdate.["method"].GetValue<string>() = "PATCH")
+            "creating the new commit did not move the branch onto it"
+        let refUpdateRequestBody = JsonNode.Parse(refUpdate.["body"].GetValue<string>()).AsObject()
+        assertTrue (refUpdateRequestBody.["sha"].GetValue<string>() = "new-commit-sha") "the ref update did not target the newly-created commit"
+
+        let final = sendJson (httpResult "github-push" "Success" (Some 200) (Some(refUpdateBody "new-commit-sha")) None)
+        assertTrue (stringView final "gitHubSyncStatus" = "synced") "the completed commit chain did not mark the sync as synced"
+
+      "a non-fast-forward ref update (422) is treated the same as a stale-sha conflict (409)", fun () ->
+        reset ()
+        configureGitHub "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" "kemiller2002" (Some "Kevin Miller") |> ignore
+        createTodayActivity 9 10 |> ignore
+        let response = sendJson (githubPushSuccess 422 (Some """{"message":"Update is not a fast forward"}"""))
+        assertTrue (stringView response "gitHubSyncStatus" = "merging") "a 422 non-fast-forward ref update was not treated as a conflict to auto-resolve"
+        let effects = effectsOf response |> Seq.map (fun e -> e.AsObject()) |> List.ofSeq
+        assertTrue
+            (effects.Length = 1 && effects.[0].["correlationId"].GetValue<string>() = "github-push-conflict-pull")
+            "a 422 conflict did not fetch the remote ledger to merge"
 
       "a successful GitHub push (201) records the new sha and marks status synced", fun () ->
         reset ()
@@ -396,44 +487,106 @@ let tests : (string * (unit -> unit)) list =
         assertTrue (stringView response "gitHubSyncSha" = "new-sha-1") "the new sha from a successful push was not recorded"
         assertTrue (stringView response "gitHubSyncStatus" = "synced") "sync status was not 'synced' after a successful push"
 
-      "a successful metadata push records its own sha under a separate error key, without touching the ledger sync status", fun () ->
+      "a 409 GitHub push conflict fetches the remote ledger to merge instead of just erroring", fun () ->
         reset ()
         configureGitHub "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" "kemiller2002" (Some "Kevin Miller") |> ignore
         createTodayActivity 9 10 |> ignore
-        sendJson (githubPushSuccess 201 (Some(contentsPutBody "ledger-sha-1"))) |> ignore
-        let response = sendJson (githubMetadataPushSuccess 201 (Some(contentsPutBody "metadata-sha-1")))
-        assertTrue (stringView response "githubMetadataError" = "") "unexpected githubMetadata error on a successful metadata push"
-        assertTrue (stringView response "gitHubSyncSha" = "ledger-sha-1") "a metadata push overwrote the ledger's own sha"
-        assertTrue (stringView response "gitHubSyncStatus" = "synced") "a metadata push changed the ledger sync status"
-
-      "a metadata push failure surfaces githubMetadataError without downgrading the ledger's 'synced' status", fun () ->
-        reset ()
-        configureGitHub "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" "kemiller2002" (Some "Kevin Miller") |> ignore
-        createTodayActivity 9 10 |> ignore
-        sendJson (githubPushSuccess 201 (Some(contentsPutBody "ledger-sha-1"))) |> ignore
-        let response = sendJson (httpResult "github-metadata-push" "Failure" None None (Some "connection reset"))
-        assertTrue (stringView response "githubMetadataError" <> "") "a metadata push failure was not surfaced"
-        assertTrue (stringView response "gitHubSyncStatus" = "synced") "a metadata push failure incorrectly downgraded the ledger sync status"
-
-      "a 409 GitHub push conflict surfaces githubSyncError with status 'conflict', without touching the document", fun () ->
-        reset ()
-        configureGitHub "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" "kemiller2002" (Some "Kevin Miller") |> ignore
-        let created = createTodayActivity 9 10
         let response = sendJson (githubPushSuccess 409 (Some """{"message":"sha does not match"}"""))
-        assertTrue (stringView response "gitHubSyncStatus" = "conflict") "a 409 push was not marked as a conflict"
-        assertTrue (stringView response "githubSyncError" <> "") "a 409 push conflict was not surfaced"
-        assertTrue ((itemsView response "dayActivities").Count = (itemsView created "dayActivities").Count) "a push conflict altered the document"
+        assertTrue (stringView response "gitHubSyncStatus" = "merging") "a 409 push was not marked as merging while it resolves automatically"
+        assertTrue (stringView response "githubSyncError" = "") "a 409 push should not surface an error while auto-merge is in flight"
+        let effects = effectsOf response |> Seq.map (fun e -> e.AsObject()) |> List.ofSeq
+        assertTrue
+            (effects.Length = 1 && effects.[0].["kind"].GetValue<string>() = "Http" && effects.[0].["correlationId"].GetValue<string>() = "github-push-conflict-pull")
+            "a 409 push conflict did not fetch the remote ledger to merge"
+
+      "a merge fetch after a push conflict combines local and remote activities and retries the push", fun () ->
+        reset ()
+        configureGitHub "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" "kemiller2002" (Some "Kevin Miller") |> ignore
+        createTodayActivity 9 10 |> ignore
+        sendJson (githubPushSuccess 409 (Some """{"message":"sha does not match"}""")) |> ignore
+        let remoteJson = DocumentCodec.encode (seedDocument ())
+        let response = sendJson (httpResult "github-push-conflict-pull" "Success" (Some 200) (Some(contentsGetBody "remote-sha-1" remoteJson)) None)
+        assertTrue (stringView response "gitHubSyncStatus" = "pushing") "a successful merge fetch did not move to retrying the push"
+        let activities = itemsView response "dayActivities"
+        assertTrue (activities.Count = 2) $"expected both the local and remote activities after merge, got {activities.Count}"
+        let effects = effectsOf response |> Seq.map (fun e -> e.AsObject()) |> List.ofSeq
+        assertTrue
+            (effects |> List.exists (fun e -> e.["kind"].GetValue<string>() = "Storage" && e.["key"].GetValue<string>() = "business-activity-ledger:v1"))
+            "the merged document was not cached to Storage"
+        assertTrue
+            (effects |> List.exists (fun e -> e.["kind"].GetValue<string>() = "Http" && e.["correlationId"].GetValue<string>() = "github-commit-ref"))
+            "the merge did not restart the atomic commit chain to retry the push"
+
+      "a retried push after an automatic merge succeeding marks the sync as synced again", fun () ->
+        reset ()
+        configureGitHub "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" "kemiller2002" (Some "Kevin Miller") |> ignore
+        createTodayActivity 9 10 |> ignore
+        sendJson (githubPushSuccess 409 (Some """{"message":"sha does not match"}""")) |> ignore
+        let remoteJson = DocumentCodec.encode (seedDocument ())
+        sendJson (httpResult "github-push-conflict-pull" "Success" (Some 200) (Some(contentsGetBody "remote-sha-1" remoteJson)) None) |> ignore
+        let response = sendJson (githubPushSuccess 201 (Some(contentsPutBody "final-sha-1")))
+        assertTrue (stringView response "gitHubSyncStatus" = "synced") "the retried push after a merge did not resolve to synced"
+        assertTrue (stringView response "githubSyncError" = "") "the retried push after a merge left a stale conflict error"
+
+      "a merge fetch that fails falls back to asking the user to pull and resolve manually", fun () ->
+        reset ()
+        configureGitHub "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" "kemiller2002" (Some "Kevin Miller") |> ignore
+        createTodayActivity 9 10 |> ignore
+        sendJson (githubPushSuccess 409 (Some """{"message":"sha does not match"}""")) |> ignore
+        let response = sendJson (httpResult "github-push-conflict-pull" "Failure" None None (Some "network error"))
+        assertTrue (stringView response "gitHubSyncStatus" = "conflict") "a failed merge fetch did not fall back to the conflict status"
+        assertTrue (stringView response "githubSyncError" <> "") "a failed merge fetch did not surface guidance to resolve manually"
 
       /// The same "never collapse an unknown outcome" doctrine already
       /// covered for Storage saves (see above) applies to a GitHub push too:
       /// a dropped connection must not be read as either success or failure.
-      "an unknown GitHub push outcome (e.g. a timeout) is never treated as success or failure", fun () ->
+      "an unknown GitHub push outcome (e.g. a timeout) triggers automatic reconciliation rather than leaving the user to guess", fun () ->
         reset ()
         configureGitHub "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" "kemiller2002" (Some "Kevin Miller") |> ignore
         createTodayActivity 9 10 |> ignore
         let response = sendJson (githubPushUnknown "timed out after 15000ms")
-        assertTrue (stringView response "gitHubSyncStatus" = "unknown") "an unknown push outcome was not reported as 'unknown'"
-        assertTrue (stringView response "githubSyncError" <> "") "an unknown push outcome gave no guidance to the user"
+        assertTrue (stringView response "gitHubSyncStatus" = "reconciling") "an unknown push outcome did not move to reconciling"
+        assertTrue (stringView response "githubSyncError" = "") "reconciliation should not surface an error while it is still in flight"
+        let effects = effectsOf response |> Seq.map (fun e -> e.AsObject()) |> List.ofSeq
+        assertTrue
+            (effects.Length = 1 && effects.[0].["kind"].GetValue<string>() = "Http" && effects.[0].["correlationId"].GetValue<string>() = "github-push-reconcile-pull")
+            "an unknown push outcome did not fetch the ledger to reconcile"
+
+      "reconciliation classifies a remote document matching the attempt as Applied and marks the sync synced", fun () ->
+        reset ()
+        configureGitHub "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" "kemiller2002" (Some "Kevin Miller") |> ignore
+        createTodayActivity 9 10 |> ignore
+        sendJson (githubPushUnknown "timed out after 15000ms") |> ignore
+        let attemptedJson = DocumentCodec.encode Session.current.Document
+        let response = sendJson (httpResult "github-push-reconcile-pull" "Success" (Some 200) (Some(contentsGetBody "confirmed-sha-1" attemptedJson)) None)
+        assertTrue (stringView response "gitHubSyncStatus" = "synced") "a remote document matching the attempt was not classified as Applied"
+        assertTrue (stringView response "githubSyncError" = "") "an Applied reconciliation should not leave an error behind"
+        let effects = effectsOf response |> Seq.map (fun e -> e.AsObject()) |> List.ofSeq
+        assertTrue effects.IsEmpty "an Applied reconciliation should not retry the push — nothing was lost"
+
+      "reconciliation classifies a differing remote document as not (yet) applied, merges, and retries the push", fun () ->
+        reset ()
+        configureGitHub "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" "kemiller2002" (Some "Kevin Miller") |> ignore
+        createTodayActivity 9 10 |> ignore
+        sendJson (githubPushUnknown "timed out after 15000ms") |> ignore
+        let remoteJson = DocumentCodec.encode (seedDocument ())
+        let response = sendJson (httpResult "github-push-reconcile-pull" "Success" (Some 200) (Some(contentsGetBody "remote-sha-2" remoteJson)) None)
+        assertTrue (stringView response "gitHubSyncStatus" = "pushing") "a differing remote document did not move to retrying the push"
+        let activities = itemsView response "dayActivities"
+        assertTrue (activities.Count = 2) $"expected both the attempted and remote activities merged, got {activities.Count}"
+        let effects = effectsOf response |> Seq.map (fun e -> e.AsObject()) |> List.ofSeq
+        assertTrue
+            (effects |> List.exists (fun e -> e.["kind"].GetValue<string>() = "Http" && e.["correlationId"].GetValue<string>() = "github-commit-ref"))
+            "reconciliation did not restart the atomic commit chain after merging"
+
+      "a reconciliation fetch that itself comes back unknown stays unknown rather than guessing", fun () ->
+        reset ()
+        configureGitHub "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" "kemiller2002" (Some "Kevin Miller") |> ignore
+        createTodayActivity 9 10 |> ignore
+        sendJson (githubPushUnknown "timed out after 15000ms") |> ignore
+        let response = sendJson (httpResult "github-push-reconcile-pull" "Unknown" None None (Some "timed out after 15000ms"))
+        assertTrue (stringView response "gitHubSyncStatus" = "unknown") "a reconciliation fetch that itself timed out should stay 'unknown', not guess"
+        assertTrue (stringView response "githubSyncError" <> "") "a still-unknown reconciliation gave no guidance to the user"
 
       // --- Settings round trip (reportFormat, timezone) -----------------------
 
@@ -494,7 +647,7 @@ let tests : (string * (unit -> unit)) list =
         assertTrue (effects.Length = 1 && effects.[0].["kind"].GetValue<string>() = "Http" && (effects.[0].["url"].GetValue<string>()).EndsWith "/user")
             "a cached config missing Login did not re-trigger the identity lookup"
 
-      "a cached config that already has Login goes straight to a settings pull on load, skipping the identity lookup", fun () ->
+      "a cached config that already has Login goes straight to a settings pull and a ledger pull on load, skipping the identity lookup", fun () ->
         reset ()
         let cached : Session.GitHubSyncConfig =
             { Owner = "kemiller2002"; Repo = "ledger-data"; Folder = "time-entries"; Branch = "main"; Token = "ghp_cached_token"
@@ -503,20 +656,25 @@ let tests : (string * (unit -> unit)) list =
         assertTrue (boolView response "gitHubSyncIdentified") "a cached, already-identified config was not restored as identified"
         assertTrue (stringView response "gitHubSyncStatus" = "idle") "status was not 'idle' for an already-identified cached config"
         let effects = effectsOf response |> Seq.map (fun e -> e.AsObject()) |> List.ofSeq
-        assertTrue (effects.Length = 1 && effects.[0].["kind"].GetValue<string>() = "Http" && (effects.[0].["url"].GetValue<string>()).Contains "settings.json")
+        assertTrue (effects.Length = 2) $"expected a settings pull and a ledger pull, got {effects.Length}"
+        assertTrue (effects |> List.forall (fun e -> e.["kind"].GetValue<string>() = "Http")) "both auto-pulls should be Http effects"
+        assertTrue (effects |> List.exists (fun e -> (e.["url"].GetValue<string>()).Contains "settings.json"))
             "an already-identified cached config did not go straight to a settings pull"
+        assertTrue (effects |> List.exists (fun e -> (e.["url"].GetValue<string>()).Contains "ledger.json"))
+            "an already-identified cached config did not also auto-pull the ledger"
 
-      "a successful identity lookup re-caches the config (now including Login) and triggers a settings pull", fun () ->
+      "a successful identity lookup re-caches the config (now including Login) and triggers a settings pull and a ledger pull", fun () ->
         reset ()
         saveGitHubConfig "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" |> ignore
         let response = resolveIdentity "kemiller2002" (Some "Kevin Miller")
         let effects = effectsOf response |> Seq.map (fun e -> e.AsObject()) |> List.ofSeq
-        assertTrue (effects.Length = 2) $"expected a config re-cache and a settings pull, got {effects.Length}"
+        assertTrue (effects.Length = 3) $"expected a config re-cache, a settings pull, and a ledger pull, got {effects.Length}"
         let cacheSave = effects |> List.find (fun e -> e.["kind"].GetValue<string>() = "Storage")
         assertTrue (cacheSave.["key"].GetValue<string>() = "business-activity-ledger:github-config:v1") "the re-cache did not target the github-config storage key"
         assertTrue (cacheSave.["value"].GetValue<string>().Contains "\"login\":\"kemiller2002\"") "the re-cached config did not include the resolved login"
-        let settingsPull = effects |> List.find (fun e -> e.["kind"].GetValue<string>() = "Http")
-        assertTrue ((settingsPull.["url"].GetValue<string>()).Contains "settings.json") "the identity lookup did not follow up with a settings pull"
+        let httpEffects = effects |> List.filter (fun e -> e.["kind"].GetValue<string>() = "Http")
+        assertTrue (httpEffects |> List.exists (fun e -> (e.["url"].GetValue<string>()).Contains "settings.json")) "the identity lookup did not follow up with a settings pull"
+        assertTrue (httpEffects |> List.exists (fun e -> (e.["url"].GetValue<string>()).Contains "ledger.json")) "the identity lookup did not also follow up with a ledger pull"
 
       // --- Multi-person folder segregation (GitHubSync module directly) ------
 

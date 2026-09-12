@@ -98,7 +98,7 @@ module Session =
           /// decision; see `.sde/architecture/FOUR-TIER-ARCHITECTURE.md`'s
           /// note that presentation-only routing is still Tier 3's to own.
           CurrentScreen: string
-          /// Keyed "create"/"amend"/"void"/"restore"/"split"/"merge"/"evidence"/"timer"/"attest"/"githubConfig"/"githubSync"/"githubMetadata"/"githubSettings".
+          /// Keyed "create"/"amend"/"void"/"restore"/"split"/"merge"/"evidence"/"timer"/"attest"/"githubConfig"/"githubSync"/"githubSettings".
           Errors: Map<string, string>
           PersistenceError: string option
           /// A user preference — not business data, so it lives here rather
@@ -121,12 +121,22 @@ module Session =
           /// caller to state the version it last read. `None` means "never
           /// synced" (the next push creates the file).
           GitHubDocumentSha: string option
-          /// The same, for `metadata.json` — a separate blob with its own
-          /// independent version history, never conflated with the ledger's.
-          GitHubMetadataSha: string option
-          /// The same, for `settings.json` (`ReportFormat`/`Timezone`).
+          /// The same, for `settings.json` (`ReportFormat`/`Timezone`) — the
+          /// one file still written through a plain Contents API PUT, since
+          /// it is never committed together with anything else.
           GitHubSettingsSha: string option
-          /// "idle" | "identifying" | "pulling" | "pushing" | "synced" | "conflict" | "unknown" | "error"
+          /// The commit `ledger.json`/`metadata.json` are currently being
+          /// committed on top of — the parent of the new commit the atomic
+          /// multi-file push (`GitHubSync.buildRefGetEffect` through
+          /// `buildRefUpdateEffect`) is building. Set when that chain's first
+          /// step (reading the branch's ref) succeeds, and read again by its
+          /// last step (creating the new commit) — two separate `handle`
+          /// calls, so it has to live here rather than as a local value thread-
+          /// ed through one function call. Stale between pushes is harmless:
+          /// every push chain starts by overwriting it before ever reading it.
+          GitHubCommitParentSha: string option
+          /// "idle" | "identifying" | "pulling" | "pushing" | "merging" |
+          /// "reconciling" | "synced" | "conflict" | "unknown" | "error"
           GitHubSyncStatus: string
           GitHubLastSyncedAt: DateTimeOffset option }
 
@@ -182,8 +192,8 @@ module Session =
           Timezone = None
           GitHubSync = None
           GitHubDocumentSha = None
-          GitHubMetadataSha = None
           GitHubSettingsSha = None
+          GitHubCommitParentSha = None
           GitHubSyncStatus = "idle"
           GitHubLastSyncedAt = None }
 

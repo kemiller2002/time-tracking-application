@@ -280,11 +280,13 @@ GitHub sync, per the Persistence contract section above:
   source last won.
 - GitHub sync is opt-in, configured from the More screen (owner, repo, an
   optional folder, branch, a personal access token). Once configured,
-  every mutating command auto-pushes the whole document to the GitHub
-  Contents API in addition to its `localStorage` save; "Pull latest" and
-  "Sync now" trigger the same requests on demand. This is a deliberate,
-  explicitly-chosen architecture decision, not a default: the token is
-  entered by the user and sent straight from the browser to
+  every mutating command auto-pushes the whole document (see below for how
+  `ledger.json`/`metadata.json` are committed together); "Pull latest" and
+  "Sync now" trigger the same push on demand, and the ledger is also
+  pulled automatically as soon as identity resolves (see below — no
+  explicit pull is needed just to see what's already on GitHub). This is a
+  deliberate, explicitly-chosen architecture decision, not a default: the
+  token is entered by the user and sent straight from the browser to
   `api.github.com` — **there is no server component**, matching this
   app's browser-embedded design. The token is kept in its own
   `localStorage` key, separate from the synced document, and is never
@@ -313,21 +315,48 @@ GitHub sync, per the Persistence contract section above:
   (`GitHubSync.buildMetadataJson`), refreshed on every push. It exists so
   a human (or other tooling) browsing a shared repository's
   `<folder>/<login>/` entries can tell whose folder is whose; nothing
-  in-app ever reads it back. It is a separate Contents API file with its
-  own independent `sha`/version history — a metadata write failure is
-  reported under its own status, distinct from (and never overwriting) the
-  ledger's own sync status, since it's lower-stakes than the ledger data
-  itself.
-- The Contents API's blob `sha` *is* the version this contract asks a
-  caller to state on every save — GitHub's own optimistic concurrency check
-  (a stale `sha` on a push returns 409, surfaced as this app's `conflict`
-  sync status) needs no separate version scheme layered on top of it.
+  in-app ever reads it back.
+- `ledger.json` and `metadata.json` are committed **atomically**, as a
+  single commit, via GitHub's Git Data API rather than as two independent
+  Contents API PUTs: `GitHubSync.buildRefGetEffect` through
+  `buildRefUpdateEffect` read the branch's current commit and tree, build
+  a new tree replacing just those two blobs, create a new commit on it,
+  then move the branch ref onto that commit — so the two files' histories
+  always move together; one can never land while the other is dropped or
+  lags behind. `settings.json` is deliberately excluded from this commit:
+  it is never written at the same moment as the ledger (a different
+  trigger — `SaveSettings`/`SelectReportFormat` — fires it), so a plain
+  Contents API PUT is already atomic for it on its own.
+- The commit chain's optimistic concurrency happens at the branch level:
+  moving the ref is a non-fast-forward move (someone/something else
+  advanced the branch since the chain read it) that GitHub rejects with
+  422, treated exactly like the Contents API's own 409 — both mean "this
+  write raced another one," and both are what auto-merge (below) resolves.
 - A pull's or push's outcome is always one of found/not-found(404)/known-
   failure/invalid-document, or confirmed-success/confirmed-failure/
   conflict/**unknown** exactly as this contract requires — a dropped
   connection or timed-out request is reported as `unknown`, never
   collapsed into success or failure (see `Dispatch.fs`'s `"github-push"`
   handling and `web/dom-bindings.js`'s `AbortController`-based timeout).
+- A push conflict (409/422) is resolved automatically, not by asking the
+  user to pull and redo their edit: the remote ledger is fetched and
+  merged into the local document (`LedgerDocument.merge`, a pure Domain
+  function — per-activity last-write-wins by `Version`, attestations
+  unioned by `AttestationId`), then the push is retried with the merged
+  result. If the retry conflicts again, the same two steps repeat.
+- An `unknown` push outcome is reconciled automatically rather than left
+  for the user to sort out by hand: the ledger is re-fetched and compared
+  against what was attempted, classified per
+  `Ledger.Domain/Services.fs`'s dormant `ReconciliationStatus` vocabulary
+  — `Applied` (the fetched document already matches the attempt — nothing
+  left to do) or `NotApplied`/`ReconciliationConflict` (either way,
+  resolved the same way `LedgerDocument.merge` resolves a conflict: merge
+  and retry). Only a failure of the reconciliation fetch itself stays
+  `StillUnknown`, surfaced to the user as "pull latest to check."
+- The ledger (like `settings.json`) is pulled automatically once identity
+  resolves — a cached `Login` found on load, or a fresh `GET /user`
+  success — not only on an explicit "Pull latest," so a person's existing
+  GitHub-stored data appears without an extra click.
 - `Ledger.Domain/Services.fs`'s `LedgerStore` — an `Async`-shaped port
   imagined for a future in-process backend adapter — stays an unused,
   documented extension point rather than becoming load-bearing: the actual
@@ -356,17 +385,13 @@ GitHub sync, per the Persistence contract section above:
   one that already has a `Login` goes straight to pulling `settings.json`.
   A successful identity lookup re-caches the config (now including
   `Login`/`DisplayName`) so the next reload skips the lookup too.
-- What this sync does **not** do, as a deliberate scope decision: no
-  background/automatic pull of the *ledger* (only an explicit "Pull
-  latest" — settings are the exception, see above), no merge of
-  concurrent edits (a pull replaces the in-memory document outright, a
-  push conflict must be resolved by pulling first), no reconciliation
-  queue for a request whose outcome came back `unknown` (the user is told
-  to pull and check, not offered an automatic retry-and-confirm flow),
-  and no atomic multi-file commit (`ledger.json`, `metadata.json`, and
-  `settings.json` are independent Contents API writes, not one commit
-  touching all three — one can fail or lag behind another without losing
-  the others' data, but their histories are not guaranteed to move
-  together). Any of these would need real design work, not just wiring,
-  and are a reasonable later increment rather than something this pass
-  needed to build.
+- An explicit "Pull latest" still replaces the in-memory document outright
+  (no merge) — automatic merging is specifically the push-conflict and
+  reconciliation paths above, where the alternative is data loss, not a
+  deliberate user action that already means "I want what's on GitHub."
+- An automated architecture/boundary check (`tools/check-architecture.mjs`,
+  run by `npm test` and in CI) verifies Tier 1/2 purity (`Ledger.Domain`
+  never references JSON/WASM/browser/HTTP APIs) and that every
+  `data-event` in `web/index.html` has a matching case in `Dispatch.fs` —
+  independent of `Ledger.Engine.Specs`'s behavior tests, which could in
+  principle stay green even if the two drifted apart.

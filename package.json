@@ -8,6 +8,7 @@
     "serve": "python3 -m http.server 4321",
     "start": "npm run build:wasm && npm run serve",
     "test:fsharp": "dotnet run --project f-sharp/tests/Ledger.Domain.Specs && dotnet run --project f-sharp/tests/Ledger.Engine.Specs",
-    "test": "npm run test:fsharp"
+    "check:architecture": "node tools/check-architecture.mjs",
+    "test": "npm run check:architecture && npm run test:fsharp"
   }
 }

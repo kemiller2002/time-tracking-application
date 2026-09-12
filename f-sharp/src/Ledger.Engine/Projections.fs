@@ -114,7 +114,7 @@ module Projections =
           "activeCanRestore", VBool(has Restore) ]
 
     let private errorFields (errors: Map<string, string>) =
-        [ "create"; "amend"; "void"; "restore"; "split"; "merge"; "evidence"; "timer"; "attest"; "githubConfig"; "githubSync"; "githubMetadata"; "githubSettings" ]
+        [ "create"; "amend"; "void"; "restore"; "split"; "merge"; "evidence"; "timer"; "attest"; "githubConfig"; "githubSync"; "githubSettings" ]
         |> List.map (fun key -> key + "Error", VString(errors |> Map.tryFind key |> Option.defaultValue ""))
 
     /// Never echoes `Token` back — a pasted personal access token should
