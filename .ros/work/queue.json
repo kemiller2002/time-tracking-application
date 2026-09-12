@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "time-tracking-application",
-  "nextSeq": 44,
+  "nextSeq": 45,
   "items": [
     {
       "id": "WI-0001",
@@ -676,6 +676,20 @@
       "attachments": [],
       "createdAt": "2026-09-12T02:10:05Z",
       "updatedAt": "2026-09-12T02:10:05Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0044",
+      "title": "TE-044 Month view: period summary in Tier 3, wired on the today screen",
+      "description": null,
+      "tags": [],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T02:18:59Z",
+      "updatedAt": "2026-09-12T02:18:59Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null

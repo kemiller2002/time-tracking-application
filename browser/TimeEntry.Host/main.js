@@ -702,8 +702,47 @@ const renderConflict = () => {
   saved.replaceChildren(article)
 }
 
+// The month. Recomputed from the same entries the day view reads, so the two
+// cannot disagree about what is recorded.
+const renderMonth = () => {
+  const summary = ask(kernel.ViewMonth, { entries: state.entries, year: 2026, month: 9 })
+  if (summary.ok !== true) return
+
+  setText('month-total', summary.displayTotal)
+  setText('month-decimal', summary.displayDecimalHours)
+  setText('month-days', String(summary.activeDays))
+  setText('month-entries', `${summary.countedEntries} counted entries`)
+  setText('month-evidence', `${summary.evidencePercent}%`)
+  // The count beside the percentage, always: "72%" alone hides whether it is
+  // 31 of 43 or 3 of 4.
+  setText(
+    'month-evidence-detail',
+    `${summary.entriesWithEvidence} of ${summary.countedEntries} entries`
+  )
+  setText('month-origin', `${summary.displayTimed} / ${summary.displayManual}`)
+  setText('month-changes', `${summary.correctedEntries} / ${summary.removedEntries}`)
+
+  const grid = document.getElementById('month-days-grid')
+  if (!grid) return
+
+  grid.replaceChildren(
+    ...summary.days.map((day) => {
+      const bar = el('div', 'day-bar')
+      const shape = el('span', 'day-bar-shape')
+      // The only number the page places is one the kernel computed: the
+      // height as a percentage of the month's busiest day.
+      shape.style.height = `${day.relativeHeightPercent}%`
+      const label = el('span')
+      label.append(day.date.slice(8), document.createElement('br'), day.displayTime)
+      bar.append(shape, label)
+      return bar
+    })
+  )
+}
+
 const render = () => {
   renderDay(state.view)
+  renderMonth()
   renderMerge()
   renderConflict()
   // Disclosure, not decoration: the projection reports how many entries it

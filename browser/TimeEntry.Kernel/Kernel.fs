@@ -310,6 +310,169 @@ let viewDay (requestJson: string) : string =
         errorResult (ex.GetType().Name + ": " + ex.Message)
 
 
+/// A month's recorded work.
+///
+/// The same entries the day view reads, summarised over a date range. Every
+/// figure is computed by `PeriodSummary`, including the ones that look like
+/// presentation: decimal hours are exact tenths rather than a float, because
+/// a billable unit is exactly one tenth of an hour and TE-R-007 forbids
+/// floating point as authoritative for billable time.
+///
+/// What this deliberately does NOT report is a target. `month.html` shows
+/// "80h target" and a progress bar against it, but no repository document
+/// states a target, where it comes from, or who sets it. Rendering a bar
+/// against an invented number would be inventing a requirement, so the
+/// figures are reported without one and OQ-9 records the gap.
+let viewMonth (requestJson: string) : string =
+    try
+        match JsonNode.Parse requestJson with
+        | null -> errorResult "empty request"
+        | request ->
+            let readInt (name: string) =
+                match request.[name] with
+                | null -> Error(sprintf "missing '%s'" name)
+                | value ->
+                    match System.Int32.TryParse(value.ToString()) with
+                    | true, parsed -> Ok parsed
+                    | _ -> Error(sprintf "'%s' must be an integer" name)
+
+            let entries =
+                match request.["entries"] with
+                | :? JsonArray as items ->
+                    items
+                    |> Seq.choose (fun item ->
+                        match item with
+                        | null -> None
+                        | node ->
+                            match Serialization.read (node.ToJsonString()) with
+                            | Error _ -> None
+                            | Ok document ->
+                                match Mapping.fromDocument None document with
+                                | Error _ -> None
+                                | Ok entry -> Some entry)
+                    |> List.ofSeq
+                | _ -> []
+
+            match readInt "year", readInt "month" with
+            | Error detail, _
+            | _, Error detail -> errorResult detail
+            | Ok year, Ok month ->
+                // The range is the whole month, built from the calendar rather
+                // than assumed: month lengths differ and February differs by
+                // year, so counting days here would be a second calendar.
+                match EntryDate.ofYearMonthDay year month 1 with
+                | Error e -> errorResult (sprintf "%A" e)
+                | Ok first ->
+                    let lastDay = System.DateTime.DaysInMonth(year, month)
+
+                    match EntryDate.ofYearMonthDay year month lastDay with
+                    | Error e -> errorResult (sprintf "%A" e)
+                    | Ok last ->
+                        let query =
+                            { EntryQuery.forDay first with
+                                DateRange = Some { From = first; To = last }
+                                // Removed entries are counted as removed, so
+                                // they must be selected in order to be seen.
+                                Visibility = IncludeAll }
+
+                        let selected =
+                            entries
+                            |> List.filter (fun entry ->
+                                match query.DateRange with
+                                | Some range -> DateRange.contains entry.Effective.Date range
+                                | None -> true)
+
+                        let summary = PeriodSummary.ofEntries displayPolicy selected
+
+                        let node = JsonObject()
+                        node.Add("ok", JsonValue.Create true)
+                        node.Add("totalMilliseconds", JsonValue.Create summary.TotalMilliseconds)
+                        node.Add("totalBillableUnits", JsonValue.Create summary.TotalBillableUnits)
+
+                        node.Add(
+                            "displayTotal",
+                            JsonValue.Create(displayTime summary.DisplayHours summary.DisplayMinutes)
+                        )
+
+                        // "54.6" — composed here so the browser never builds a
+                        // number out of two domain figures.
+                        node.Add(
+                            "displayDecimalHours",
+                            JsonValue.Create(
+                                sprintf "%d.%d" summary.DecimalHoursWhole summary.DecimalHoursTenths
+                            )
+                        )
+
+                        node.Add("activeDays", JsonValue.Create summary.ActiveDays)
+                        node.Add("countedEntries", JsonValue.Create summary.CountedEntries)
+                        node.Add("correctedEntries", JsonValue.Create summary.CorrectedEntries)
+                        node.Add("removedEntries", JsonValue.Create summary.RemovedEntries)
+                        node.Add("entriesWithEvidence", JsonValue.Create summary.EntriesWithEvidence)
+
+                        node.Add(
+                            "displayTimed",
+                            JsonValue.Create(displayExact summary.TimedMilliseconds)
+                        )
+
+                        node.Add(
+                            "displayManual",
+                            JsonValue.Create(displayExact summary.ManualMilliseconds)
+                        )
+
+                        // Integer division, and stated as a count beside it so
+                        // "72%" is never the only thing shown. A percentage
+                        // alone hides whether it is 31 of 43 or 3 of 4.
+                        node.Add(
+                            "evidencePercent",
+                            JsonValue.Create(
+                                if summary.CountedEntries = 0 then
+                                    0
+                                else
+                                    summary.EntriesWithEvidence * 100 / summary.CountedEntries
+                            )
+                        )
+
+                        let days = JsonArray()
+
+                        for day in summary.Days do
+                            let y, m, d = EntryDate.toYearMonthDay day.Date
+                            let item = JsonObject()
+                            item.Add("date", JsonValue.Create(sprintf "%04d-%02d-%02d" y m d))
+                            item.Add("totalMilliseconds", JsonValue.Create day.TotalMilliseconds)
+                            item.Add("billableUnits", JsonValue.Create day.BillableUnits)
+                            item.Add("countedEntries", JsonValue.Create day.CountedEntries)
+
+                            item.Add(
+                                "displayTime",
+                                JsonValue.Create(displayTime day.DisplayHours day.DisplayMinutes)
+                            )
+
+                            // How tall this day's bar should be, as a
+                            // percentage of the month's busiest day. Computed
+                            // here because it is arithmetic over domain
+                            // quantities; the page sets a height and nothing
+                            // more (TE-R-085).
+                            let busiest =
+                                summary.Days |> List.map (fun d -> d.TotalMilliseconds) |> List.max
+
+                            item.Add(
+                                "relativeHeightPercent",
+                                JsonValue.Create(
+                                    if busiest = 0L then
+                                        0
+                                    else
+                                        int (day.TotalMilliseconds * 100L / busiest)
+                                )
+                            )
+
+                            days.Add item
+
+                        node.Add("days", days)
+                        node.ToJsonString(jsonOptions)
+    with ex ->
+        errorResult (ex.GetType().Name + ": " + ex.Message)
+
+
 // ---------------------------------------------------------------------------
 // The manual-entry duration grid
 // ---------------------------------------------------------------------------

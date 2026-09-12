@@ -221,3 +221,134 @@ module Projection =
           ExcludedEntries = List.length selected - List.length counting
           OpenObligations = views |> List.collect (fun v -> v.Obligations) |> List.distinct
           IsEmpty = List.isEmpty matched }
+
+// ---------------------------------------------------------------------------
+// Period summary
+// ---------------------------------------------------------------------------
+
+/// One day's recorded time.
+type DayTotal =
+    { Date: EntryDate
+      TotalMilliseconds: int64
+      BillableUnits: int
+      DisplayHours: int
+      DisplayMinutes: int
+      CountedEntries: int }
+
+/// What a range of days comes to.
+///
+/// Every figure here is derived from the same entries the list projection
+/// reads, so a month summary and the days inside it cannot disagree.
+type PeriodSummary =
+    { TotalMilliseconds: int64
+      TotalBillableUnits: int
+      DisplayHours: int
+      DisplayMinutes: int
+      /// Decimal hours, as whole hours and tenths — NOT a float.
+      ///
+      /// A billable unit is six minutes, which is exactly one tenth of an
+      /// hour, so decimal hours are exact in tenths and need no rounding at
+      /// all: `units / 10` and `units % 10`. Computing this as a float would
+      /// introduce error into a figure that has none, and TE-R-007 forbids
+      /// floating point as authoritative for billable time.
+      DecimalHoursWhole: int
+      DecimalHoursTenths: int
+      /// Days on which any counting time was recorded.
+      ActiveDays: int
+      /// One per active day, chronological.
+      Days: DayTotal list
+      /// Exact time captured by a running timer versus entered by hand
+      /// (system-prompt §8.4). Both are counting time; the split is reported
+      /// because a ledger meant for review should be able to say how much of
+      /// itself was reconstructed.
+      TimedMilliseconds: int64
+      ManualMilliseconds: int64
+      /// Counting entries carrying at least one piece of evidence, and the
+      /// total they are drawn from, so a caller can present a proportion
+      /// without this deciding how (TE-R-085).
+      EntriesWithEvidence: int
+      CountedEntries: int
+      /// Entries corrected at least once, and entries currently excluded
+      /// because they were removed. Both are history facts the review screen
+      /// asks for (system-prompt §8.14).
+      CorrectedEntries: int
+      RemovedEntries: int }
+
+module PeriodSummary =
+
+    let private dayOf (policy: RoundingPolicy) (date: EntryDate) (entries: TimeEntry list) =
+        let total = entries |> List.sumBy TimeEntry.contributedMilliseconds
+
+        let units, hours, minutes =
+            match Duration.ofMilliseconds total with
+            | Ok duration ->
+                let projected = BillableUnits.ofDuration policy duration
+                let h, m = BillableUnits.toHoursAndMinutes projected
+                BillableUnits.units projected, h, m
+            | Error _ -> 0, 0, 0
+
+        { Date = date
+          TotalMilliseconds = total
+          BillableUnits = units
+          DisplayHours = hours
+          DisplayMinutes = minutes
+          CountedEntries = List.length entries }
+
+    /// Summarise every entry in a range.
+    ///
+    /// Takes the entries already selected by a query rather than a query of
+    /// its own, so the summary and the list a caller shows beside it are
+    /// computed from exactly the same set — the alternative is two filters
+    /// that drift.
+    let ofEntries (policy: RoundingPolicy) (selected: TimeEntry list) : PeriodSummary =
+        let counting = selected |> List.filter TimeEntry.countsTowardTotals
+        let total = counting |> List.sumBy TimeEntry.contributedMilliseconds
+
+        let units, hours, minutes =
+            match Duration.ofMilliseconds total with
+            | Ok duration ->
+                let projected = BillableUnits.ofDuration policy duration
+                let h, m = BillableUnits.toHoursAndMinutes projected
+                BillableUnits.units projected, h, m
+            | Error _ -> 0, 0, 0
+
+        let days =
+            counting
+            |> List.groupBy (fun entry -> entry.Effective.Date)
+            |> List.sortWith (fun (a, _) (b, _) -> EntryDate.compare a b)
+            |> List.map (fun (date, entries) -> dayOf policy date entries)
+
+        let byOrigin isManual =
+            counting
+            |> List.filter (fun entry ->
+                match entry.Effective.Origin with
+                | Manual _ -> isManual
+                | Timed -> not isManual)
+            |> List.sumBy TimeEntry.contributedMilliseconds
+
+        { TotalMilliseconds = total
+          TotalBillableUnits = units
+          DisplayHours = hours
+          DisplayMinutes = minutes
+          DecimalHoursWhole = units / BillableUnitsPerHour
+          DecimalHoursTenths = units % BillableUnitsPerHour
+          ActiveDays = List.length days
+          Days = days
+          TimedMilliseconds = byOrigin false
+          ManualMilliseconds = byOrigin true
+          EntriesWithEvidence =
+            counting
+            |> List.filter (fun entry -> not entry.Effective.Evidence.IsEmpty)
+            |> List.length
+          CountedEntries = List.length counting
+          CorrectedEntries =
+            selected
+            |> List.filter (fun entry -> TimeEntry.correctionCount entry > 0)
+            |> List.length
+          RemovedEntries =
+            selected
+            |> List.filter (fun entry ->
+                match entry.State with
+                | Void _ -> true
+                | _ -> false)
+            |> List.length }

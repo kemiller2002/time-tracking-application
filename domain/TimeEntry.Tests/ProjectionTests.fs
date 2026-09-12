@@ -212,3 +212,108 @@ let ``display hours and minutes are computed in the projection`` () =
 
     Assert.Equal(23, row.BillableUnits)
     Assert.Equal((2, 18), (row.DisplayHours, row.DisplayMinutes))
+
+// ---------------------------------------------------------------------------
+// Period summary
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``decimal hours are exact tenths, never a float`` () =
+    // A billable unit is six minutes, which is exactly one tenth of an hour.
+    // So decimal hours need no rounding at all — and computing them as a
+    // float would introduce error into a figure that has none (TE-R-007).
+    //
+    // 52 + 30 exact minutes = 82 minutes, which bills as 14 units: 1.4 hours.
+    let summary =
+        PeriodSummary.ofEntries
+            RoundUp
+            [ persistedEntry "e1" (millis 3120000L) "sha-1"
+              persistedEntry "e2" (minutes 30) "sha-2" ]
+
+    Assert.Equal(14, summary.TotalBillableUnits)
+    Assert.Equal(1, summary.DecimalHoursWhole)
+    Assert.Equal(4, summary.DecimalHoursTenths)
+
+[<Fact>]
+let ``a period groups its days and counts only the active ones`` () =
+    let summary =
+        PeriodSummary.ofEntries
+            RoundUp
+            [ persistedEntry "e1" (minutes 30) "sha-1"
+              persistedEntry "e2" (minutes 30) "sha-2"
+              persistedEntryOn "e3" (minutes 60) "sha-3" (onDate 2026 9 11) ]
+
+    Assert.Equal(2, summary.ActiveDays)
+    Assert.Equal(2, List.length summary.Days)
+    // Chronological, so a caller need not sort — and cannot sort differently.
+    Assert.Equal(defaultDate, (List.head summary.Days).Date)
+    Assert.Equal(3600000L, (List.head summary.Days).TotalMilliseconds)
+    Assert.Equal(2, (List.head summary.Days).CountedEntries)
+
+[<Fact>]
+let ``a period reports how much of itself was entered by hand`` () =
+    // A ledger meant for review should be able to say how much of itself was
+    // reconstructed rather than timed (system-prompt 8.4).
+    let timed = persistedEntry "e1" (minutes 30) "sha-1"
+
+    let manual =
+        let entry = persistedEntry "e2" (minutes 60) "sha-2"
+
+        { entry with
+            Effective =
+                { entry.Effective with
+                    Origin = Manual(reason "Worked from notes.") } }
+
+    let summary = PeriodSummary.ofEntries RoundUp [ timed; manual ]
+
+    Assert.Equal(1800000L, summary.TimedMilliseconds)
+    Assert.Equal(3600000L, summary.ManualMilliseconds)
+    // The two halves account for the whole: no entry is both or neither.
+    Assert.Equal(summary.TotalMilliseconds, summary.TimedMilliseconds + summary.ManualMilliseconds)
+
+[<Fact>]
+let ``a removed entry is counted as removed and excluded from the total`` () =
+    let active = persistedEntry "e1" (minutes 30) "sha-1"
+
+    let removed =
+        { persistedEntry "e2" (minutes 60) "sha-2" with
+            State = Void(reason "Recorded twice.", instant 1L) }
+
+    let summary = PeriodSummary.ofEntries RoundUp [ active; removed ]
+
+    Assert.Equal(1800000L, summary.TotalMilliseconds)
+    Assert.Equal(1, summary.RemovedEntries)
+    Assert.Equal(1, summary.CountedEntries)
+    // And it is not an active day of its own.
+    Assert.Equal(1, summary.ActiveDays)
+
+[<Fact>]
+let ``an empty period is zero rather than an error`` () =
+    // Zero elapsed time is not a valid `Duration`, which is correct — but it
+    // is a perfectly valid TOTAL, and a month with no entries must summarise
+    // rather than fail.
+    let summary = PeriodSummary.ofEntries RoundUp []
+
+    Assert.Equal(0L, summary.TotalMilliseconds)
+    Assert.Equal(0, summary.DecimalHoursWhole)
+    Assert.Equal(0, summary.DecimalHoursTenths)
+    Assert.Equal(0, summary.ActiveDays)
+    Assert.Empty(summary.Days)
+
+[<Fact>]
+let ``a month total sums exact time rather than per-day rounded units`` () =
+    // Three days of 3 exact minutes each is 9 minutes — 2 units when the
+    // month is projected once. Projecting each DAY and adding would give 3,
+    // inflating the month by 50%. The same drift the day view avoids, one
+    // level up.
+    let entries =
+        [ for day in 1..3 ->
+            persistedEntryOn (sprintf "e%d" day) (minutes 3) "sha" (onDate 2026 9 day) ]
+
+    let summary = PeriodSummary.ofEntries RoundUp entries
+
+    Assert.Equal(540000L, summary.TotalMilliseconds)
+    Assert.Equal(2, summary.TotalBillableUnits)
+    Assert.Equal(3, summary.ActiveDays)
+    // Each day on its own rounds up to 1 unit, so the days sum to 3.
+    Assert.Equal(3, summary.Days |> List.sumBy (fun d -> d.BillableUnits))

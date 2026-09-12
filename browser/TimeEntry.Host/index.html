@@ -118,6 +118,24 @@
           <div class="form-actions"><button class="button button-primary" type="submit">Merge entries</button></div>
         </form>
       </section>
+      <!-- The month, adopted from static-ui-screens/month.html: the metric
+           row, the metric cards, and the daily-rhythm bars. What is NOT here
+           is the progress bar against an "80h target" — no repository
+           document states a target or who sets one, so rendering a bar
+           against an invented number would be inventing a requirement
+           (OQ-9). -->
+      <section class="surface surface-pad" id="month-panel" aria-labelledby="month-title">
+        <div class="section-head"><div><h2 class="section-title" id="month-title">September 2026</h2><p class="section-kicker">A factual summary of recorded business activity.</p></div></div>
+        <div class="metric-row"><div><p class="summary-label">Recorded this month</p><p class="summary-value" id="month-total">—</p></div><div><p class="summary-label">Decimal hours</p><p class="summary-value" id="month-decimal">—</p></div></div>
+        <div class="metrics-grid section">
+          <section class="metric-card"><p class="metric-label">Active days</p><p class="metric-value" id="month-days">—</p><p class="metric-detail" id="month-entries"></p></section>
+          <section class="metric-card"><p class="metric-label">Evidence coverage</p><p class="metric-value" id="month-evidence">—</p><p class="metric-detail" id="month-evidence-detail"></p></section>
+          <section class="metric-card"><p class="metric-label">Timer / manual</p><p class="metric-value" id="month-origin">—</p><p class="metric-detail">Exact time, not billed</p></section>
+          <section class="metric-card"><p class="metric-label">Record changes</p><p class="metric-value" id="month-changes">—</p><p class="metric-detail">Corrections / removals</p></section>
+        </div>
+        <p class="field-label section">Daily rhythm</p>
+        <div class="week-grid" id="month-days-grid" aria-label="Exact daily totals"></div>
+      </section>
       <footer class="page-footer">Effective records lead. Originals, corrections, and evidence remain available from each activity.</footer>
     </main>
   </div>

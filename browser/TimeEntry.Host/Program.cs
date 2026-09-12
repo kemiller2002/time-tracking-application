@@ -27,6 +27,12 @@ public static partial class Interop
     internal static string Dispatch(string requestJson) => TimeEntry.Kernel.dispatch(requestJson);
 
     /// <summary>
+    /// Forwards a month summary request.
+    /// </summary>
+    [JSExport]
+    internal static string ViewMonth(string requestJson) => TimeEntry.Kernel.viewMonth(requestJson);
+
+    /// <summary>
     /// Forwards a request for the six-minute duration options.
     /// </summary>
     [JSExport]

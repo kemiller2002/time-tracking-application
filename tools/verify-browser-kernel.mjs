@@ -278,6 +278,52 @@ if (ready) {
   check('the page renders one row per projected entry', rows === 3, `${rows} rows`)
 
   // -------------------------------------------------------------------------
+  // The month
+  // -------------------------------------------------------------------------
+
+  // The fixture is 52 + 18 + 30 exact minutes on one day: 6_000_000 ms, 17
+  // units, 1.7 decimal hours. Exactly 1.7 — a billable unit is one tenth of
+  // an hour, so decimal hours carry no rounding error at all.
+  check(
+    'the month total agrees with the day it contains',
+    (await page.textContent('#month-total'))?.trim() === '1h 42m',
+    (await page.textContent('#month-total'))?.trim()
+  )
+  check(
+    'decimal hours are exact tenths',
+    (await page.textContent('#month-decimal'))?.trim() === '1.7',
+    (await page.textContent('#month-decimal'))?.trim()
+  )
+  check(
+    'one active day, three entries',
+    (await page.textContent('#month-days'))?.trim() === '1' &&
+      (await page.textContent('#month-entries'))?.trim() === '3 counted entries'
+  )
+  // A percentage never appears without the count it came from.
+  check(
+    'evidence coverage is reported with its denominator',
+    (await page.textContent('#month-evidence-detail'))?.trim() === '0 of 3 entries',
+    (await page.textContent('#month-evidence-detail'))?.trim()
+  )
+  check(
+    'the timer/manual split is exact time',
+    (await page.textContent('#month-origin'))?.trim() === '1h 40m / 0m',
+    (await page.textContent('#month-origin'))?.trim()
+  )
+  check(
+    'the daily rhythm shows one bar per active day',
+    (await page.locator('#month-days-grid .day-bar').count()) === 1
+  )
+  // The one number the page places is the one the kernel computed. A single
+  // day is the busiest day, so it is the full height.
+  check(
+    'and its height is the kernel\'s, relative to the busiest day',
+    (await page.locator('#month-days-grid .day-bar-shape').first().getAttribute('style')) ===
+      'height: 100%;',
+    await page.locator('#month-days-grid .day-bar-shape').first().getAttribute('style')
+  )
+
+  // -------------------------------------------------------------------------
   // The form's choices are the kernel's, not the markup's
   // -------------------------------------------------------------------------
 
