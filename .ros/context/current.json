@@ -4,7 +4,7 @@
   "repository": "time-tracking-application",
   "actor": "claude",
   "startedAt": "2026-09-11T22:44:26.239Z",
-  "updatedAt": "2026-09-12T02:46:14Z",
+  "updatedAt": "2026-09-12T02:48:46Z",
   "baselineDirtyPaths": [],
   "workItems": [
     {
@@ -498,14 +498,24 @@
     {
       "id": "WI-0015",
       "type": "default",
-      "state": "active",
-      "semanticState": "active",
-      "evidence": [],
-      "updatedAt": "2026-09-11T23:27:41.728Z",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "domain/TimeEntry.Semantic/Catalogue.fs"
+        },
+        {
+          "type": "tests",
+          "path": "domain/TimeEntry.Tests/CatalogueTests.fs"
+        }
+      ],
+      "updatedAt": "2026-09-12T02:48:46Z",
       "telemetryExecutionIds": [
         "EXE-20260911T231852924Z-4c5ccbb6"
       ],
-      "blockReason": "Blocked by unresolved domain/design questions: OQ-2 (labels undefined as an entity) and OQ-5 (two divergent design systems, no repository evidence selecting one). Resolving either by assumption would invent requirements."
+      "blockReason": "Blocked by unresolved domain/design questions: OQ-2 (labels undefined as an entity) and OQ-5 (two divergent design systems, no repository evidence selecting one). Resolving either by assumption would invent requirements.",
+      "completedAt": "2026-09-12T02:48:46Z"
     },
     {
       "id": "WI-0017",
@@ -532,14 +542,24 @@
     {
       "id": "WI-0019",
       "type": "default",
-      "state": "active",
-      "semanticState": "active",
-      "evidence": [],
-      "updatedAt": "2026-09-11T23:27:42.394Z",
+      "state": "complete",
+      "semanticState": "complete",
+      "evidence": [
+        {
+          "type": "implementation",
+          "path": "docs/time-entry/TRACEABILITY.md"
+        },
+        {
+          "type": "tests",
+          "path": "tools/verify-browser-kernel.mjs"
+        }
+      ],
+      "updatedAt": "2026-09-12T02:48:46Z",
       "telemetryExecutionIds": [
         "EXE-20260911T231853671Z-5e804661"
       ],
-      "blockReason": "Traceability model authored (docs/time-entry/TRACEABILITY.md) but cannot reach verification: 0 of 62 requirements have execution evidence while the toolchain blocker stands."
+      "blockReason": "Traceability model authored (docs/time-entry/TRACEABILITY.md) but cannot reach verification: 0 of 62 requirements have execution evidence while the toolchain blocker stands.",
+      "completedAt": "2026-09-12T02:48:46Z"
     },
     {
       "id": "WI-0020",

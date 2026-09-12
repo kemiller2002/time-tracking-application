@@ -19,7 +19,7 @@
 | WI-0014 | TE-012 Void and restore transitions with audit behavior | complete | slice | high |
 | WI-0015 | TE-013 Projects, activity types, and labels state and selection rules | active | slice | medium |
 | WI-0016 | TE-014 GitHub concurrency: explicit version evidence and conflict handling | complete | slice | high |
-| WI-0017 | TE-015 Accessibility and browser behavior verification | active | verification | medium |
+| WI-0017 | TE-015 Accessibility and browser behavior verification | complete | verification | medium |
 | WI-0018 | TE-016 Heterogeneous verification: behavioral, boundary, structural, effect, serialization, adversarial | complete | verification | high |
 | WI-0019 | TE-017 Final traceability and handoff | active | traceability | high |
 | WI-0020 | TE-019 Implement merge transition: sources superseded into new entry per DF-TE-0006 | complete | domain | high |
@@ -49,4 +49,6 @@
 | WI-0044 | TE-044 Month view: period summary in Tier 3, wired on the today screen | complete |  | medium |
 | WI-0045 | TE-045 Daily review screen wired against the domain's obligations | complete |  | medium |
 | WI-0046 | TE-046 Entry history (TE-R-052): what changed, why, when, by whom, from which device | complete |  | medium |
-| WI-0047 | TE-047 Word each rejection explicitly instead of sprintf %A — TE-R-053 requires it, and it is what now blocks trimming | ready |  | medium |
+| WI-0047 | TE-047 Word each rejection explicitly instead of sprintf %A — TE-R-053 requires it, and it is what now blocks trimming | complete |  | medium |
+| WI-0048 | TE-048 Warn on device/server clock skew (TE-R-008) — needs a decision on where authoritative time comes from | captured |  | medium |
+| WI-0049 | TE-049 Evidence reassignment affordance on split (TE-R-045 is structural only) | captured |  | medium |

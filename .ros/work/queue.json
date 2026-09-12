@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "time-tracking-application",
-  "nextSeq": 48,
+  "nextSeq": 50,
   "items": [
     {
       "id": "WI-0001",
@@ -732,6 +732,34 @@
       "attachments": [],
       "createdAt": "2026-09-12T02:35:30Z",
       "updatedAt": "2026-09-12T02:43:00Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0048",
+      "title": "TE-048 Warn on device/server clock skew (TE-R-008) — needs a decision on where authoritative time comes from",
+      "description": null,
+      "tags": [],
+      "priority": "medium",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-12T02:48:46Z",
+      "updatedAt": "2026-09-12T02:48:46Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0049",
+      "title": "TE-049 Evidence reassignment affordance on split (TE-R-045 is structural only)",
+      "description": null,
+      "tags": [],
+      "priority": "medium",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-12T02:48:46Z",
+      "updatedAt": "2026-09-12T02:48:46Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null
