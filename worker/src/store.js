@@ -32,19 +32,25 @@ export class MemoryLedgerStore {
   #timer(owner){const timer=this.timers.get(owner);if(!timer)throw new ServiceError('timer_not_found','No active timer exists.',{status:404});return timer;}
   createActivity(input, actor='owner') {
     const id=input.activity_id??crypto.randomUUID();
-    const start=Date.parse(requireField(input.started_at,'started_at')); const end=Date.parse(requireField(input.ended_at,'ended_at'));
-    if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start)throw new ServiceError('invalid_time_range','End time must be after start time.');
-    if(iso(start).slice(0,10)!==iso(end).slice(0,10))throw new ServiceError('crosses_midnight','An activity must not extend past midnight.');
-    this.#assertNoOverlap(start,end,input.overlap_exclude_ids??[]);
+    const {start,end}=this.#validateActivityFields(input,input.overlap_exclude_ids??[]);
     const record={ activity_id:id, activity_type_id:requireField(input.activity_type_id,'activity_type_id'), project_id:requireField(input.project_id,'project_id'), description:requireField(input.description,'description'), business_purpose:requireField(input.business_purpose,'business_purpose'), outcome:input.outcome??'', tags:input.tags??[], entry_method:input.entry_method??'manual', reconstruction_reason:input.reconstruction_reason??null, started_at:iso(start), ended_at:iso(end), exact_duration_ms:end-start, client_timestamp:input.client_timestamp??null, server_received_at:iso(this.now()) };
     const event=this.append('activity.created',id,record,actor); return this.activity(id,event.sequence);
+  }
+  #validateActivityFields(candidate,excludeIds=[]){
+    requireField(candidate.activity_type_id,'activity_type_id'); requireField(candidate.project_id,'project_id');
+    requireField(candidate.description,'description'); requireField(candidate.business_purpose,'business_purpose');
+    const start=Date.parse(requireField(candidate.started_at,'started_at')); const end=Date.parse(requireField(candidate.ended_at,'ended_at'));
+    if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start)throw new ServiceError('invalid_time_range','End time must be after start time.');
+    if(iso(start).slice(0,10)!==iso(end).slice(0,10))throw new ServiceError('crosses_midnight','An activity must not extend past midnight.');
+    this.#assertNoOverlap(start,end,excludeIds);
+    return {start,end};
   }
   #assertNoOverlap(start,end,excludeIds){
     const dateKey=iso(start).slice(0,10);
     const conflict=this.activities().find(a=>!a.voided&&!excludeIds.includes(a.activity_id)&&a.started_at.slice(0,10)===dateKey&&start<Date.parse(a.ended_at)&&Date.parse(a.started_at)<end);
     if(conflict)throw new ServiceError('overlapping_activity','This time interval overlaps another recorded activity.',{status:409,details:{conflicting_activity_id:conflict.activity_id}});
   }
-  amendActivity(id, input, actor='owner') { const current=this.assertVersion(id,input.base_version); const changes=clone(requireField(input.changes,'changes')); delete changes.activity_id; delete changes.entry_method; const event=this.append('activity.amended',id,{changes,reason:requireField(input.reason,'reason'),prior_version:current.version},actor); return this.activity(id,event.sequence); }
+  amendActivity(id, input, actor='owner') { const current=this.assertVersion(id,input.base_version); const changes=clone(requireField(input.changes,'changes')); delete changes.activity_id; delete changes.entry_method; this.#validateActivityFields({...current,...changes},[id]); const event=this.append('activity.amended',id,{changes,reason:requireField(input.reason,'reason'),prior_version:current.version},actor); return this.activity(id,event.sequence); }
   voidActivity(id,input,actor='owner'){const current=this.assertVersion(id,input.base_version);if(current.voided)throw new ServiceError('already_voided','Activity is already removed from totals.',{status:409});const event=this.append('activity.voided',id,{reason:requireField(input.reason,'reason'),prior_version:current.version},actor);return this.activity(id,event.sequence);}
   restoreActivity(id,input,actor='owner'){const current=this.assertVersion(id,input.base_version);if(!current.voided)throw new ServiceError('not_voided','Activity is already included in totals.',{status:409});const event=this.append('activity.restored',id,{reason:requireField(input.reason,'reason'),prior_version:current.version},actor);return this.activity(id,event.sequence);}
   attachEvidence(id,input,actor='owner'){const current=this.assertVersion(id,input.base_version);const evidence={evidence_link_id:crypto.randomUUID(),type:requireField(input.type,'type'),uri:input.uri??null,note:input.note??null,hash:input.hash??null,label:input.label??'',attached_at:iso(this.now())};const event=this.append('evidence.attached',id,{...evidence,prior_version:current.version},actor);return {activity:this.activity(id,event.sequence),evidence};}

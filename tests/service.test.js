@@ -65,6 +65,20 @@ test('activities are append-only projections with optimistic corrections',async(
   const stale=await call(b,`/activities/${created.activity_id}/amendments`,{method:'POST',payload:{base_version:'v1',changes:{description:'stale'},reason:'stale'}});assert.equal(stale.status,409);assert.equal(stale.body.error.code,'stale_projection');
 });
 
+test('amendments are re-validated by the same rules as creation',async()=>{
+  const b=bindings();
+  const other=(await call(b,'/activities',{method:'POST',payload:{activity_type_id:'research',project_id:'general',description:'Existing',business_purpose:'Planning',started_at:'2026-08-02T14:00:00Z',ended_at:'2026-08-02T15:00:00Z'}})).body.data;
+  const target=(await call(b,'/activities',{method:'POST',payload:{activity_type_id:'research',project_id:'general',description:'Target',business_purpose:'Planning',started_at:'2026-08-02T09:00:00Z',ended_at:'2026-08-02T09:30:00Z'}})).body.data;
+  const blank=await call(b,`/activities/${target.activity_id}/amendments`,{method:'POST',payload:{base_version:target.version,changes:{description:''},reason:'try blank'}});
+  assert.equal(blank.status,400);assert.equal(blank.body.error.code,'validation_failed');
+  const midnight=await call(b,`/activities/${target.activity_id}/amendments`,{method:'POST',payload:{base_version:target.version,changes:{started_at:'2026-08-02T23:50:00Z',ended_at:'2026-08-03T00:10:00Z'},reason:'try midnight'}});
+  assert.equal(midnight.status,400);assert.equal(midnight.body.error.code,'crosses_midnight');
+  const overlap=await call(b,`/activities/${target.activity_id}/amendments`,{method:'POST',payload:{base_version:target.version,changes:{started_at:'2026-08-02T14:30:00Z',ended_at:'2026-08-02T15:30:00Z'},reason:'try overlap'}});
+  assert.equal(overlap.status,409);assert.equal(overlap.body.error.code,'overlapping_activity');
+  const selfOverlap=await call(b,`/activities/${target.activity_id}/amendments`,{method:'POST',payload:{base_version:target.version,changes:{started_at:'2026-08-02T09:05:00Z',ended_at:'2026-08-02T09:35:00Z'},reason:'shift slightly'}});
+  assert.equal(selfOverlap.status,200);
+});
+
 test('void, restore, evidence, day and month projections reconcile',async()=>{
   const b=bindings();const activity=(await call(b,'/activities',{method:'POST',payload:{activity_type_id:'development',project_id:'helixnote',description:'Build service',business_purpose:'Deliver product',started_at:'2026-08-02T10:00:00Z',ended_at:'2026-08-02T11:00:00Z'}})).body.data;
   const evidence=(await call(b,`/activities/${activity.activity_id}/evidence`,{method:'POST',payload:{base_version:activity.version,type:'url',uri:'https://example.test/evidence',label:'Work reference'}})).body.data;assert.equal(evidence.activity.evidence.length,1);

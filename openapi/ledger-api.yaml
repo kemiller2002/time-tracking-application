@@ -369,7 +369,12 @@ paths:
       description: >-
         Corrects fields on a Recorded activity, preserving its identity and
         history. activity_id and entry_method may not be changed even if
-        present in changes — they are silently stripped.
+        present in changes — they are silently stripped. The resulting
+        activity (current fields merged with changes) is re-validated by the
+        same rules as creation: required fields, valid time range, no
+        midnight crossing, and no overlap with any other Recorded activity on
+        the same date (the activity's own prior interval is excluded from
+        that check).
       parameters:
         - name: activityId
           in: path
@@ -387,7 +392,12 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/ActivityResponse'}
         '400':
-          description: changes or reason missing (validation_failed)
+          description: >-
+            changes or reason missing (validation_failed), the resulting
+            description/business_purpose/activity_type_id/project_id would be
+            blank (validation_failed), the resulting time range is invalid
+            (invalid_time_range), or the resulting interval crosses midnight
+            (crosses_midnight)
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorResponse'}
@@ -397,7 +407,11 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorResponse'}
         '409':
-          description: base_version no longer matches the activity's current version (stale_projection); details.current carries the current activity
+          description: >-
+            base_version no longer matches the activity's current version
+            (stale_projection; details.current carries the current activity),
+            or the resulting interval overlaps another Recorded activity on
+            the same date (overlapping_activity; details.conflicting_activity_id)
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorResponse'}
