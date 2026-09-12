@@ -99,6 +99,20 @@ module Projections =
               "timerProjectId", VString timer.ProjectId
               "timerDescription", VString timer.Description ]
 
+    /// Same capability set as `capabilityFlags`, but for the single activity
+    /// the detail panel (More screen) has open — that panel sits outside any
+    /// `data-each` row scope, so it needs its own top-level view keys rather
+    /// than the per-row `can*` keys `dayActivities`/`monthActivities` rows carry.
+    let private activeCapabilityFlags (activity: Activity option) =
+        let has capability = activity |> Option.map (fun a -> (Capability.forActivity a).Contains capability) |> Option.defaultValue false
+        [ "activeCanAmend", VBool(has Amend)
+          "activeCanSplit", VBool(has Split)
+          "activeCanVoid", VBool(has Void)
+          "activeCanMergeAsSource", VBool(has MergeAsSource)
+          "activeCanLinkEvidence", VBool(has LinkEvidence)
+          "activeCanUnlinkEvidence", VBool(has UnlinkEvidence)
+          "activeCanRestore", VBool(has Restore) ]
+
     let private errorFields (errors: Map<string, string>) =
         [ "create"; "amend"; "void"; "restore"; "split"; "merge"; "evidence"; "timer"; "attest" ]
         |> List.map (fun key -> key + "Error", VString(errors |> Map.tryFind key |> Option.defaultValue ""))
@@ -113,6 +127,11 @@ module Projections =
 
         [ "selectedDateLabel", VString(state.SelectedDate.ToString "yyyy-MM-dd")
           "selectedMonthLabel", VString state.SelectedMonth
+          "currentScreen", VString state.CurrentScreen
+          "screenToday", VBool(state.CurrentScreen = "today")
+          "screenTrack", VBool(state.CurrentScreen = "track")
+          "screenMonth", VBool(state.CurrentScreen = "month")
+          "screenMore", VBool(state.CurrentScreen = "more")
           "dayActivities", VItems(daySummary.IncludedActivities |> List.map (activityItem state.Environment))
           "dayReviewWarnings", VItems(warnings |> List.map (fun (activityId, code) -> Map.ofList [ "activityId", VString activityId; "code", VString code ]))
           "attestationHistory",
@@ -128,5 +147,6 @@ module Projections =
         @ summaryFields "month" monthSummary.TotalExactMs monthSummary.TotalBilledMinutes monthSummary.DecimalHours monthSummary.ManualCount monthSummary.CorrectionCount
             monthSummary.VoidCount monthSummary.EvidenceCoverage monthSummary.ByActivityType monthSummary.ByProject
         @ timerFields state.Environment state.TimerState
+        @ activeCapabilityFlags activeActivity
         @ errorFields state.Errors
         |> Map.ofList

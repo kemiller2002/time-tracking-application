@@ -3,398 +3,423 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Business Activity Ledger — an F# domain compiled to WebAssembly, running entirely in this browser tab." />
   <title>Business Activity Ledger</title>
   <link rel="stylesheet" href="./styles.css" />
   <script type="module" src="./main.js"></script>
 </head>
 <body>
-  <header class="page-header">
-    <h1>Business Activity Ledger</h1>
-    <p class="subtitle">F# domain compiled to WebAssembly — this page is only a thin bridge to it.</p>
-  </header>
-
-  <main>
-    <p class="banner banner-error" role="alert" aria-live="assertive" data-text="persistenceError"></p>
-
-    <!-- ======================= Timer ======================= -->
-    <section class="panel" aria-labelledby="timer-heading">
-      <h2 id="timer-heading">Timer</h2>
-      <p class="timer-status">
-        <span class="status" data-text="timerPhase"></span>
-        &middot; <span data-text="timerElapsedLabel"></span>
-      </p>
-
-      <div class="field-row">
-        <div class="field">
-          <label for="timer-activity-type">Activity type</label>
-          <select id="timer-activity-type" data-event="DraftActivityTypeChanged" data-on="change">
-            <option value="" selected disabled>Choose an activity type</option>
-            <option value="research">Research</option>
-            <option value="linkedin-marketing">LinkedIn marketing</option>
-            <option value="software-development">Software development</option>
-            <option value="administration">Administration</option>
-            <option value="meeting">Meeting</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="timer-project">Project</label>
-          <select id="timer-project" data-event="DraftProjectChanged" data-on="change">
-            <option value="" selected disabled>Choose a project</option>
-            <option value="echelon-foundry">Echelon Foundry</option>
-            <option value="visual-engineering">Visual Engineering</option>
-            <option value="helixnote">HelixNote</option>
-            <option value="general">General</option>
-          </select>
-        </div>
-        <div class="field field-wide">
-          <label for="timer-description">Description (optional)</label>
-          <input id="timer-description" type="text" data-event="DraftDescriptionChanged" data-on="change" />
-        </div>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Primary navigation">
+      <span class="brand"><span class="brand-mark" aria-hidden="true">B</span><span class="brand-name">Business Activity Ledger</span></span>
+      <nav class="nav-group">
+        <button type="button" class="nav-link" data-event="ViewScreen" data-event-value="today" data-on="click"><span class="nav-mark" aria-hidden="true">TD</span>Today</button>
+        <button type="button" class="nav-link" data-event="ViewScreen" data-event-value="track" data-on="click"><span class="nav-mark" aria-hidden="true">TR</span>Track</button>
+        <button type="button" class="nav-link" data-event="ViewScreen" data-event-value="month" data-on="click"><span class="nav-mark" aria-hidden="true">MO</span>Month</button>
+        <button type="button" class="nav-link" data-event="ViewScreen" data-event-value="more" data-on="click"><span class="nav-mark" aria-hidden="true">MR</span>More</button>
+      </nav>
+      <div class="sidebar-status">
+        <div class="status-line"><span class="status-dot" aria-hidden="true"></span><strong>Saved to this browser</strong></div>
+        <p class="sidebar-meta">F# engine compiled to WebAssembly — this page is only a thin bridge to it.</p>
       </div>
+    </aside>
 
-      <div class="field-actions">
-        <button type="button" data-event="StartTimer" data-on="click">Start</button>
-        <button type="button" data-event="PauseTimer" data-on="click">Pause</button>
-        <button type="button" data-event="ResumeTimer" data-on="click">Resume</button>
-        <button type="button" data-event="StopTimer" data-on="click">Stop</button>
-      </div>
-      <p class="form-error" role="alert" aria-live="assertive" data-text="timerError"></p>
-    </section>
+    <main class="page" id="main">
+      <p class="notice notice-danger" role="alert" aria-live="assertive" data-if="persistenceError" data-text="persistenceError" hidden></p>
 
-    <!-- ======================= Create activity ======================= -->
-    <section class="panel" aria-labelledby="create-heading">
-      <h2 id="create-heading">Record an activity</h2>
-
-      <form data-event="CreateActivity" novalidate>
-        <div class="field-row">
-          <div class="field">
-            <label for="create-activity-type">Activity type</label>
-            <select id="create-activity-type" required data-event="DraftActivityTypeChanged" data-on="change">
-              <option value="" selected disabled>Choose an activity type</option>
-              <option value="research">Research</option>
-              <option value="linkedin-marketing">LinkedIn marketing</option>
-              <option value="software-development">Software development</option>
-              <option value="administration">Administration</option>
-              <option value="meeting">Meeting</option>
-            </select>
+      <!-- ======================= Today ======================= -->
+      <section class="page-screen" data-if="screenToday">
+        <header class="topbar">
+          <div><p class="eyebrow">Today</p></div>
+          <div class="topbar-actions">
+            <input type="date" data-event="ViewDay" data-on="change" aria-label="Jump to date" />
+            <span class="identity" aria-label="Local browser session">LS</span>
           </div>
-          <div class="field">
-            <label for="create-project">Project</label>
-            <select id="create-project" required data-event="DraftProjectChanged" data-on="change">
-              <option value="" selected disabled>Choose a project</option>
-              <option value="echelon-foundry">Echelon Foundry</option>
-              <option value="visual-engineering">Visual Engineering</option>
-              <option value="helixnote">HelixNote</option>
-              <option value="general">General</option>
-            </select>
-          </div>
+        </header>
+        <div class="page-heading">
+          <p class="eyebrow">Today</p>
+          <h1 class="page-title" data-text="selectedDateLabel"></h1>
+          <p class="page-intro">Effective records lead. Originals, corrections, and evidence remain available from each activity's detail panel under More.</p>
         </div>
 
-        <div class="field-row">
-          <div class="field">
-            <label for="create-started-at">Start</label>
-            <input id="create-started-at" type="datetime-local" required data-event="DraftStartedAtChanged" data-on="change" />
-          </div>
-          <div class="field">
-            <label for="create-ended-at">End</label>
-            <input id="create-ended-at" type="datetime-local" required data-event="DraftEndedAtChanged" data-on="change" />
-          </div>
-        </div>
+        <div class="layout-two">
+          <section class="surface surface-pad" aria-labelledby="ledger-title">
+            <div class="day-summary">
+              <div><p class="summary-label" id="ledger-title">Recorded work</p><p class="summary-value" data-text="dayTotalExactLabel"></p></div>
+              <span class="summary-count"><span data-text="dayTotalBilledLabel"></span> billed &middot; <span data-text="dayDecimalHoursLabel"></span></span>
+            </div>
+            <div class="timeline">
+              <template data-each="dayActivities" data-key="id">
+                <article class="record">
+                  <p class="record-time" data-text="timeLabel"></p>
+                  <div class="record-body">
+                    <div class="record-head">
+                      <input type="checkbox" data-event="ToggleMergeSource" data-on="change" aria-label="Select for merge" />
+                      <h2 class="activity-title" data-text="description"></h2>
+                      <span class="duration" data-text="exactDurationLabel"></span>
+                    </div>
+                    <p class="record-project"><span data-text="activityTypeLabel"></span> &middot; <span data-text="projectLabel"></span></p>
+                    <p class="record-description" data-text="businessPurpose"></p>
+                    <div class="meta-row">
+                      <span class="badge badge-good" data-text="entryMethodLabel"></span>
+                      <span class="badge" data-text="statusLabel"></span>
+                      <span class="badge" data-text="billedLabel"></span>
+                    </div>
+                    <div class="form-actions">
+                      <button type="button" class="text-link" data-event="ViewActivity" data-on="click">Details</button>
+                      <button type="button" class="text-link" data-event="VoidActivity" data-on="click" data-if="canVoid" hidden>Void</button>
+                      <button type="button" class="text-link" data-event="RestoreActivity" data-on="click" data-if="canRestore" hidden>Restore</button>
+                    </div>
+                  </div>
+                </article>
+              </template>
+            </div>
+          </section>
 
-        <div class="field field-wide">
-          <label for="create-description">Description</label>
-          <textarea id="create-description" required data-event="DraftDescriptionChanged" data-on="change"></textarea>
+          <aside class="stack">
+            <section class="surface surface-pad">
+              <h2 class="section-title">Day status</h2>
+              <div class="detail-grid">
+                <div class="detail-item"><p class="detail-label">Manual</p><p class="detail-value" data-text="dayManualCount"></p></div>
+                <div class="detail-item"><p class="detail-label">Corrections</p><p class="detail-value" data-text="dayCorrectionCount"></p></div>
+                <div class="detail-item"><p class="detail-label">Voided</p><p class="detail-value" data-text="dayVoidCount"></p></div>
+                <div class="detail-item"><p class="detail-label">Evidence coverage</p><p class="detail-value" data-text="dayEvidenceCoveragePctLabel"></p></div>
+              </div>
+              <button type="button" class="button button-primary button-full" data-event="ViewScreen" data-event-value="more" data-on="click">Review this day</button>
+            </section>
+            <div class="notice notice-warning" data-if="dayReviewWarnings" hidden>
+              <p class="notice-title">Amended after the last attestation</p>
+              <div class="review-list">
+                <template data-each="dayReviewWarnings" data-key="activityId">
+                  <div class="review-row"><span class="review-mark warn">!</span><span class="review-note" data-text="activityId"></span></div>
+                </template>
+              </div>
+            </div>
+            <button type="button" class="button button-secondary button-full" data-event="ViewScreen" data-event-value="track" data-on="click">Add manual entry</button>
+          </aside>
         </div>
-
-        <div class="field field-wide">
-          <label for="create-business-purpose">Business purpose</label>
-          <textarea id="create-business-purpose" required data-event="DraftBusinessPurposeChanged" data-on="change"></textarea>
-        </div>
-
-        <div class="field field-wide">
-          <label for="create-reconstruction-reason">Reconstruction reason (only needed for a past date)</label>
-          <input id="create-reconstruction-reason" type="text" data-event="DraftReconstructionReasonChanged" data-on="change" />
-        </div>
-
-        <fieldset class="field field-wide">
-          <legend>Tags</legend>
-          <label class="checkbox"><input type="checkbox" data-event="ToggleDraftTag" data-event-key="billable" data-on="change" /> Billable</label>
-          <label class="checkbox"><input type="checkbox" data-event="ToggleDraftTag" data-event-key="client-facing" data-on="change" /> Client-facing</label>
-          <label class="checkbox"><input type="checkbox" data-event="ToggleDraftTag" data-event-key="internal-only" data-on="change" /> Internal only</label>
-        </fieldset>
-
-        <div class="field-actions">
-          <button type="submit">Save activity</button>
-        </div>
-        <p class="form-error" role="alert" aria-live="assertive" data-text="createError"></p>
-      </form>
-    </section>
-
-    <!-- ======================= Day navigation + totals ======================= -->
-    <section class="panel" aria-labelledby="day-heading">
-      <h2 id="day-heading">Day: <span data-text="selectedDateLabel"></span></h2>
-      <div class="field">
-        <label for="select-day">Jump to date</label>
-        <input id="select-day" type="date" data-event="ViewDay" data-on="change" />
-      </div>
-
-      <div class="totals-grid">
-        <div><p class="total-label">Exact</p><p class="total-value" data-text="dayTotalExactLabel"></p></div>
-        <div><p class="total-label">Billed</p><p class="total-value" data-text="dayTotalBilledLabel"></p></div>
-        <div><p class="total-label">Hours</p><p class="total-value" data-text="dayDecimalHoursLabel"></p></div>
-        <div><p class="total-label">Manual</p><p class="total-value" data-text="dayManualCount"></p></div>
-        <div><p class="total-label">Corrections</p><p class="total-value" data-text="dayCorrectionCount"></p></div>
-        <div><p class="total-label">Voided</p><p class="total-value" data-text="dayVoidCount"></p></div>
-        <div><p class="total-label">Evidence coverage</p><p class="total-value" data-text="dayEvidenceCoveragePctLabel"></p></div>
-      </div>
-
-      <template data-if="dayReviewWarnings">
-        <div class="banner banner-warning">
-          <p>Amended after the last attestation:</p>
-          <ul>
-            <template data-each="dayReviewWarnings" data-key="activityId">
-              <li data-text="activityId"></li>
-            </template>
-          </ul>
-        </div>
-      </template>
-
-      <table>
-        <caption class="sr-only">Activities for the selected day</caption>
-        <thead>
-          <tr>
-            <th scope="col">Time</th>
-            <th scope="col">Type</th>
-            <th scope="col">Project</th>
-            <th scope="col">Description</th>
-            <th scope="col">Exact</th>
-            <th scope="col">Billed</th>
-            <th scope="col">Status</th>
-            <th scope="col">Method</th>
-            <th scope="col">Tags</th>
-            <th scope="col">Merge</th>
-            <th scope="col"></th>
-          </tr>
-        </thead>
-        <tbody>
-          <template data-each="dayActivities" data-key="id">
-            <tr>
-              <td data-text="timeLabel"></td>
-              <td data-text="activityTypeLabel"></td>
-              <td data-text="projectLabel"></td>
-              <td data-text="description"></td>
-              <td data-text="exactDurationLabel"></td>
-              <td data-text="billedLabel"></td>
-              <td data-text="statusLabel"></td>
-              <td data-text="entryMethodLabel"></td>
-              <td data-text="tagLabels"></td>
-              <td><input type="checkbox" data-event="ToggleMergeSource" data-on="change" aria-label="Select for merge" /></td>
-              <td>
-                <button type="button" data-event="ViewActivity" data-on="click">Details</button>
-                <button type="button" data-event="VoidActivity" data-on="click">Void</button>
-                <button type="button" data-event="RestoreActivity" data-on="click">Restore</button>
-              </td>
-            </tr>
-          </template>
-        </tbody>
-      </table>
-    </section>
-
-    <!-- ======================= Merge ======================= -->
-    <section class="panel" aria-labelledby="merge-heading">
-      <h2 id="merge-heading">Merge selected activities</h2>
-      <p class="hint">Check "Merge" on two or more contiguous same-date activities above, then fill in the merged activity's details.</p>
-      <div class="field-row">
-        <div class="field">
-          <label for="merge-activity-type">Activity type</label>
-          <select id="merge-activity-type" data-event="DraftActivityTypeChanged" data-on="change">
-            <option value="" selected disabled>Choose an activity type</option>
-            <option value="research">Research</option>
-            <option value="linkedin-marketing">LinkedIn marketing</option>
-            <option value="software-development">Software development</option>
-            <option value="administration">Administration</option>
-            <option value="meeting">Meeting</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="merge-project">Project</label>
-          <select id="merge-project" data-event="DraftProjectChanged" data-on="change">
-            <option value="" selected disabled>Choose a project</option>
-            <option value="echelon-foundry">Echelon Foundry</option>
-            <option value="visual-engineering">Visual Engineering</option>
-            <option value="helixnote">HelixNote</option>
-            <option value="general">General</option>
-          </select>
-        </div>
-      </div>
-      <div class="field field-wide">
-        <label for="merge-description">Description</label>
-        <input id="merge-description" type="text" data-event="DraftDescriptionChanged" data-on="change" />
-      </div>
-      <div class="field field-wide">
-        <label for="merge-business-purpose">Business purpose</label>
-        <input id="merge-business-purpose" type="text" data-event="DraftBusinessPurposeChanged" data-on="change" />
-      </div>
-      <div class="field field-wide">
-        <label for="merge-reason">Reason</label>
-        <input id="merge-reason" type="text" data-event="DraftReasonChanged" data-on="change" />
-      </div>
-      <div class="field-actions">
-        <button type="button" data-event="MergeActivities" data-on="click">Merge</button>
-      </div>
-      <p class="form-error" role="alert" aria-live="assertive" data-text="mergeError"></p>
-    </section>
-
-    <!-- ======================= Activity detail (amend / split / evidence) ======================= -->
-    <template data-if="activeActivityId">
-      <section class="panel" aria-labelledby="detail-heading">
-        <h2 id="detail-heading">Activity detail: <span data-text="activeActivityId"></span></h2>
-
-        <div class="field field-wide" data-key-from="activeActivityId">
-          <label for="reason">Reason (for amend / void / restore / split / detach)</label>
-          <input id="reason" type="text" data-event="DraftReasonChanged" data-on="change" />
-        </div>
-
-        <h3>Amend</h3>
-        <div class="field-row" data-key-from="activeActivityId">
-          <div class="field">
-            <label for="amend-description">New description</label>
-            <input id="amend-description" type="text" data-event="DraftDescriptionChanged" data-on="change" />
-          </div>
-          <div class="field">
-            <label for="amend-business-purpose">New business purpose</label>
-            <input id="amend-business-purpose" type="text" data-event="DraftBusinessPurposeChanged" data-on="change" />
-          </div>
-        </div>
-        <div class="field-actions" data-key-from="activeActivityId">
-          <button type="button" data-event="AmendActivity" data-on="click">Amend</button>
-        </div>
-        <p class="form-error" role="alert" aria-live="assertive" data-text="amendError"></p>
-        <p class="form-error" role="alert" aria-live="assertive" data-text="voidError"></p>
-        <p class="form-error" role="alert" aria-live="assertive" data-text="restoreError"></p>
-
-        <h3>Split into two parts</h3>
-        <div class="field-row" data-key-from="activeActivityId">
-          <div class="field">
-            <label for="split-part-0">Part 1 duration (minutes)</label>
-            <input id="split-part-0" type="number" min="1" data-event="DraftSplitPartDurationChanged" data-event-key="0" data-on="change" />
-          </div>
-          <div class="field">
-            <label for="split-part-1">Part 2 duration (minutes)</label>
-            <input id="split-part-1" type="number" min="1" data-event="DraftSplitPartDurationChanged" data-event-key="1" data-on="change" />
-          </div>
-        </div>
-        <div class="field-actions" data-key-from="activeActivityId">
-          <button type="button" data-event="SplitActivity" data-on="click">Split</button>
-        </div>
-        <p class="form-error" role="alert" aria-live="assertive" data-text="splitError"></p>
-
-        <h3>Evidence</h3>
-        <ul>
-          <template data-each="activeActivityEvidence" data-key="evidenceLinkId">
-            <li>
-              <span data-text="label"></span> — <span data-text="uri"></span>
-              <button type="button" data-event="DetachEvidence" data-key-from="detachKey" data-on="click">Detach</button>
-            </li>
-          </template>
-        </ul>
-        <div class="field-row" data-key-from="activeActivityId">
-          <div class="field">
-            <label for="evidence-type">Type</label>
-            <select id="evidence-type" data-event="DraftEvidenceTypeChanged" data-on="change">
-              <option value="" selected disabled>Choose a type</option>
-              <option value="url">URL</option>
-              <option value="linkedin-post">LinkedIn post</option>
-              <option value="github-commit">GitHub commit</option>
-              <option value="pull-request">Pull request</option>
-              <option value="issue">Issue</option>
-              <option value="calendar-event">Calendar event</option>
-              <option value="document">Document</option>
-              <option value="screenshot">Screenshot</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="evidence-uri">URI (optional)</label>
-            <input id="evidence-uri" type="text" data-event="DraftEvidenceUriChanged" data-on="change" />
-          </div>
-          <div class="field">
-            <label for="evidence-label">Label</label>
-            <input id="evidence-label" type="text" data-event="DraftEvidenceLabelChanged" data-on="change" />
-          </div>
-        </div>
-        <div class="field-actions" data-key-from="activeActivityId">
-          <button type="button" data-event="AttachEvidence" data-on="click">Attach evidence</button>
-        </div>
-        <p class="form-error" role="alert" aria-live="assertive" data-text="evidenceError"></p>
+        <footer class="page-footer">Exact seconds remain authoritative; the six-minute billed figure is derived at read time and never replaces it.</footer>
       </section>
-    </template>
 
-    <!-- ======================= Day review + attestation ======================= -->
-    <section class="panel" aria-labelledby="review-heading">
-      <h2 id="review-heading">Day review</h2>
-      <ul>
-        <template data-each="attestationHistory" data-key="date">
-          <li><span data-text="statement"></span> — <span data-text="attestedAt"></span></li>
-        </template>
-      </ul>
-      <div class="field field-wide">
-        <label for="attest-statement">Attestation statement</label>
-        <input id="attest-statement" type="text" data-event="DraftAttestationStatementChanged" data-on="change" />
-      </div>
-      <div class="field-actions">
-        <button type="button" data-event="AttestDay" data-on="click">Attest this day</button>
-      </div>
-      <p class="form-error" role="alert" aria-live="assertive" data-text="attestError"></p>
-    </section>
+      <!-- ======================= Track ======================= -->
+      <section class="page-screen" data-if="screenTrack" hidden>
+        <header class="topbar"><div><p class="eyebrow">Track</p></div><div class="topbar-actions"><span class="identity" aria-label="Local browser session">LS</span></div></header>
+        <div class="page-heading">
+          <p class="eyebrow">Track time</p>
+          <h1 class="page-title">Time your work, or add it after the fact.</h1>
+          <p class="page-intro">Use the timer while you work, or add a manual record with an exact start and end time.</p>
+        </div>
 
-    <!-- ======================= Month ======================= -->
-    <section class="panel" aria-labelledby="month-heading">
-      <h2 id="month-heading">Month: <span data-text="selectedMonthLabel"></span></h2>
-      <div class="field">
-        <label for="select-month">Jump to month</label>
-        <input id="select-month" type="month" data-event="ViewMonth" data-on="change" />
-      </div>
-      <div class="totals-grid">
-        <div><p class="total-label">Exact</p><p class="total-value" data-text="monthTotalExactLabel"></p></div>
-        <div><p class="total-label">Billed</p><p class="total-value" data-text="monthTotalBilledLabel"></p></div>
-        <div><p class="total-label">Hours</p><p class="total-value" data-text="monthDecimalHoursLabel"></p></div>
-      </div>
-      <table>
-        <caption class="sr-only">Activities for the selected month</caption>
-        <thead><tr><th scope="col">Date</th><th scope="col">Type</th><th scope="col">Project</th><th scope="col">Exact</th><th scope="col">Billed</th></tr></thead>
-        <tbody>
-          <template data-each="monthActivities" data-key="id">
-            <tr>
-              <td data-text="timeLabel"></td>
-              <td data-text="activityTypeLabel"></td>
-              <td data-text="projectLabel"></td>
-              <td data-text="exactDurationLabel"></td>
-              <td data-text="billedLabel"></td>
-            </tr>
-          </template>
-        </tbody>
-      </table>
-    </section>
+        <div class="layout-two">
+          <section class="tracker" aria-labelledby="tracker-title">
+            <div class="tracker-head">
+              <p class="tracker-label"><span class="tracker-pulse" aria-hidden="true"></span>Timer</p>
+              <span class="timer-state" data-text="timerPhase"></span>
+            </div>
+            <h2 class="tracker-activity" id="tracker-title" data-text="timerActivityTypeId"></h2>
+            <p class="tracker-project" data-text="timerProjectId"></p>
+            <p class="timer-display" data-text="timerElapsedLabel"></p>
+            <div class="form-grid">
+              <div class="field">
+                <label for="timer-activity-type">Activity type</label>
+                <select id="timer-activity-type" data-event="DraftActivityTypeChanged" data-on="change">
+                  <option value="" selected disabled>Choose an activity type</option>
+                  <option value="research">Research</option>
+                  <option value="linkedin-marketing">LinkedIn marketing</option>
+                  <option value="software-development">Software development</option>
+                  <option value="administration">Administration</option>
+                  <option value="meeting">Meeting</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="timer-project">Project</label>
+                <select id="timer-project" data-event="DraftProjectChanged" data-on="change">
+                  <option value="" selected disabled>Choose a project</option>
+                  <option value="echelon-foundry">Echelon Foundry</option>
+                  <option value="visual-engineering">Visual Engineering</option>
+                  <option value="helixnote">HelixNote</option>
+                  <option value="general">General</option>
+                </select>
+              </div>
+              <div class="field field-full">
+                <label for="timer-description">Description (optional)</label>
+                <input id="timer-description" type="text" data-event="DraftDescriptionChanged" data-on="change" />
+              </div>
+            </div>
+            <div class="tracker-actions">
+              <button type="button" class="button button-ghost-light" data-event="StartTimer" data-on="click">Start</button>
+              <button type="button" class="button button-ghost-light" data-event="PauseTimer" data-on="click">Pause</button>
+              <button type="button" class="button button-ghost-light" data-event="ResumeTimer" data-on="click">Resume</button>
+              <button type="button" class="button button-light button-wide" data-event="StopTimer" data-on="click">Stop activity</button>
+            </div>
+            <p class="field-error" role="alert" aria-live="assertive" data-if="timerError" data-text="timerError" hidden></p>
+          </section>
 
-    <!-- ======================= Report ======================= -->
-    <section class="panel" aria-labelledby="report-heading">
-      <h2 id="report-heading">Report</h2>
-      <div class="field-actions">
-        <button type="button" data-event="SelectReportFormat" data-event-value="json" data-on="click">JSON</button>
-        <button type="button" data-event="SelectReportFormat" data-event-value="markdown" data-on="click">Markdown</button>
-        <button type="button" data-event="SelectReportFormat" data-event-value="csv" data-on="click">CSV</button>
-      </div>
-      <pre class="report-content" data-text="reportContent"></pre>
-    </section>
-  </main>
+          <form class="surface surface-pad" data-event="CreateActivity">
+            <fieldset class="form-section">
+              <legend class="form-legend">Add time manually</legend>
+              <div class="form-grid">
+                <div class="field">
+                  <label for="create-activity-type">Activity type <span class="required">*</span></label>
+                  <select id="create-activity-type" required data-event="DraftActivityTypeChanged" data-on="change">
+                    <option value="" selected disabled>Choose an activity type</option>
+                    <option value="research">Research</option>
+                    <option value="linkedin-marketing">LinkedIn marketing</option>
+                    <option value="software-development">Software development</option>
+                    <option value="administration">Administration</option>
+                    <option value="meeting">Meeting</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="create-project">Project <span class="required">*</span></label>
+                  <select id="create-project" required data-event="DraftProjectChanged" data-on="change">
+                    <option value="" selected disabled>Choose a project</option>
+                    <option value="echelon-foundry">Echelon Foundry</option>
+                    <option value="visual-engineering">Visual Engineering</option>
+                    <option value="helixnote">HelixNote</option>
+                    <option value="general">General</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="create-started-at">Start <span class="required">*</span></label>
+                  <input id="create-started-at" type="datetime-local" required data-event="DraftStartedAtChanged" data-on="change" />
+                </div>
+                <div class="field">
+                  <label for="create-ended-at">End <span class="required">*</span></label>
+                  <input id="create-ended-at" type="datetime-local" required data-event="DraftEndedAtChanged" data-on="change" />
+                </div>
+                <div class="field field-full">
+                  <label for="create-description">What did you do? <span class="required">*</span></label>
+                  <textarea id="create-description" required data-event="DraftDescriptionChanged" data-on="change"></textarea>
+                </div>
+                <div class="field field-full">
+                  <label for="create-business-purpose">Business purpose <span class="required">*</span></label>
+                  <textarea id="create-business-purpose" required data-event="DraftBusinessPurposeChanged" data-on="change"></textarea>
+                </div>
+                <div class="field field-full">
+                  <label for="create-reconstruction-reason">Why entering this after the fact? <span class="field-help">Only needed for a past date</span></label>
+                  <input id="create-reconstruction-reason" type="text" data-event="DraftReconstructionReasonChanged" data-on="change" />
+                </div>
+              </div>
+              <p class="field-label section">Tags</p>
+              <div class="review-list">
+                <label class="review-row"><input type="checkbox" data-event="ToggleDraftTag" data-event-key="billable" data-on="change" /><span class="review-title">Billable</span></label>
+                <label class="review-row"><input type="checkbox" data-event="ToggleDraftTag" data-event-key="client-facing" data-on="change" /><span class="review-title">Client-facing</span></label>
+                <label class="review-row"><input type="checkbox" data-event="ToggleDraftTag" data-event-key="internal-only" data-on="change" /><span class="review-title">Internal only</span></label>
+              </div>
+            </fieldset>
+            <div class="form-actions">
+              <button class="button button-primary" type="submit">Save activity</button>
+            </div>
+            <p class="field-error" role="alert" aria-live="assertive" data-if="createError" data-text="createError" hidden></p>
+          </form>
+        </div>
+        <footer class="page-footer">Manual records are labeled as reconstructed; a reason is required whenever the date is not today.</footer>
+      </section>
 
-  <footer class="page-footer">
-    <p>
-      Activities save to this browser's local storage through the engine's
-      <code>Storage</code> effect — they survive a reload of this browser, but
-      are not synced anywhere else yet.
-    </p>
-  </footer>
+      <!-- ======================= Month ======================= -->
+      <section class="page-screen" data-if="screenMonth" hidden>
+        <header class="topbar"><div><p class="eyebrow">Month</p></div><div class="topbar-actions"><input type="month" data-event="ViewMonth" data-on="change" aria-label="Jump to month" /></div></header>
+        <div class="page-heading">
+          <p class="eyebrow">Monthly record</p>
+          <h1 class="page-title" data-text="selectedMonthLabel"></h1>
+          <p class="page-intro">A factual summary of recorded business activity for the selected month. Voided source records are excluded.</p>
+        </div>
+
+        <div class="metrics-grid">
+          <section class="metric-card"><p class="metric-label">Exact</p><p class="metric-value" data-text="monthTotalExactLabel"></p></section>
+          <section class="metric-card"><p class="metric-label">Billed</p><p class="metric-value" data-text="monthTotalBilledLabel"></p></section>
+          <section class="metric-card"><p class="metric-label">Decimal hours</p><p class="metric-value" data-text="monthDecimalHoursLabel"></p></section>
+          <section class="metric-card"><p class="metric-label">Evidence coverage</p><p class="metric-value" data-text="monthEvidenceCoveragePctLabel"></p></section>
+          <section class="metric-card"><p class="metric-label">Manual</p><p class="metric-value" data-text="monthManualCount"></p></section>
+          <section class="metric-card"><p class="metric-label">Corrections</p><p class="metric-value" data-text="monthCorrectionCount"></p></section>
+          <section class="metric-card"><p class="metric-label">Voided</p><p class="metric-value" data-text="monthVoidCount"></p></section>
+        </div>
+
+        <section class="surface surface-pad" aria-labelledby="month-activities-title">
+          <h2 class="section-title" id="month-activities-title">Activities this month</h2>
+          <div class="timeline">
+            <template data-each="monthActivities" data-key="id">
+              <article class="record">
+                <p class="record-time" data-text="timeLabel"></p>
+                <div class="record-body">
+                  <div class="record-head"><h3 class="activity-title" data-text="description"></h3><span class="duration" data-text="exactDurationLabel"></span></div>
+                  <p class="record-project"><span data-text="activityTypeLabel"></span> &middot; <span data-text="projectLabel"></span></p>
+                  <div class="meta-row"><span class="badge" data-text="statusLabel"></span><span class="badge" data-text="billedLabel"></span></div>
+                </div>
+              </article>
+            </template>
+          </div>
+        </section>
+        <footer class="page-footer">All totals use effective records and exact stored durations.</footer>
+      </section>
+
+      <!-- ======================= More ======================= -->
+      <section class="page-screen" data-if="screenMore" hidden>
+        <header class="topbar"><div><p class="eyebrow">More</p></div><div class="topbar-actions"><span class="identity" aria-label="Local browser session">LS</span></div></header>
+        <div class="page-heading">
+          <p class="eyebrow">Review &amp; manage</p>
+          <h1 class="page-title">Your ledger, in order.</h1>
+          <p class="page-intro">Finish today's record, merge or split activities, attach evidence, and export reports.</p>
+        </div>
+
+        <div class="layout-two">
+          <div class="stack">
+            <!-- Activity detail: amend / void / restore / split / evidence -->
+            <section class="surface surface-pad" data-if="activeActivityId" hidden aria-labelledby="detail-title">
+              <h2 class="section-title" id="detail-title">Activity detail: <span data-text="activeActivityId"></span></h2>
+              <div class="field" data-key-from="activeActivityId">
+                <label for="reason">Reason <span class="field-help">for amend / void / restore / split / detach evidence</span></label>
+                <input id="reason" type="text" data-event="DraftReasonChanged" data-on="change" />
+              </div>
+
+              <fieldset class="form-section">
+                <legend class="form-legend">Amend, void, or restore</legend>
+                <div class="form-grid" data-key-from="activeActivityId">
+                  <div class="field"><label for="amend-description">New description</label><input id="amend-description" type="text" data-event="DraftDescriptionChanged" data-on="change" /></div>
+                  <div class="field"><label for="amend-business-purpose">New business purpose</label><input id="amend-business-purpose" type="text" data-event="DraftBusinessPurposeChanged" data-on="change" /></div>
+                </div>
+                <div class="form-actions" data-key-from="activeActivityId">
+                  <button type="button" class="button button-primary" data-event="AmendActivity" data-on="click" data-if="activeCanAmend" hidden>Amend</button>
+                  <button type="button" class="button button-danger" data-event="VoidActivity" data-on="click" data-if="activeCanVoid" hidden>Void</button>
+                  <button type="button" class="button button-secondary" data-event="RestoreActivity" data-on="click" data-if="activeCanRestore" hidden>Restore</button>
+                </div>
+                <p class="field-error" role="alert" aria-live="assertive" data-if="amendError" data-text="amendError" hidden></p>
+                <p class="field-error" role="alert" aria-live="assertive" data-if="voidError" data-text="voidError" hidden></p>
+                <p class="field-error" role="alert" aria-live="assertive" data-if="restoreError" data-text="restoreError" hidden></p>
+              </fieldset>
+
+              <fieldset class="form-section" data-if="activeCanSplit" hidden>
+                <legend class="form-legend">Split into two parts</legend>
+                <div class="form-grid" data-key-from="activeActivityId">
+                  <div class="field"><label for="split-part-0">Part 1 minutes</label><input id="split-part-0" type="number" min="1" data-event="DraftSplitPartDurationChanged" data-event-key="0" data-on="change" /></div>
+                  <div class="field"><label for="split-part-1">Part 2 minutes</label><input id="split-part-1" type="number" min="1" data-event="DraftSplitPartDurationChanged" data-event-key="1" data-on="change" /></div>
+                </div>
+                <div class="form-actions" data-key-from="activeActivityId">
+                  <button type="button" class="button button-primary" data-event="SplitActivity" data-on="click">Split</button>
+                </div>
+                <p class="field-error" role="alert" aria-live="assertive" data-if="splitError" data-text="splitError" hidden></p>
+              </fieldset>
+
+              <fieldset class="form-section">
+                <legend class="form-legend">Evidence</legend>
+                <div class="evidence-list">
+                  <template data-each="activeActivityEvidence" data-key="evidenceLinkId">
+                    <div class="evidence-row">
+                      <span class="evidence-type" aria-hidden="true" data-text="label"></span>
+                      <div class="evidence-main"><p class="evidence-title" data-text="label"></p><p class="evidence-meta" data-text="uri"></p></div>
+                      <button type="button" class="text-link" data-event="DetachEvidence" data-key-from="detachKey" data-on="click">Unlink</button>
+                    </div>
+                  </template>
+                </div>
+                <div class="form-grid" data-key-from="activeActivityId">
+                  <div class="field">
+                    <label for="evidence-type">Type</label>
+                    <select id="evidence-type" data-event="DraftEvidenceTypeChanged" data-on="change">
+                      <option value="" selected disabled>Choose a type</option>
+                      <option value="url">URL</option>
+                      <option value="linkedin-post">LinkedIn post</option>
+                      <option value="github-commit">GitHub commit</option>
+                      <option value="pull-request">Pull request</option>
+                      <option value="issue">Issue</option>
+                      <option value="calendar-event">Calendar event</option>
+                      <option value="document">Document</option>
+                      <option value="screenshot">Screenshot</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                  <div class="field"><label for="evidence-uri">URI (optional)</label><input id="evidence-uri" type="text" data-event="DraftEvidenceUriChanged" data-on="change" /></div>
+                  <div class="field"><label for="evidence-label">Label</label><input id="evidence-label" type="text" data-event="DraftEvidenceLabelChanged" data-on="change" /></div>
+                </div>
+                <div class="form-actions" data-key-from="activeActivityId">
+                  <button type="button" class="button button-primary" data-event="AttachEvidence" data-on="click">Attach evidence</button>
+                </div>
+                <p class="field-error" role="alert" aria-live="assertive" data-if="evidenceError" data-text="evidenceError" hidden></p>
+              </fieldset>
+            </section>
+
+            <!-- Merge -->
+            <section class="surface surface-pad" aria-labelledby="merge-title">
+              <h2 class="section-title" id="merge-title">Merge selected activities</h2>
+              <p class="page-intro">Check the merge box on two or more contiguous same-date activities on the Today screen, then fill in the merged record's details.</p>
+              <div class="form-grid">
+                <div class="field">
+                  <label for="merge-activity-type">Activity type</label>
+                  <select id="merge-activity-type" data-event="DraftActivityTypeChanged" data-on="change">
+                    <option value="" selected disabled>Choose an activity type</option>
+                    <option value="research">Research</option>
+                    <option value="linkedin-marketing">LinkedIn marketing</option>
+                    <option value="software-development">Software development</option>
+                    <option value="administration">Administration</option>
+                    <option value="meeting">Meeting</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="merge-project">Project</label>
+                  <select id="merge-project" data-event="DraftProjectChanged" data-on="change">
+                    <option value="" selected disabled>Choose a project</option>
+                    <option value="echelon-foundry">Echelon Foundry</option>
+                    <option value="visual-engineering">Visual Engineering</option>
+                    <option value="helixnote">HelixNote</option>
+                    <option value="general">General</option>
+                  </select>
+                </div>
+                <div class="field field-full"><label for="merge-description">Description</label><input id="merge-description" type="text" data-event="DraftDescriptionChanged" data-on="change" /></div>
+                <div class="field field-full"><label for="merge-business-purpose">Business purpose</label><input id="merge-business-purpose" type="text" data-event="DraftBusinessPurposeChanged" data-on="change" /></div>
+                <div class="field field-full"><label for="merge-reason">Reason</label><input id="merge-reason" type="text" data-event="DraftReasonChanged" data-on="change" /></div>
+              </div>
+              <div class="form-actions">
+                <button type="button" class="button button-primary" data-event="MergeActivities" data-on="click">Merge</button>
+              </div>
+              <p class="field-error" role="alert" aria-live="assertive" data-if="mergeError" data-text="mergeError" hidden></p>
+            </section>
+
+            <!-- Day review + attestation -->
+            <section class="surface surface-pad" aria-labelledby="review-title">
+              <h2 class="section-title" id="review-title">Day review &mdash; <span data-text="selectedDateLabel"></span></h2>
+              <div class="review-list">
+                <template data-each="attestationHistory" data-key="date">
+                  <div class="review-row"><span class="review-mark">&#10003;</span><div><p class="review-title" data-text="statement"></p><p class="review-note" data-text="attestedAt"></p></div></div>
+                </template>
+              </div>
+              <div class="field field-full">
+                <label for="attest-statement">Attestation statement</label>
+                <input id="attest-statement" type="text" data-event="DraftAttestationStatementChanged" data-on="change" />
+              </div>
+              <div class="form-actions">
+                <button type="button" class="button button-primary" data-event="AttestDay" data-on="click">Attest this day</button>
+              </div>
+              <p class="field-error" role="alert" aria-live="assertive" data-if="attestError" data-text="attestError" hidden></p>
+            </section>
+          </div>
+
+          <aside class="stack">
+            <section class="surface surface-pad" aria-labelledby="report-title">
+              <h2 class="section-title" id="report-title">Report</h2>
+              <div class="form-actions">
+                <button type="button" class="button button-secondary button-small" data-event="SelectReportFormat" data-event-value="json" data-on="click">JSON</button>
+                <button type="button" class="button button-secondary button-small" data-event="SelectReportFormat" data-event-value="markdown" data-on="click">Markdown</button>
+                <button type="button" class="button button-secondary button-small" data-event="SelectReportFormat" data-event-value="csv" data-on="click">CSV</button>
+              </div>
+              <pre class="report-content" data-text="reportContent"></pre>
+            </section>
+            <div class="notice">
+              <p class="notice-title">Local-only persistence</p>
+              <p class="notice-copy">Activities save to this browser's local storage through the engine's Storage effect. They survive a reload of this browser, but are not synced anywhere else yet.</p>
+            </div>
+          </aside>
+        </div>
+        <footer class="page-footer">This ledger preserves original records and records later changes separately.</footer>
+      </section>
+    </main>
+  </div>
+
+  <nav class="bottom-nav" aria-label="Primary navigation">
+    <button type="button" class="bottom-link" data-mark="TD" data-event="ViewScreen" data-event-value="today" data-on="click">Today</button>
+    <button type="button" class="bottom-link" data-mark="TR" data-event="ViewScreen" data-event-value="track" data-on="click">Track</button>
+    <button type="button" class="bottom-link" data-mark="MO" data-event="ViewScreen" data-event-value="month" data-on="click">Month</button>
+    <button type="button" class="bottom-link" data-mark="MR" data-event="ViewScreen" data-event-value="more" data-on="click">More</button>
+  </nav>
 </body>
 </html>

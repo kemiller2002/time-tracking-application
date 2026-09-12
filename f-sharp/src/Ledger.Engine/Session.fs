@@ -57,6 +57,11 @@ module Session =
           SelectedMonth: string
           ActiveActivityId: string option
           ReportFormat: string
+          /// UI-only navigation state ("today" | "track" | "month" | "more") —
+          /// which screen of the app shell is showing. Not a business
+          /// decision; see `.sde/architecture/FOUR-TIER-ARCHITECTURE.md`'s
+          /// note that presentation-only routing is still Tier 3's to own.
+          CurrentScreen: string
           /// Keyed "create"/"amend"/"void"/"restore"/"split"/"merge"/"evidence"/"timer"/"attest".
           Errors: Map<string, string>
           PersistenceError: string option }
@@ -107,6 +112,7 @@ module Session =
           SelectedMonth = today.ToString "yyyy-MM"
           ActiveActivityId = None
           ReportFormat = "json"
+          CurrentScreen = "today"
           Errors = Map.empty
           PersistenceError = None }
 

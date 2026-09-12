@@ -319,6 +319,7 @@ module Dispatch =
         | "ViewMonth" -> event.Value |> Option.map (fun m -> { state with SelectedMonth = m }) |> Option.defaultValue state
         | "ViewActivity" -> { state with ActiveActivityId = event.Key }
         | "SelectReportFormat" -> event.Value |> Option.map (fun f -> { state with ReportFormat = f }) |> Option.defaultValue state
+        | "ViewScreen" -> event.Value |> Option.map (fun s -> { state with CurrentScreen = s }) |> Option.defaultValue state
         | _ -> { state with Draft = applyDraftField state.Draft event }
 
     /// Never trusts a Storage outcome as silent success or silent failure —
