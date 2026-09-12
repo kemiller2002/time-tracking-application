@@ -48,7 +48,7 @@ let ``an active entry round-trips exactly`` () =
 let ``a corrected entry round-trips with its full history`` () =
     let entry = persistedEntry "e1" (minutes 52) "sha-1"
     let request = correctionRequest entry (minutes 46) "sha-1"
-    let corrected = single (fst (accepted (correctEntry request entry)))
+    let corrected = single (fst (accepted (correctEntry catalogue request entry)))
 
     // Carry a version, as a persisted entry would.
     let stored = { corrected with Version = Some(version "sha-2") }
@@ -85,7 +85,7 @@ let ``a restored entry round-trips with void and restore both in history`` () =
 let ``a split source and its children all round-trip`` () =
     let entry = persistedEntry "e1" (minutes 60) "sha-1"
     let children = [ splitChild "c1" (minutes 36); splitChild "c2" (minutes 24) ]
-    let entries, _ = accepted (splitEntry (splitRequest entry "sha-1" children) entry)
+    let entries, _ = accepted (splitEntry catalogue (splitRequest entry "sha-1" children) entry)
 
     for produced in entries do
         assertRoundTrips produced
@@ -95,7 +95,7 @@ let ``a merged entry and its superseded sources all round-trip`` () =
     let a = persistedEntry "e1" (minutes 36) "sha-a"
     let b = persistedEntry "e2" (minutes 24) "sha-b"
     let request = mergeRequest [ mergeSource "e1" "sha-a"; mergeSource "e2" "sha-b" ]
-    let entries, _ = accepted (mergeEntries request [ a; b ])
+    let entries, _ = accepted (mergeEntries catalogue request [ a; b ])
 
     for produced in entries do
         assertRoundTrips produced
@@ -302,7 +302,7 @@ let ``a void state missing its reason is refused`` () =
 let ``a split supersession with no children is refused`` () =
     let entry = persistedEntry "e1" (minutes 60) "sha-1"
     let children = [ splitChild "c1" (minutes 36); splitChild "c2" (minutes 24) ]
-    let entries, _ = accepted (splitEntry (splitRequest entry "sha-1" children) entry)
+    let entries, _ = accepted (splitEntry catalogue (splitRequest entry "sha-1" children) entry)
     let source = entries |> List.find (fun e -> e.Id = entryId "e1")
     let document = { toDocument source with superseded_children = [||] }
 
@@ -393,7 +393,7 @@ let ``an entry path does not change when the entry's date is corrected`` () =
           Reason = reason "Recorded against the wrong day"
           Attribution = attribution "e1-r2" }
 
-    let corrected = single (fst (accepted (correctEntry request entry)))
+    let corrected = single (fst (accepted (correctEntry catalogue request entry)))
 
     Assert.Equal(before, entryPath corrected.Id)
     // And the corrected date really did change, so the test is not vacuous.

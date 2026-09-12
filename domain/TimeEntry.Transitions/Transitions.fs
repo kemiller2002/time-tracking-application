@@ -17,97 +17,10 @@ open TimeEntry.Semantic.Duration
 open TimeEntry.Semantic.Values
 open TimeEntry.Semantic.EntryState
 open TimeEntry.Semantic.Capabilities
+open TimeEntry.Semantic.Catalogue
 open TimeEntry.Transitions.Commands
 open TimeEntry.Transitions.Effects
-
-// ---------------------------------------------------------------------------
-// Guards
-// ---------------------------------------------------------------------------
-
-let private requireSameEntry (expected: EntryId) (entry: TimeEntry) : Result<unit, Rejection> =
-    if entry.Id = expected then Ok() else Error(EntryNotLoaded expected)
-
-/// The attempted action must be legal in the entry's current state
-/// (TE-R-097).
-let private requireCapability (capability: EntryCapability) (entry: TimeEntry) : Result<unit, Rejection> =
-    if Capabilities.has capability entry.State then
-        Ok()
-    else
-        let denial =
-            Capabilities.denialFor capability entry.State
-            |> Option.defaultValue (BlockedByOpenQuestion "unspecified")
-
-        Error(NotPermittedInState(capability, denial))
-
-/// The caller must have been acting on the version we currently hold.
-///
-/// A mismatch writes nothing and reports both sides. There is deliberately no
-/// re-read-and-retry path: TE-R-072 requires a stale write to become an
-/// explicit outcome, and TE-R-070 forbids silently overwriting a newer
-/// correction.
-let private requireVersion (expected: VersionToken) (entry: TimeEntry) : Result<unit, Rejection> =
-    match entry.Version with
-    | Some current when VersionToken.matches current expected -> Ok()
-    | current -> Error(VersionConflict(expected, current))
-
-let private requireAtLeastTwoChildren (children: SplitChild list) : Result<unit, Rejection> =
-    let count = List.length children
-
-    if count >= 2 then
-        Ok()
-    else
-        Error(SplitNeedsAtLeastTwoChildren count)
-
-let private requireUniqueIdentities (source: EntryId) (children: SplitChild list) : Result<unit, Rejection> =
-    let ids = source :: (children |> List.map (fun c -> c.NewEntryId))
-
-    let duplicated =
-        ids
-        |> List.countBy id
-        |> List.tryPick (fun (entryId, count) -> if count > 1 then Some entryId else None)
-
-    match duplicated with
-    | Some entryId -> Error(SplitChildIdentityNotUnique entryId)
-    | None -> Ok()
-
-/// TE-R-040. Checked on `Duration` in whole seconds because `Duration` is the
-/// authoritative quantity (DF-TE-0002). Checking billable units instead would
-/// let a split preserve rounded units while losing real seconds, violating
-/// TE-R-001.
-let private requireTotalPreserved (source: Duration) (children: SplitChild list) : Result<unit, Rejection> =
-    let childDurations = children |> List.map (fun c -> c.Duration)
-
-    if Duration.partsPreserve source childDurations then
-        Ok()
-    else
-        Error(SplitDoesNotPreserveTotal(Duration.milliseconds source, Duration.sum childDurations))
-
-let private revisionOf (attribution: Attribution) (change: RevisionChange) (facts: EntryFacts) =
-    { Id = attribution.NewRevisionId
-      Change = change
-      Facts = facts
-      RecordedAt = attribution.OccurredAt
-      RecordedBy = attribution.Actor
-      Device = attribution.Device }
-
-/// Shared shape for the single-entry transitions: run the guards, then build.
-let private transition
-    (capability: EntryCapability)
-    (entryId: EntryId)
-    (expectedVersion: VersionToken)
-    (build: TimeEntry -> TimeEntry * Effect)
-    (entry: TimeEntry)
-    : Outcome =
-    let validated =
-        requireSameEntry entryId entry
-        |> Result.bind (fun () -> requireCapability capability entry)
-        |> Result.bind (fun () -> requireVersion expectedVersion entry)
-
-    match validated with
-    | Error rejection -> Rejected rejection
-    | Ok() ->
-        let updated, effect = build entry
-        Accepted([ updated ], [ effect ])
+open TimeEntry.Transitions.Guards
 
 // ---------------------------------------------------------------------------
 // Create (TE-R-020)
@@ -116,7 +29,11 @@ let private transition
 /// A new entry needs no state guard and no version guard: it does not exist
 /// yet. `ExpectedVersion = None` tells the interpreter to fail the write if it
 /// turns out it does.
-let createEntry (request: CreateEntryRequest) : Outcome =
+let createEntry (catalogue: Catalogue) (request: CreateEntryRequest) : Outcome =
+    match requireCatalogue catalogue request.Facts.Project request.Facts.ActivityType with
+    | Error rejection -> Rejected rejection
+    | Ok() ->
+
     let entry =
         { Id = request.NewEntryId
           State = Active
@@ -134,7 +51,18 @@ let createEntry (request: CreateEntryRequest) : Outcome =
 /// `History` and the corrected values become `Effective`. The entry keeps its
 /// identity and stays `Active`, so it continues to count toward totals with
 /// its new values.
-let correctEntry (request: CorrectEntryRequest) (entry: TimeEntry) : Outcome =
+let correctEntry (catalogue: Catalogue) (request: CorrectEntryRequest) (entry: TimeEntry) : Outcome =
+    match
+        requireReferenceMove
+            catalogue
+            [ entry.Effective.Project ]
+            [ entry.Effective.ActivityType ]
+            request.CorrectedFacts.Project
+            request.CorrectedFacts.ActivityType
+    with
+    | Error rejection -> Rejected rejection
+    | Ok() ->
+
     entry
     |> transition CanCorrect request.EntryId request.ExpectedVersion (fun current ->
         let revision =
@@ -226,9 +154,34 @@ let attachEvidence (request: AttachEvidenceRequest) (entry: TimeEntry) : Outcome
 ///
 /// Has its own guard pipeline rather than reusing `transition` because it
 /// yields many entries and one grouped effect.
-let splitEntry (request: SplitEntryRequest) (entry: TimeEntry) : Outcome =
+/// A split redistributes time that already exists, so a child keeping the
+/// source's project or activity type is retaining a reference, not moving
+/// time onto one.
+let private requireChildrenCatalogue
+    (catalogue: Catalogue)
+    (source: EntryFacts)
+    (children: SplitChild list)
+    =
+    children
+    |> List.tryPick (fun child ->
+        match
+            requireReferenceMove
+                catalogue
+                [ source.Project ]
+                [ source.ActivityType ]
+                child.Project
+                child.ActivityType
+        with
+        | Error rejection -> Some rejection
+        | Ok() -> None)
+    |> function
+        | Some rejection -> Error rejection
+        | None -> Ok()
+
+let splitEntry (catalogue: Catalogue) (request: SplitEntryRequest) (entry: TimeEntry) : Outcome =
     let validated =
-        requireSameEntry request.EntryId entry
+        requireChildrenCatalogue catalogue entry.Effective request.Children
+        |> Result.bind (fun () -> requireSameEntry request.EntryId entry)
         |> Result.bind (fun () -> requireCapability CanSplit entry)
         |> Result.bind (fun () -> requireVersion request.ExpectedVersion entry)
         |> Result.bind (fun () -> requireAtLeastTwoChildren request.Children)
@@ -379,9 +332,21 @@ let private requireSingleDay (pairs: (MergeSource * TimeEntry) list) : Result<un
 /// so restoring one source of a completed merge would return its time to
 /// totals while the merged entry still carries it. `Superseded` offers no
 /// capabilities, making that unrepresentable (DF-TE-0006).
-let mergeEntries (request: MergeEntriesRequest) (loaded: TimeEntry list) : Outcome =
+let mergeEntries (catalogue: Catalogue) (request: MergeEntriesRequest) (loaded: TimeEntry list) : Outcome =
+    // Resolve the sources first, so their references count as retained: a
+    // merge of entries on an archived project may keep that project.
+    let retained =
+        request.Sources
+        |> List.choose (fun source -> loaded |> List.tryFind (fun e -> e.Id = source.EntryId))
+
     let validated =
-        requireAtLeastTwoSources request.Sources
+        requireReferenceMove
+            catalogue
+            (retained |> List.map (fun e -> e.Effective.Project))
+            (retained |> List.map (fun e -> e.Effective.ActivityType))
+            request.Project
+            request.ActivityType
+        |> Result.bind (fun () -> requireAtLeastTwoSources request.Sources)
         |> Result.bind (fun () -> requireUniqueMergeIdentities request.NewEntryId request.Sources)
         |> Result.bind (fun () -> resolveSources loaded request.Sources)
         |> Result.bind (fun pairs ->
@@ -466,18 +431,18 @@ let mergeEntries (request: MergeEntriesRequest) (loaded: TimeEntry list) : Outco
 ///
 /// `loaded` is the authoritative state Tier 3 supplies. A command naming an
 /// entry that is not loaded is rejected rather than silently creating one.
-let apply (loaded: TimeEntry list) (command: Command) : Outcome =
+let apply (catalogue: Catalogue) (loaded: TimeEntry list) (command: Command) : Outcome =
     let against (entryId: EntryId) (run: TimeEntry -> Outcome) =
         match loaded |> List.tryFind (fun e -> e.Id = entryId) with
         | None -> Rejected(EntryNotLoaded entryId)
         | Some entry -> run entry
 
     match command with
-    | CreateEntry request -> createEntry request
-    | CorrectEntry request -> against request.EntryId (correctEntry request)
-    | SplitEntry request -> against request.EntryId (splitEntry request)
+    | CreateEntry request -> createEntry catalogue request
+    | CorrectEntry request -> against request.EntryId (correctEntry catalogue request)
+    | SplitEntry request -> against request.EntryId (splitEntry catalogue request)
     | VoidEntry request -> against request.EntryId (voidEntry request)
     | RestoreEntry request -> against request.EntryId (restoreEntry request)
     | AttachEvidence request -> against request.EntryId (attachEvidence request)
     // Merge spans many entries, so it takes the whole loaded set rather than one.
-    | MergeEntries request -> mergeEntries request loaded
+    | MergeEntries request -> mergeEntries catalogue request loaded

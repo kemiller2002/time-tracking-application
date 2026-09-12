@@ -311,17 +311,51 @@ Merge creates a new entry and transitions every source to
 
 ### Decision
 
-A project has status `Active` or `Archived`. An `Archived` project may not be
-named by a create or correct command. Entries already referencing it remain
-valid, keep counting toward totals, and stay correctable in every respect
-except moving *to* an archived project.
+A catalogue entry — project or activity type — has status `Available` or
+`Archived`, mapping onto the `active: boolean` that
+`schemas/domain/project.schema.json` and
+`schemas/domain/activity-type.schema.json` already define.
+
+The rule, stated precisely: **time may not be *moved onto* an archived
+reference. An archived reference that is merely *retained* is never
+re-validated.**
+
+| Command | Checked against the catalogue? |
+|---|---|
+| Create | Yes — no prior reference exists, so this is new time |
+| Correct | Only if the project or activity type *changes* |
+| Split | Only for a child whose reference differs from the source's |
+| Merge | Only if the target's reference is held by no source |
+| Void, restore, attach evidence | No — none of them changes which project time belongs to |
 
 ### Rationale
 
-The two halves each follow from an existing requirement. Allowing new time
-against an archived project makes "archived" mean nothing. Invalidating
-existing entries would destroy recorded history, which TE-R-030 forbids and
-which no requirement authorizes.
+Allowing new time against an archived project makes "archived" mean nothing.
+Invalidating or freezing existing entries would destroy or strand recorded
+history, which TE-R-030 forbids.
+
+The retention clause is what makes those two compatible, and its absence is a
+real defect rather than a nicety. An earlier implementation guarded the whole
+command, which meant an entry recorded *before* its project was archived could
+no longer have its hours corrected at all — the user could not fix a forgotten
+timer, and could not even move the entry to a live project without first
+passing a check the entry already failed. That is the opposite of preserving
+history. It was caught by a test written to document the behaviour, which is
+why the test now asserts the corrected rule.
+
+Splitting deserves the same treatment for the same reason: a split
+redistributes time that already exists rather than recording new work, so a
+child keeping the source's project is retaining a reference, not creating an
+obligation.
+
+### Corroboration
+
+This was not invented. The repository's own schemas already carry
+`active: boolean` on both catalogue types, so the Available/Archived
+distinction was implied by the documented contract before this decision named
+it. The schemas also pin ids to `^[a-z0-9-]+$`, which `ProjectId` and
+`ActivityTypeId` now enforce — accepting ids the contract rejects would let
+the domain build records that fail schema validation downstream.
 
 ### Revisit when
 

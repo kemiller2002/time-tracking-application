@@ -26,6 +26,7 @@
     <Compile Include="Helpers.fs" />
     <Compile Include="FakeStore.fs" />
     <Compile Include="DurationTests.fs" />
+    <Compile Include="CatalogueTests.fs" />
     <Compile Include="TransitionTests.fs" />
     <Compile Include="SplitTests.fs" />
     <Compile Include="MergeTests.fs" />

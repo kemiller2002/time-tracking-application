@@ -24,7 +24,7 @@ let ``a two way split supersedes the source and creates active children`` () =
     // The worked example from system-prompt §8.10: 60 -> 36 + 24.
     let entry = persistedEntry "e1" (minutes 60) "sha-1"
     let children = [ splitChild "c1" (minutes 36); splitChild "c2" (minutes 24) ]
-    let entries, effects = accepted (splitEntry (splitRequest entry "sha-1" children) entry)
+    let entries, effects = accepted (splitEntry catalogue (splitRequest entry "sha-1" children) entry)
 
     Assert.Equal(3, List.length entries)
 
@@ -51,7 +51,7 @@ let ``a split child records its lineage to the source`` () =
     // TE-R-043: no detached children, no ambiguous source.
     let entry = persistedEntry "e1" (minutes 60) "sha-1"
     let children = [ splitChild "c1" (minutes 36); splitChild "c2" (minutes 24) ]
-    let entries, _ = accepted (splitEntry (splitRequest entry "sha-1" children) entry)
+    let entries, _ = accepted (splitEntry catalogue (splitRequest entry "sha-1" children) entry)
     let child = entries |> List.find (fun e -> e.Id = entryId "c1")
 
     match (List.head child.History).Change with
@@ -63,7 +63,7 @@ let ``an under allocated split is refused`` () =
     let entry = persistedEntry "e1" (minutes 60) "sha-1"
     let children = [ splitChild "c1" (minutes 36); splitChild "c2" (minutes 23) ]
 
-    match rejection (splitEntry (splitRequest entry "sha-1" children) entry) with
+    match rejection (splitEntry catalogue (splitRequest entry "sha-1" children) entry) with
     | SplitDoesNotPreserveTotal(source, child) ->
         Assert.Equal(3600000L, source)
         Assert.Equal(3540000L, child)
@@ -74,7 +74,7 @@ let ``an over allocated split is refused`` () =
     let entry = persistedEntry "e1" (minutes 60) "sha-1"
     let children = [ splitChild "c1" (minutes 36); splitChild "c2" (minutes 25) ]
 
-    match rejection (splitEntry (splitRequest entry "sha-1" children) entry) with
+    match rejection (splitEntry catalogue (splitRequest entry "sha-1" children) entry) with
     | SplitDoesNotPreserveTotal _ -> ()
     | other -> failwithf "expected SplitDoesNotPreserveTotal, got %A" other
 
@@ -83,7 +83,7 @@ let ``a split needs at least two children`` () =
     let entry = persistedEntry "e1" (minutes 60) "sha-1"
     let children = [ splitChild "c1" (minutes 60) ]
 
-    match rejection (splitEntry (splitRequest entry "sha-1" children) entry) with
+    match rejection (splitEntry catalogue (splitRequest entry "sha-1" children) entry) with
     | SplitNeedsAtLeastTwoChildren 1 -> ()
     | other -> failwithf "expected SplitNeedsAtLeastTwoChildren, got %A" other
 
@@ -92,7 +92,7 @@ let ``split children must have distinct identities`` () =
     let entry = persistedEntry "e1" (minutes 60) "sha-1"
     let children = [ splitChild "c1" (minutes 36); splitChild "c1" (minutes 24) ]
 
-    match rejection (splitEntry (splitRequest entry "sha-1" children) entry) with
+    match rejection (splitEntry catalogue (splitRequest entry "sha-1" children) entry) with
     | SplitChildIdentityNotUnique duplicated -> Assert.Equal(entryId "c1", duplicated)
     | other -> failwithf "expected SplitChildIdentityNotUnique, got %A" other
 
@@ -101,7 +101,7 @@ let ``a split child may not reuse the source identity`` () =
     let entry = persistedEntry "e1" (minutes 60) "sha-1"
     let children = [ splitChild "e1" (minutes 36); splitChild "c2" (minutes 24) ]
 
-    match rejection (splitEntry (splitRequest entry "sha-1" children) entry) with
+    match rejection (splitEntry catalogue (splitRequest entry "sha-1" children) entry) with
     | SplitChildIdentityNotUnique duplicated -> Assert.Equal(entryId "e1", duplicated)
     | other -> failwithf "expected SplitChildIdentityNotUnique, got %A" other
 
@@ -111,7 +111,7 @@ let ``a split against a stale source version is refused`` () =
     let entry = persistedEntry "e1" (minutes 60) "sha-2"
     let children = [ splitChild "c1" (minutes 36); splitChild "c2" (minutes 24) ]
 
-    match rejection (splitEntry (splitRequest entry "sha-1" children) entry) with
+    match rejection (splitEntry catalogue (splitRequest entry "sha-1" children) entry) with
     | VersionConflict _ -> ()
     | other -> failwithf "expected VersionConflict, got %A" other
 
@@ -119,7 +119,7 @@ let ``a split against a stale source version is refused`` () =
 let ``an already split entry cannot be split again`` () =
     let entry = persistedEntry "e1" (minutes 60) "sha-1"
     let children = [ splitChild "c1" (minutes 36); splitChild "c2" (minutes 24) ]
-    let entries, _ = accepted (splitEntry (splitRequest entry "sha-1" children) entry)
+    let entries, _ = accepted (splitEntry catalogue (splitRequest entry "sha-1" children) entry)
 
     let source =
         entries
@@ -128,7 +128,7 @@ let ``an already split entry cannot be split again`` () =
 
     let again = [ splitChild "c3" (minutes 30); splitChild "c4" (minutes 30) ]
 
-    match rejection (splitEntry (splitRequest source "sha-2" again) source) with
+    match rejection (splitEntry catalogue (splitRequest source "sha-2" again) source) with
     | NotPermittedInState(CanSplit, AlreadySuperseded _) -> ()
     | other -> failwithf "expected AlreadySuperseded, got %A" other
 
@@ -142,7 +142,7 @@ let ``a split of many children preserves the total`` () =
           splitChild "c3" (minutes 18)
           splitChild "c4" (minutes 24) ]
 
-    let entries, _ = accepted (splitEntry (splitRequest entry "sha-1" children) entry)
+    let entries, _ = accepted (splitEntry catalogue (splitRequest entry "sha-1" children) entry)
     Assert.Equal(3600000L, entries |> List.sumBy TimeEntry.contributedMilliseconds)
 
 // ---------------------------------------------------------------------------

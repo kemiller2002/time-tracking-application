@@ -25,6 +25,22 @@ let private makeIdentifier (raw: string) : Result<string, IdentifierError> =
     elif raw.Length > MaxIdentifierLength then Error(IdentifierTooLong MaxIdentifierLength)
     else Ok(raw.Trim())
 
+/// Catalogue identifiers are additionally constrained to `^[a-z0-9-]+$`,
+/// because `schemas/domain/project.schema.json` and
+/// `schemas/domain/activity-type.schema.json` say so. Accepting an id the
+/// documented contract rejects would let the domain build records that fail
+/// schema validation downstream, which is worse than rejecting them here.
+let private isSlugChar (c: char) =
+    (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c = '-'
+
+let private makeSlugIdentifier (raw: string) : Result<string, IdentifierError> =
+    makeIdentifier raw
+    |> Result.bind (fun trimmed ->
+        if trimmed |> Seq.forall isSlugChar then
+            Ok trimmed
+        else
+            Error(IdentifierMalformed "expected only lowercase letters, digits and hyphens"))
+
 /// Identity of a time entry. Stable across corrections: a correction produces a
 /// new *revision* of the same entry, never a new entry (TE-R-050).
 type EntryId =
@@ -56,7 +72,7 @@ type ProjectId =
     member this.Value = let (ProjectId value) = this in value
 
 module ProjectId =
-    let create raw = makeIdentifier raw |> Result.map ProjectId
+    let create raw = makeSlugIdentifier raw |> Result.map ProjectId
     let value (ProjectId v) = v
 
 type ActivityTypeId =
@@ -66,7 +82,7 @@ type ActivityTypeId =
     member this.Value = let (ActivityTypeId value) = this in value
 
 module ActivityTypeId =
-    let create raw = makeIdentifier raw |> Result.map ActivityTypeId
+    let create raw = makeSlugIdentifier raw |> Result.map ActivityTypeId
     let value (ActivityTypeId v) = v
 
 type UserId =

@@ -205,11 +205,11 @@ let interpret (store: GitHubStore) (effect: Effect) : Async<EffectOutcome> =
     | LoadEntries _ -> loadEntries store
 
     | LoadProjects ->
-        // Project storage needs a `Project` domain type carrying the
-        // Active/Archived status DF-TE-0007 decided, which does not exist yet.
-        // Reported explicitly rather than returning an empty list, which would
-        // look like "no projects" and silently break project validation.
-        async { return NotSupported("LoadProjects", "WI-0026") }
+        // The `Catalogue` domain type now exists (WI-0026); its *persistence*
+        // does not (WI-0029). Reported explicitly rather than returning an
+        // empty list, because an empty catalogue refuses every project — a
+        // test in CatalogueTests pins exactly that failure mode.
+        async { return NotSupported("LoadProjects", "WI-0029") }
 
     | PersistNewEntry request -> commitAll store "Record time entry" [ request ]
     | PersistCorrection request -> commitAll store "Correct time entry" [ request ]

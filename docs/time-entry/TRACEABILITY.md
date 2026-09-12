@@ -50,8 +50,8 @@ marking work complete merely because code exists.
 | TE-R-025 | Restore an entry | Returns to `Active`, both events kept | WI-0014 | `Transitions.restoreEntry` | `TransitionTests` "restoring a voided entry returns it to totals and keeps both events" | **VERIFIED** |
 | TE-R-026 | Merge activities | Sources superseded into a new entry; total is the exact sum | WI-0020 | `Transitions.mergeEntries` | `TransitionTests` 14 merge cases | **VERIFIED** (`DF-TE-0006`) |
 | TE-R-027 | Description of work | Optional at create; blocks attestation | WI-0004 | `Values.Description`, `Obligation.intrinsic` | `ProjectionTests` "a missing purpose surfaces as a badge and an obligation" | **VERIFIED** (`DF-TE-0005`) |
-| TE-R-028 | Associated project | `ProjectId` required in `EntryFacts` | WI-0015 | `EntryState.EntryFacts` | `ProjectionTests` "filtering by project excludes other projects" | **VERIFIED** |
-| TE-R-029 | Associated activity type | `ActivityTypeId` required | WI-0015 | `EntryState.EntryFacts` | — | **VERIFIED** |
+| TE-R-028 | Associated project | Required, and must be an available catalogue project for new time | WI-0026 | `Catalogue`, `requireReferenceMove` | `CatalogueTests` 20 cases | **VERIFIED** (`DF-TE-0007`) |
+| TE-R-029 | Associated activity type | Required, same catalogue rule as project | WI-0026 | `Catalogue`, `requireReferenceMove` | `CatalogueTests` archived/unknown activity cases | **VERIFIED** |
 | TE-R-030 | Originals preserved | Oldest revision is always `Created` | WI-0012 | `TimeEntry.appendRevision` | `TransitionTests` "correction preserves the original values in history" | **VERIFIED** |
 | TE-R-031 | Correction history preserved | History only grows | WI-0012 | `TimeEntry.appendRevision` | `TransitionTests` "every transition only ever grows history" | **VERIFIED** |
 | TE-R-032 | Void/restore history preserved | Three revisions after void+restore | WI-0014 | `Transitions` | `TransitionTests` restore case | **VERIFIED** |
@@ -140,7 +140,7 @@ marking work complete merely because code exists.
 | Partially verified — transport write path unexercised | 1 (TE-R-099) |
 | Blocked by an open question | **0** — all five resolved as `DF-TE-0004..0008` |
 
-Test suite: 169 cases, 0 failures, 201 ms. Tier-boundary check: 14 F# files,
+Test suite: 195 cases, 0 failures, 181 ms. Tier-boundary check: 14 F# files,
 0 violations, adversarially validated against three injected violations.
 
 ## Orphan check

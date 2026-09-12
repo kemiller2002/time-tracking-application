@@ -20,6 +20,7 @@
   <ItemGroup>
     <Compile Include="Commands.fs" />
     <Compile Include="Effects.fs" />
+    <Compile Include="Guards.fs" />
     <Compile Include="Transitions.fs" />
   </ItemGroup>
 

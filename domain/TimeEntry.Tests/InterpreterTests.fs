@@ -38,7 +38,7 @@ let ``persisting a new entry writes it and returns its version`` () =
           Facts = facts (minutes 52)
           Attribution = attribution "e1-r1" }
 
-    let entries, effects = accepted (createEntry request)
+    let entries, effects = accepted (createEntry catalogue request)
     let entry = single entries
     let fake = Fake([])
 
@@ -58,7 +58,7 @@ let ``creating an entry that already exists is a conflict, not an overwrite`` ()
           Facts = facts (minutes 52)
           Attribution = attribution "e1-r1" }
 
-    let entries, effects = accepted (createEntry request)
+    let entries, effects = accepted (createEntry catalogue request)
     let entry = single entries
     // The file is already there — another device got here first.
     let fake = Fake([ storedFor entry ])
@@ -89,7 +89,7 @@ let ``a correction against the current version is written`` () =
     let entry, fake = seeded "e1" (minutes 52)
     let sha = VersionToken.value (Option.get entry.Version)
     let request = correctionRequest entry (minutes 46) sha
-    let _, effects = accepted (correctEntry request entry)
+    let _, effects = accepted (correctEntry catalogue request entry)
 
     match run (List.exactlyOne effects) fake with
     | Persisted [ (id, token) ] ->
@@ -104,7 +104,7 @@ let ``a correction against a stale version writes nothing`` () =
     let entry, fake = seeded "e1" (minutes 52)
     let sha = VersionToken.value (Option.get entry.Version)
     let request = correctionRequest entry (minutes 46) sha
-    let _, effects = accepted (correctEntry request entry)
+    let _, effects = accepted (correctEntry catalogue request entry)
 
     // Someone else corrects it first.
     let path = Layout.entryPath entry.Id
@@ -126,7 +126,7 @@ let ``a conflict reports both versions so the UI can offer a choice`` () =
     let entry, fake = seeded "e1" (minutes 52)
     let sha = VersionToken.value (Option.get entry.Version)
     let request = correctionRequest entry (minutes 46) sha
-    let _, effects = accepted (correctEntry request entry)
+    let _, effects = accepted (correctEntry catalogue request entry)
 
     let path = Layout.entryPath entry.Id
     let otherEntry = { entry with Effective = { entry.Effective with Duration = minutes 30 } }
@@ -148,7 +148,7 @@ let ``a branch head that moves during the commit is a conflict and writes nothin
     let entry, fake = seeded "e1" (minutes 52)
     let sha = VersionToken.value (Option.get entry.Version)
     let request = correctionRequest entry (minutes 46) sha
-    let _, effects = accepted (correctEntry request entry)
+    let _, effects = accepted (correctEntry catalogue request entry)
 
     fake.InterfereDuringCommit(fun () -> fake.ChangeBehindOurBack("ledger/entries/zz/zz.json", "{}"))
 
@@ -167,7 +167,7 @@ let ``a split lands the source and every child in one commit`` () =
     let entry, fake = seeded "e1" (minutes 60)
     let sha = VersionToken.value (Option.get entry.Version)
     let children = [ splitChild "c1" (minutes 36); splitChild "c2" (minutes 24) ]
-    let _, effects = accepted (splitEntry (splitRequest entry sha children) entry)
+    let _, effects = accepted (splitEntry catalogue (splitRequest entry sha children) entry)
 
     match run (List.exactlyOne effects) fake with
     | Persisted versions -> Assert.Equal(3, List.length versions)
@@ -184,7 +184,7 @@ let ``a split whose source is stale writes no child at all`` () =
     let entry, fake = seeded "e1" (minutes 60)
     let sha = VersionToken.value (Option.get entry.Version)
     let children = [ splitChild "c1" (minutes 36); splitChild "c2" (minutes 24) ]
-    let _, effects = accepted (splitEntry (splitRequest entry sha children) entry)
+    let _, effects = accepted (splitEntry catalogue (splitRequest entry sha children) entry)
 
     let path = Layout.entryPath entry.Id
     let otherEntry = { entry with Effective = { entry.Effective with Duration = minutes 30 } }
@@ -203,7 +203,7 @@ let ``a split whose child path already exists writes nothing`` () =
     let entry, fake0 = seeded "e1" (minutes 60)
     let sha = VersionToken.value (Option.get entry.Version)
     let children = [ splitChild "c1" (minutes 36); splitChild "c2" (minutes 24) ]
-    let _, effects = accepted (splitEntry (splitRequest entry sha children) entry)
+    let _, effects = accepted (splitEntry catalogue (splitRequest entry sha children) entry)
 
     // Rebuild the store with c2 already present, keeping the source's SHA
     // valid so only the child's precondition can fail.
@@ -235,7 +235,7 @@ let ``a merge lands the target and every source in one commit`` () =
             [ mergeSource "e1" (VersionToken.value (Option.get a.Version))
               mergeSource "e2" (VersionToken.value (Option.get b.Version)) ]
 
-    let _, effects = accepted (mergeEntries request [ a; b ])
+    let _, effects = accepted (mergeEntries catalogue request [ a; b ])
 
     match run (List.exactlyOne effects) fake with
     | Persisted versions -> Assert.Equal(3, List.length versions)
@@ -271,7 +271,7 @@ let ``a persisted entry loads back identically`` () =
           Facts = facts (minutes 52)
           Attribution = attribution "e1-r1" }
 
-    let entries, effects = accepted (createEntry request)
+    let entries, effects = accepted (createEntry catalogue request)
     let original = single entries
     let fake = Fake([])
 
@@ -343,7 +343,7 @@ let ``an authorization failure on a write is reported as a failure`` () =
           Facts = facts (minutes 52)
           Attribution = attribution "e1-r1" }
 
-    let _, effects = accepted (createEntry request)
+    let _, effects = accepted (createEntry catalogue request)
     let fake = Fake([], Unauthorized "bad credentials")
 
     match run (List.exactlyOne effects) fake with
@@ -365,7 +365,7 @@ let ``loading projects reports that it is unimplemented rather than empty`` () =
     let fake = Fake([])
 
     match run LoadProjects fake with
-    | NotSupported("LoadProjects", workItem) -> Assert.Equal("WI-0026", workItem)
+    | NotSupported("LoadProjects", workItem) -> Assert.Equal("WI-0029", workItem)
     | other -> failwithf "expected NotSupported, got %A" other
 
 [<Fact>]

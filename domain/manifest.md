@@ -57,6 +57,8 @@ check. Split adds child-count, identity-uniqueness, and total-preservation.
 4. No mutation proceeds without a matching version token.
 5. No transition performs an effect.
 6. No floating-point arithmetic is authoritative; time is `int64` milliseconds.
+7. Time may be moved onto an available catalogue reference only; a retained
+   reference is never re-validated, so history stays correctable.
 
 ## Contracts
 

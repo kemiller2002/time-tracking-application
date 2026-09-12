@@ -5,6 +5,7 @@ module TimeEntry.Tests.Helpers
 open TimeEntry.Semantic.Identifiers
 open TimeEntry.Semantic.Duration
 open TimeEntry.Semantic.Values
+open TimeEntry.Semantic.Catalogue
 open TimeEntry.Semantic.EntryState
 open TimeEntry.Transitions.Commands
 open TimeEntry.Transitions.Effects
@@ -33,6 +34,30 @@ let onDate year month day = EntryDate.ofYearMonthDay year month day |> expect
 let instant epochMilliseconds = Instant.ofEpochMilliseconds epochMilliseconds
 
 let defaultDate = onDate 2026 9 10
+
+let catalogueName raw = CatalogueName.create raw |> expect
+
+let project id status : Project =
+    { Id = projectId id
+      Name = catalogueName id
+      Status = status }
+
+let activityType id status : ActivityType =
+    { Id = activityTypeId id
+      Name = catalogueName id
+      Status = status }
+
+/// The catalogue the suites operate against. Carries an archived project and
+/// an archived activity type so DF-TE-0007's refusals have something real to
+/// be refused against.
+let catalogue =
+    Catalogue.ofLists
+        [ project "echelon-foundry" Available
+          project "northline" Available
+          project "retired-client" Archived ]
+        [ activityType "research" Available
+          activityType "marketing" Available
+          activityType "retired-activity" Archived ]
 
 let facts (duration: Duration) =
     { Project = projectId "echelon-foundry"

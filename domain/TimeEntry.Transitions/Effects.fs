@@ -10,6 +10,7 @@ open TimeEntry.Semantic.Identifiers
 open TimeEntry.Semantic.Values
 open TimeEntry.Semantic.EntryState
 open TimeEntry.Semantic.Capabilities
+open TimeEntry.Semantic.Catalogue
 
 /// A write the domain wants performed, paired with the version it expects to
 /// be replacing. The interpreter must pass `ExpectedVersion` through to the
@@ -76,6 +77,10 @@ type Rejection =
     /// Reachable in principle by merging enough long entries; surfaced rather
     /// than clamped, because clamping would lose recorded time (TE-R-001).
     | MergeDurationOutOfRange of totalMilliseconds: int64
+    /// DF-TE-0007: the command names a project or activity type that is
+    /// unknown or archived. Checked on the *command*, never on stored state —
+    /// existing entries against an archived project keep counting.
+    | CatalogueRejected of CatalogueError
     /// A transition whose semantics no repository requirement defines.
     | TransitionUndefined of questionId: string
 

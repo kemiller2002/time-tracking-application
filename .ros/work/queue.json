@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "time-tracking-application",
-  "nextSeq": 29,
+  "nextSeq": 30,
   "items": [
     {
       "id": "WI-0001",
@@ -406,10 +406,10 @@
       "description": null,
       "tags": [],
       "priority": "medium",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-11T23:53:38.185Z",
-      "updatedAt": "2026-09-11T23:53:38.185Z",
+      "updatedAt": "2026-09-12T00:17:10.981Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null
@@ -438,6 +438,20 @@
       "attachments": [],
       "createdAt": "2026-09-12T00:09:49.443Z",
       "updatedAt": "2026-09-12T00:09:49.443Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0029",
+      "title": "TE-029 Persist the project/activity catalogue and implement LoadProjects in the interpreter",
+      "description": null,
+      "tags": [],
+      "priority": "medium",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-12T00:14:19.836Z",
+      "updatedAt": "2026-09-12T00:14:19.836Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null

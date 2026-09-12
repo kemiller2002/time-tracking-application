@@ -31,7 +31,7 @@ let ``merging two entries supersedes both into one active entry`` () =
     let b = persistedEntry "e2" (minutes 24) "sha-b"
     let request = mergeRequest [ mergeSource "e1" "sha-a"; mergeSource "e2" "sha-b" ]
 
-    let entries, effects = accepted (mergeEntries request [ a; b ])
+    let entries, effects = accepted (mergeEntries catalogue request [ a; b ])
 
     Assert.Equal(3, List.length entries)
 
@@ -63,7 +63,7 @@ let ``merging preserves the total and never double counts`` () =
     let a = persistedEntry "e1" (minutes 36) "sha-a"
     let b = persistedEntry "e2" (minutes 24) "sha-b"
     let request = mergeRequest [ mergeSource "e1" "sha-a"; mergeSource "e2" "sha-b" ]
-    let entries, _ = accepted (mergeEntries request [ a; b ])
+    let entries, _ = accepted (mergeEntries catalogue request [ a; b ])
 
     // Only the merged entry counts; the sources contribute zero.
     Assert.Equal(3600000L, entries |> List.sumBy TimeEntry.contributedMilliseconds)
@@ -76,7 +76,7 @@ let ``a merged source can never be restored back into totals`` () =
     let a = persistedEntry "e1" (minutes 36) "sha-a"
     let b = persistedEntry "e2" (minutes 24) "sha-b"
     let request = mergeRequest [ mergeSource "e1" "sha-a"; mergeSource "e2" "sha-b" ]
-    let entries, _ = accepted (mergeEntries request [ a; b ])
+    let entries, _ = accepted (mergeEntries catalogue request [ a; b ])
 
     let source =
         entries
@@ -100,7 +100,7 @@ let ``merge records lineage in both directions`` () =
     let a = persistedEntry "e1" (minutes 36) "sha-a"
     let b = persistedEntry "e2" (minutes 24) "sha-b"
     let request = mergeRequest [ mergeSource "e1" "sha-a"; mergeSource "e2" "sha-b" ]
-    let entries, _ = accepted (mergeEntries request [ a; b ])
+    let entries, _ = accepted (mergeEntries catalogue request [ a; b ])
 
     let target = entries |> List.find (fun e -> e.Id = entryId "m1")
 
@@ -122,7 +122,7 @@ let ``merge requires a reason and marks the result as manual`` () =
     let a = persistedEntry "e1" (minutes 36) "sha-a"
     let b = persistedEntry "e2" (minutes 24) "sha-b"
     let request = mergeRequest [ mergeSource "e1" "sha-a"; mergeSource "e2" "sha-b" ]
-    let entries, _ = accepted (mergeEntries request [ a; b ])
+    let entries, _ = accepted (mergeEntries catalogue request [ a; b ])
     let target = entries |> List.find (fun e -> e.Id = entryId "m1")
 
     match target.Effective.Origin with
@@ -133,7 +133,7 @@ let ``merge requires a reason and marks the result as manual`` () =
 let ``a merge needs at least two sources`` () =
     let a = persistedEntry "e1" (minutes 36) "sha-a"
 
-    match rejection (mergeEntries (mergeRequest [ mergeSource "e1" "sha-a" ]) [ a ]) with
+    match rejection (mergeEntries catalogue (mergeRequest [ mergeSource "e1" "sha-a" ]) [ a ]) with
     | MergeNeedsAtLeastTwoSources 1 -> ()
     | other -> failwithf "expected MergeNeedsAtLeastTwoSources, got %A" other
 
@@ -143,7 +143,7 @@ let ``merge sources must have distinct identities`` () =
 
     let request = mergeRequest [ mergeSource "e1" "sha-a"; mergeSource "e1" "sha-a" ]
 
-    match rejection (mergeEntries request [ a ]) with
+    match rejection (mergeEntries catalogue request [ a ]) with
     | MergeSourceIdentityNotUnique duplicated -> Assert.Equal(entryId "e1", duplicated)
     | other -> failwithf "expected MergeSourceIdentityNotUnique, got %A" other
 
@@ -154,7 +154,7 @@ let ``the merged entry may not reuse a source identity`` () =
 
     let request = mergeRequest [ mergeSource "e1" "sha-a"; mergeSource "m1" "sha-b" ]
 
-    match rejection (mergeEntries request [ a; b ]) with
+    match rejection (mergeEntries catalogue request [ a; b ]) with
     | MergeSourceIdentityNotUnique duplicated -> Assert.Equal(entryId "m1", duplicated)
     | other -> failwithf "expected MergeSourceIdentityNotUnique, got %A" other
 
@@ -166,7 +166,7 @@ let ``a merge with one stale source is refused entirely`` () =
     let b = persistedEntry "e2" (minutes 24) "sha-b-newer"
     let request = mergeRequest [ mergeSource "e1" "sha-a"; mergeSource "e2" "sha-b" ]
 
-    match mergeEntries request [ a; b ] with
+    match mergeEntries catalogue request [ a; b ] with
     | Rejected(VersionConflict(expected, actual)) ->
         Assert.Equal("sha-b", VersionToken.value expected)
         Assert.Equal("sha-b-newer", VersionToken.value (Option.get actual))
@@ -181,7 +181,7 @@ let ``a voided source cannot be merged`` () =
 
     let request = mergeRequest [ mergeSource "e1" "sha-a"; mergeSource "e2" "sha-b" ]
 
-    match rejection (mergeEntries request [ a; b ]) with
+    match rejection (mergeEntries catalogue request [ a; b ]) with
     | NotPermittedInState(CanMerge, AlreadyVoid) -> ()
     | other -> failwithf "expected NotPermittedInState(CanMerge, AlreadyVoid), got %A" other
 
@@ -193,7 +193,7 @@ let ``a merge may not span multiple ledger days`` () =
     let b = persistedEntryOn "e2" (minutes 24) "sha-b" (onDate 2026 9 11)
     let request = mergeRequest [ mergeSource "e1" "sha-a"; mergeSource "e2" "sha-b" ]
 
-    match rejection (mergeEntries request [ a; b ]) with
+    match rejection (mergeEntries catalogue request [ a; b ]) with
     | MergeSpansMultipleDays 2 -> ()
     | other -> failwithf "expected MergeSpansMultipleDays 2, got %A" other
 
@@ -202,7 +202,7 @@ let ``a merge naming an unloaded source is refused`` () =
     let a = persistedEntry "e1" (minutes 36) "sha-a"
     let request = mergeRequest [ mergeSource "e1" "sha-a"; mergeSource "missing" "sha-x" ]
 
-    match rejection (mergeEntries request [ a ]) with
+    match rejection (mergeEntries catalogue request [ a ]) with
     | EntryNotLoaded id -> Assert.Equal(entryId "missing", id)
     | other -> failwithf "expected EntryNotLoaded, got %A" other
 
@@ -212,7 +212,7 @@ let ``merge dispatches through apply`` () =
     let b = persistedEntry "e2" (minutes 24) "sha-b"
     let request = mergeRequest [ mergeSource "e1" "sha-a"; mergeSource "e2" "sha-b" ]
 
-    let entries, _ = accepted (apply [ a; b ] (MergeEntries request))
+    let entries, _ = accepted (apply catalogue [ a; b ] (MergeEntries request))
     Assert.Equal(3, List.length entries)
 
 [<Fact>]
@@ -224,7 +224,7 @@ let ``merging three entries sums all of them`` () =
     let request =
         mergeRequest [ mergeSource "e1" "sha-a"; mergeSource "e2" "sha-b"; mergeSource "e3" "sha-c" ]
 
-    let entries, _ = accepted (mergeEntries request [ a; b; c ])
+    let entries, _ = accepted (mergeEntries catalogue request [ a; b; c ])
     Assert.Equal(2160000L, entries |> List.sumBy TimeEntry.contributedMilliseconds)
 
 [<Fact>]
@@ -238,9 +238,9 @@ let ``every transition only ever grows history`` () =
     let before = List.length entry.History
 
     let outcomes =
-        [ correctEntry (correctionRequest entry (minutes 30) "sha-1") entry
+        [ correctEntry catalogue (correctionRequest entry (minutes 30) "sha-1") entry
           voidEntry (voidRequest entry "sha-1") entry
-          splitEntry (splitRequest entry "sha-1" [ splitChild "c1" (minutes 36); splitChild "c2" (minutes 24) ]) entry ]
+          splitEntry catalogue (splitRequest entry "sha-1" [ splitChild "c1" (minutes 36); splitChild "c2" (minutes 24) ]) entry ]
 
     for outcome in outcomes do
         let entries, _ = accepted outcome

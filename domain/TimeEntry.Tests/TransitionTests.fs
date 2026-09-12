@@ -24,7 +24,7 @@ let ``creating an entry yields an active entry with one revision`` () =
           Facts = facts (minutes 52)
           Attribution = attribution "e1-r1" }
 
-    let entries, effects = accepted (createEntry request)
+    let entries, effects = accepted (createEntry catalogue request)
     let entry = single entries
 
     Assert.Equal(Active, entry.State)
@@ -44,7 +44,7 @@ let ``a created entry counts toward totals`` () =
           Facts = facts (minutes 30)
           Attribution = attribution "e1-r1" }
 
-    let entry = single (fst (accepted (createEntry request)))
+    let entry = single (fst (accepted (createEntry catalogue request)))
     Assert.True(TimeEntry.countsTowardTotals entry)
     Assert.Equal(1800000L, TimeEntry.contributedMilliseconds entry)
 
@@ -59,7 +59,7 @@ let ``correcting an entry appends a revision and keeps it active`` () =
     let entry = persistedEntry "e1" (minutes 52) "sha-1"
     let request = correctionRequest entry (minutes 46) "sha-1"
 
-    let corrected = single (fst (accepted (correctEntry request entry)))
+    let corrected = single (fst (accepted (correctEntry catalogue request entry)))
 
     Assert.Equal(Active, corrected.State)
     Assert.Equal(2, List.length corrected.History)
@@ -71,7 +71,7 @@ let ``correction preserves the original values in history`` () =
     // TE-R-030/TE-R-052: history must still explain what existed before.
     let entry = persistedEntry "e1" (minutes 52) "sha-1"
     let request = correctionRequest entry (minutes 46) "sha-1"
-    let corrected = single (fst (accepted (correctEntry request entry)))
+    let corrected = single (fst (accepted (correctEntry catalogue request entry)))
 
     let original = TimeEntry.originalRevision corrected |> Option.get
     Assert.Equal(3120, Duration.seconds original.Facts.Duration)
@@ -86,7 +86,7 @@ let ``correction requires the version the caller read`` () =
     let entry = persistedEntry "e1" (minutes 52) "sha-2"
     let request = correctionRequest entry (minutes 46) "sha-1"
 
-    match rejection (correctEntry request entry) with
+    match rejection (correctEntry catalogue request entry) with
     | VersionConflict(expected, actual) ->
         Assert.Equal("sha-1", VersionToken.value expected)
         Assert.Equal("sha-2", VersionToken.value (Option.get actual))
@@ -98,7 +98,7 @@ let ``a stale correction writes nothing`` () =
     let entry = persistedEntry "e1" (minutes 52) "sha-2"
     let request = correctionRequest entry (minutes 46) "sha-1"
 
-    match correctEntry request entry with
+    match correctEntry catalogue request entry with
     | Rejected _ -> ()
     | Accepted(_, effects) -> failwithf "a conflict must request no effects, got %A" effects
 
@@ -107,7 +107,7 @@ let ``an unpersisted entry cannot be corrected against any version`` () =
     let entry = { persistedEntry "e1" (minutes 52) "sha-1" with Version = None }
     let request = correctionRequest entry (minutes 46) "sha-1"
 
-    match rejection (correctEntry request entry) with
+    match rejection (correctEntry catalogue request entry) with
     | VersionConflict(_, None) -> ()
     | other -> failwithf "expected VersionConflict with no current version, got %A" other
 
@@ -148,7 +148,7 @@ let ``a voided entry cannot be corrected or split`` () =
     let voided = single (fst (accepted (voidEntry (voidRequest entry "sha-1") entry)))
     let target = { voided with Version = Some(version "sha-2") }
 
-    match rejection (correctEntry (correctionRequest target (minutes 30) "sha-2") target) with
+    match rejection (correctEntry catalogue (correctionRequest target (minutes 30) "sha-2") target) with
     | NotPermittedInState(CanCorrect, AlreadyVoid) -> ()
     | other -> failwithf "expected correction to be refused, got %A" other
 
@@ -158,7 +158,7 @@ let ``a voided entry cannot be corrected or split`` () =
           Children = [ splitChild "c1" (minutes 26); splitChild "c2" (minutes 26) ]
           Attribution = attribution "e1-r3" }
 
-    match rejection (splitEntry split target) with
+    match rejection (splitEntry catalogue split target) with
     | NotPermittedInState(CanSplit, AlreadyVoid) -> ()
     | other -> failwithf "expected split to be refused, got %A" other
 
@@ -226,7 +226,7 @@ let ``a command naming an unloaded entry is refused`` () =
           Reason = reason "x"
           Attribution = attribution "r" }
 
-    match rejection (apply [ entry ] (VoidEntry request)) with
+    match rejection (apply catalogue [ entry ] (VoidEntry request)) with
     | EntryNotLoaded id -> Assert.Equal(entryId "missing", id)
     | other -> failwithf "expected EntryNotLoaded, got %A" other
 

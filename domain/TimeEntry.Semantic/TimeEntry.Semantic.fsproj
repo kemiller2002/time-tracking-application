@@ -27,6 +27,7 @@
     <Compile Include="Identifiers.fs" />
     <Compile Include="Duration.fs" />
     <Compile Include="Values.fs" />
+    <Compile Include="Catalogue.fs" />
     <Compile Include="EntryState.fs" />
     <Compile Include="Capabilities.fs" />
   </ItemGroup>
