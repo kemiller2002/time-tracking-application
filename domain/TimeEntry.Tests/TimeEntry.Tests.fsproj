@@ -32,6 +32,7 @@
     <Compile Include="ProjectionTests.fs" />
     <Compile Include="PersistenceTests.fs" />
     <Compile Include="InterpreterTests.fs" />
+    <Compile Include="HttpProtocolTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

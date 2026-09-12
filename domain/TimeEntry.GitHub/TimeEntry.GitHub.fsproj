@@ -21,7 +21,9 @@
 
   <ItemGroup>
     <Compile Include="Store.fs" />
+    <Compile Include="HttpProtocol.fs" />
     <Compile Include="Interpreter.fs" />
+    <Compile Include="HttpStore.fs" />
   </ItemGroup>
 
   <ItemGroup>

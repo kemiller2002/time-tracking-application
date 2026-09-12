@@ -21,7 +21,8 @@
     "fsharp:build": "dotnet build TimeEntry.sln --no-restore",
     "fsharp:test": "dotnet test TimeEntry.sln --no-build",
     "check:fsharp": "npm run fsharp:restore && npm run fsharp:build && npm run fsharp:test",
-    "check:all": "npm run check && npm run check:fsharp"
+    "check:all": "npm run check && npm run check:fsharp",
+    "verify:transport": "dotnet fsi tools/verify-github-transport.fsx"
   },
   "dependencies": {
     "@echelon-foundry/typescript-wasm-kernel": "^0.4.1"

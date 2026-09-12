@@ -119,7 +119,7 @@ marking work complete merely because code exists.
 | TE-R-096 | Illegal states unrepresentable | Private ctors; state-specific DUs | WI-0004 | `Identifiers`, `Duration`, `Values`, `EntryState` | `DurationTests` + `TransitionTests` refusal cases | **VERIFIED** |
 | TE-R-097 | Capabilities from state | Rows carry capabilities | WI-0004 | `Capabilities.available` | `ProjectionTests` "a row carries the capabilities of its state" | **VERIFIED** |
 | TE-R-098 | Native HTML/CSS | `static-ui-screens/` is HTML+CSS only | WI-0008 | `static-ui-screens/` | — | HOLDS |
-| TE-R-099 | GitHub backend | Store port + effect interpreter; HTTP impl outstanding | WI-0025 | `GitHub.Store`, `GitHub.Interpreter` | `InterpreterTests` 20 cases via in-memory store | **VERIFIED** (port + interpreter); HTTP impl WI-0027 |
+| TE-R-099 | GitHub backend | Port, interpreter, and HTTP transport | WI-0025, WI-0027 | `GitHub.Store`, `Interpreter`, `HttpProtocol`, `HttpStore` | `InterpreterTests` 20 cases; `HttpProtocolTests` 27 cases; `verify-github-transport.fsx` against the real API | **PARTIAL** — read path verified end-to-end, write path unverified (WI-0028) |
 
 ## I. Accessibility
 
@@ -136,10 +136,11 @@ marking work complete merely because code exists.
 | Verified by build/structure only (no behavioural test yet) | 2 |
 | Holds by construction (nothing to execute) | 2 |
 | Partially verified (Tier 4 half outstanding) | 1 |
-| Awaiting Tier 4 — GitHub adapter, WASM host, UI | 9 |
+| Awaiting the WASM host and UI integration | 9 |
+| Partially verified — transport write path unexercised | 1 (TE-R-099) |
 | Blocked by an open question | **0** — all five resolved as `DF-TE-0004..0008` |
 
-Test suite: 142 cases, 0 failures, 196 ms. Tier-boundary check: 14 F# files,
+Test suite: 169 cases, 0 failures, 201 ms. Tier-boundary check: 14 F# files,
 0 violations, adversarially validated against three injected violations.
 
 ## Orphan check

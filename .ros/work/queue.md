@@ -27,6 +27,7 @@
 | WI-0022 | TE-021 Rebuild app shell on static-ui-screens design system per DF-TE-0008 | captured | ui | medium |
 | WI-0023 | TE-022 BLOCKED: wasm-tools workload unavailable via apt - only remaining toolchain gap | captured | blocker | high |
 | WI-0024 | TE-023 Duration precision: store milliseconds to match exact_duration_ms contract | complete |  | medium |
-| WI-0025 | TE-025 GitHub API adapter and effect interpreter: Git Data API for atomic multi-file split/merge writes | active |  | medium |
+| WI-0025 | TE-025 GitHub API adapter and effect interpreter: Git Data API for atomic multi-file split/merge writes | complete |  | medium |
 | WI-0026 | TE-026 Project domain type with Active/Archived status and project storage per DF-TE-0007 | captured |  | medium |
-| WI-0027 | TE-027 HTTP implementation of the GitHubStore port: Git Data API trees/commits/refs, auth, rate-limit and retry | captured |  | medium |
+| WI-0027 | TE-027 HTTP implementation of the GitHubStore port: Git Data API trees/commits/refs, auth, rate-limit and retry | active |  | medium |
+| WI-0028 | TE-028 Verify the GitHub transport write path against a scratch branch (needs a write-capable token; agent proxy denies API writes) | captured |  | medium |

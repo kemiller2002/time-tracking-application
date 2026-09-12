@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "time-tracking-application",
-  "nextSeq": 28,
+  "nextSeq": 29,
   "items": [
     {
       "id": "WI-0001",
@@ -420,10 +420,24 @@
       "description": null,
       "tags": [],
       "priority": "medium",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-11T23:55:06.796Z",
-      "updatedAt": "2026-09-11T23:55:06.796Z",
+      "updatedAt": "2026-09-12T00:03:55.103Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0028",
+      "title": "TE-028 Verify the GitHub transport write path against a scratch branch (needs a write-capable token; agent proxy denies API writes)",
+      "description": null,
+      "tags": [],
+      "priority": "medium",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-12T00:09:49.443Z",
+      "updatedAt": "2026-09-12T00:09:49.443Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null
