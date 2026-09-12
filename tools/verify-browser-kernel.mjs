@@ -884,6 +884,98 @@ if (ready) {
 // persist path — where it fails at the network rather than silently falling
 // back to the in-page one.
 
+// ---------------------------------------------------------------------------
+// Accessibility (TE-R-110..113)
+// ---------------------------------------------------------------------------
+//
+// These are stated requirements, not general good practice, so they are
+// checked mechanically rather than reviewed by eye. Checked with plain DOM
+// queries and `getComputedStyle` rather than a library: "do not add
+// dependencies simply for convenience" applies, and what these four
+// requirements ask is directly observable.
+//
+// Run against the LIVE page, which is the point — the static screens were
+// audited when they were written, and everything interactive here is built by
+// the bridge at run time.
+
+if (ready) {
+  // Open every disclosure first. A control inside a closed <details> has no
+  // layout, and a check that skipped them would be measuring almost nothing:
+  // most of this page's controls live inside one.
+  await page.evaluate(() => {
+    for (const details of document.querySelectorAll('details')) details.open = true
+  })
+
+  // TE-R-110: semantic controls, not clickable divs.
+  const fakeControls = await page.evaluate(() =>
+    [...document.querySelectorAll('div[onclick], span[onclick], [role=button]:not(button)')].length
+  )
+  check('no clickable div stands in for a control', fakeControls === 0, `${fakeControls} found`)
+
+  // TE-R-111: every control has an accessible name. A button with no text and
+  // no label is unreachable by anyone not looking at it.
+  const unnamed = await page.evaluate(() =>
+    [...document.querySelectorAll('button, input, select, textarea')]
+      .filter((el) => {
+        if (el.type === 'hidden') return false
+        const label = el.labels?.[0]?.textContent?.trim()
+        const text = el.textContent?.trim()
+        return !(label || text || el.getAttribute('aria-label') || el.getAttribute('title'))
+      })
+      .map((el) => `${el.tagName.toLowerCase()}#${el.id || '(no id)'}`)
+  )
+
+  check(
+    'every control has an accessible name',
+    unnamed.length === 0,
+    unnamed.slice(0, 3).join(', ')
+  )
+
+  // TE-R-112: 44px minimum touch targets. HANDOFF.md records a 32px target
+  // being fixed to 44px, so this is a regression guard on a fix that was
+  // already made once.
+  const small = await page.evaluate(() => {
+    // The EFFECTIVE target, not the element's own box. A native checkbox is
+    // 13px and no styling enlarges it without replacing it with something
+    // that is not a checkbox, which TE-R-110 forbids — so the thing a person
+    // actually presses is its label. Measuring the label is the honest
+    // reading of "touch target", not a loophole: clicking anywhere in it
+    // toggles the box.
+    const target = (el) =>
+      el.type === 'checkbox' || el.type === 'radio' ? (el.closest('label') ?? el) : el
+
+    return [...document.querySelectorAll('button, a[href], input, select')]
+      .filter((el) => {
+        const box = target(el).getBoundingClientRect()
+        // Zero-size means genuinely not laid out; those are not targets.
+        if (box.width === 0 && box.height === 0) return false
+        return box.height < 44
+      })
+      .map((el) => {
+        const box = target(el).getBoundingClientRect()
+        return `${el.tagName.toLowerCase()}#${el.id || el.className}: ${Math.round(box.height)}px`
+      })
+  })
+
+  check(
+    'every touch target meets the 44px minimum',
+    small.length === 0,
+    small.slice(0, 3).join(' | ')
+  )
+
+  // TE-R-113: no modal workflows. Checked as the ABSENCE of the mechanisms a
+  // modal needs, rather than as the absence of the word "modal".
+  const modals = await page.evaluate(() =>
+    [...document.querySelectorAll('dialog, [role=dialog], [aria-modal=true]')].length
+  )
+  check('no modal workflows', modals === 0, `${modals} found`)
+
+  // Restore the page: later sections assume disclosures are as they left them.
+  await page.evaluate(() => {
+    for (const details of document.querySelectorAll('details')) details.open = false
+  })
+}
+
 // Everything above ran against fixtures and must have been error-free. Fixed
 // here rather than at the end, because everything BELOW deliberately points
 // the page at a repository that does not exist.

@@ -30,6 +30,27 @@
        serving a placeholder or letting every page load log a 404. -->
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="styles.css">
+  <style>
+    /* The adopted design system (DF-TE-0008) enforces a 44px minimum on
+       buttons, links and text inputs, but has no rule for a checkbox —
+       none of the eighteen static screens contains one. This page
+       introduced them, for "show removed entries" and for merge selection.
+
+       Extending the design where it is silent, rather than editing
+       styles.css: that file is the shared design authority, linked and not
+       copied, and a rule added there would apply to screens that never
+       asked for it.
+
+       The touch target is the LABEL, which is how a checkbox is reached in
+       practice — the box itself is 13px and no styling makes a native one
+       larger without replacing it, which TE-R-110 forbids. */
+    label:has(> input[type="checkbox"]) {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      min-height: 44px;
+    }
+  </style>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
