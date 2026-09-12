@@ -82,6 +82,52 @@ const writeConnection = (connection) => {
   }
 }
 
+// Who is signed in, for this tab only (DF-TE-0016).
+//
+// sessionStorage rather than localStorage, for the same reason as the
+// repository token: an ID token is a bearer credential with a short life, and
+// a shared device should not carry one into the next person's session. The
+// client ids beside it are configuration, not secrets — they are in the
+// page's HTML the moment a provider SDK initialises — but they live in the
+// same record so one `Forget` clears one thing.
+const IDENTITY_KEY = 'echelon-ledger.identity'
+
+const readIdentity = () => {
+  try {
+    return JSON.parse(sessionStorage.getItem(IDENTITY_KEY) ?? 'null')
+  } catch {
+    return null
+  }
+}
+
+const writeIdentity = (identity) => {
+  try {
+    if (identity) sessionStorage.setItem(IDENTITY_KEY, JSON.stringify(identity))
+    else sessionStorage.removeItem(IDENTITY_KEY)
+  } catch {
+    // Ignored: a page that cannot remember a sign-in is a page that is not
+    // signed in, which it already knows how to be.
+  }
+}
+
+const CLIENT_IDS_KEY = 'echelon-ledger.client-ids'
+
+const readClientIds = () => {
+  try {
+    return JSON.parse(sessionStorage.getItem(CLIENT_IDS_KEY) ?? '{}')
+  } catch {
+    return {}
+  }
+}
+
+const writeClientIds = (ids) => {
+  try {
+    sessionStorage.setItem(CLIENT_IDS_KEY, JSON.stringify(ids))
+  } catch {
+    // Ignored for the same reason.
+  }
+}
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -102,11 +148,16 @@ const derive = (entries, visibility) =>
 // on whether there is a repository to write to — NOT on anything the page
 // decides about the command, which is why the request is identical either
 // way.
+//
+// The identity travels INSIDE the command, because it is part of what the
+// command asserts: who did this. One place attaches it, so no call site can
+// send a command that nobody is accountable for — and if none is attached the
+// kernel refuses the command rather than attributing it to a placeholder.
 const requestFor = (command) => ({
   catalogue,
   entries: state.entries,
   versions,
-  command
+  command: state.identity ? { ...command, identity: state.identity } : command
 })
 
 const send = (command) => ask(kernel.Dispatch, requestFor(command))
@@ -153,6 +204,11 @@ let state = Object.freeze({
   // those it is, `preferencesError` says.
   preferences: preferencesFixture,
   preferencesError: null,
+  // `{ provider, audience, idToken }` as the provider's SDK handed it over,
+  // carried verbatim. The page never reads a claim out of the token: the
+  // display name, the actor and whether it is still usable are all the
+  // kernel's (TE-R-091).
+  identity: readIdentity(),
   // Bumped on every state change. An asynchronous read that resolves after
   // the page has moved on is stale, and applying it would silently discard
   // whatever moved it.
@@ -947,7 +1003,33 @@ const renderMonth = () => {
   )
 }
 
+// What the sign-in panel says. Every word of it came from the kernel: the
+// display name is `Identity.display`'s judgement about a token that may have
+// no name in it, and the failure text is the kernel's wording for a rejection
+// (TE-R-053).
+const renderIdentity = () => {
+  const view = ask(kernel.IdentityView, {
+    identity: state.identity ?? undefined,
+    occurredAtMs: Date.now()
+  })
+
+  if (view.ok !== true) {
+    setText('identity-status', 'Sign-in not accepted')
+    setText('identity-help', view.error)
+    return
+  }
+
+  setText('identity-status', view.display)
+  setText(
+    'identity-help',
+    view.signedIn
+      ? `Changes will be recorded as ${view.actor}.`
+      : 'Recording time needs a signed-in person: every revision records who made it.'
+  )
+}
+
 const render = () => {
+  renderIdentity()
   renderDay(state.view)
   renderReview()
   renderMonth()
@@ -1147,9 +1229,12 @@ document.getElementById('merge-form')?.addEventListener('submit', (event) => {
 const renderConnection = () => {
   const connection = readConnection()
   const repository = connection?.repository
+  // Was "Not signed in", which now means something else on this page: the
+  // repository and the person signing in are two different things, and one
+  // label cannot stand for both.
   setText(
     'sync-status',
-    repository ? `${repository.owner}/${repository.repo}` : 'Not signed in'
+    repository ? `${repository.owner}/${repository.repo}` : 'No repository'
   )
   setText(
     'sync-meta',
@@ -1258,6 +1343,141 @@ document.getElementById('target-form')?.addEventListener('submit', (event) => {
 
 document.getElementById('target-clear')?.addEventListener('click', () => {
   writeTarget({ clear: true }).catch((error) => update({ message: String(error) }))
+})
+
+// ---------------------------------------------------------------------------
+// Signing in with Google and Apple (DF-TE-0016)
+// ---------------------------------------------------------------------------
+
+// Each provider's SDK is fetched from that provider, on demand, and only when
+// somebody asks to sign in with it. Not bundled: these are the scripts the
+// providers support, they are versioned by the provider, and vendoring a copy
+// would mean shipping a stale one. Not loaded eagerly either — a page nobody
+// signs in on should not call out to two companies to say so.
+const scriptsLoaded = new Map()
+
+const loadScript = (src) => {
+  const already = scriptsLoaded.get(src)
+  if (already) return already
+
+  const loading = new Promise((resolve, reject) => {
+    const tag = document.createElement('script')
+    tag.src = src
+    tag.async = true
+    tag.onload = () => resolve()
+    tag.onerror = () => reject(new Error(`could not load ${src}`))
+    document.head.append(tag)
+  })
+
+  scriptsLoaded.set(src, loading)
+  return loading
+}
+
+// Google Identity Services hands the ID token to a callback rather than
+// resolving a promise, so it is wrapped in one. `prompt` is used rather than a
+// rendered button because the button is Google's own markup and this page's
+// controls are the design system's (TE-R-110).
+const googleToken = (clientId) =>
+  loadScript('https://accounts.google.com/gsi/client').then(
+    () =>
+      new Promise((resolve, reject) => {
+        if (!globalThis.google?.accounts?.id) {
+          reject(new Error('the Google sign-in library did not initialise'))
+          return
+        }
+
+        globalThis.google.accounts.id.initialize({
+          client_id: clientId,
+          callback: (response) =>
+            response?.credential
+              ? resolve(response.credential)
+              : reject(new Error('Google returned no sign-in token'))
+        })
+        globalThis.google.accounts.id.prompt()
+      })
+  )
+
+// Apple's popup flow is the only one that works without a server: its
+// form_post redirect requires an endpoint that accepts POST, which a static
+// page is not. In popup mode the SDK resolves with the id_token directly.
+const appleToken = (clientId) =>
+  loadScript(
+    'https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/en_US/appleid.auth.js'
+  ).then(async () => {
+    if (!globalThis.AppleID?.auth) {
+      throw new Error('the Apple sign-in library did not initialise')
+    }
+
+    globalThis.AppleID.auth.init({
+      clientId,
+      scope: 'name email',
+      // Apple requires a return URL registered against the services id. The
+      // page's own origin is the only one it can know.
+      redirectURI: globalThis.location.origin,
+      usePopup: true
+    })
+
+    const result = await globalThis.AppleID.auth.signIn()
+    const token = result?.authorization?.id_token
+    if (!token) throw new Error('Apple returned no sign-in token')
+    return token
+  })
+
+// One path for both providers: get a token, hand it to the kernel, and let the
+// kernel decide whether it is acceptable and what to call the person. The
+// token is stored only once the kernel has accepted it, so a rejected sign-in
+// does not leave the page believing it is signed in.
+const signInWith = async (provider, clientId, acquire) => {
+  if (!clientId) {
+    update({ message: `Enter a ${provider === 'google' ? 'Google client id' : 'Apple services id'} first.` })
+    return
+  }
+
+  const idToken = await acquire(clientId)
+  const identity = { provider, audience: clientId, idToken }
+  const view = ask(kernel.IdentityView, { identity, occurredAtMs: Date.now() })
+
+  if (view.ok !== true) {
+    update({ message: view.error })
+    return
+  }
+
+  writeIdentity(identity)
+  update({ identity, message: null })
+}
+
+const clientIdFields = () => ({
+  google: value('google-client-id'),
+  apple: value('apple-client-id')
+})
+
+// The client ids are configuration, so they are put back into the form on
+// load. The token is not: it is never rendered into the page at all.
+const storedClientIds = readClientIds()
+const setField = (id, text) => {
+  const field = document.getElementById(id)
+  if (field && text) field.value = text
+}
+setField('google-client-id', storedClientIds.google)
+setField('apple-client-id', storedClientIds.apple)
+
+document.getElementById('sign-in-google')?.addEventListener('click', () => {
+  writeClientIds(clientIdFields())
+  signInWith('google', value('google-client-id'), googleToken).catch((error) =>
+    update({ message: String(error.message ?? error) })
+  )
+})
+
+document.getElementById('sign-in-apple')?.addEventListener('click', () => {
+  writeClientIds(clientIdFields())
+  signInWith('apple', value('apple-client-id'), appleToken).catch((error) =>
+    update({ message: String(error.message ?? error) })
+  )
+})
+
+document.getElementById('sign-out')?.addEventListener('click', () => {
+  writeIdentity(null)
+  update({ identity: null, message: null })
 })
 
 document.getElementById('repo-form')?.addEventListener('submit', (event) => {

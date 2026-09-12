@@ -104,6 +104,13 @@ public static partial class Interop
             FSharpOption<CancellationToken>.None);
 
     /// <summary>
+    /// Forwards a request for what to say about the current sign-in.
+    /// </summary>
+    [JSExport]
+    internal static string IdentityView(string requestJson) =>
+        TimeEntry.Kernel.identityView(requestJson);
+
+    /// <summary>
     /// Forwards a split preview request.
     /// </summary>
     [JSExport]

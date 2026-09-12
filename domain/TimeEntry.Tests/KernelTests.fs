@@ -46,7 +46,21 @@ let private requestFor (entries: TimeEntry list) (command: string) =
         | None -> ()
 
     node.Add("versions", versions)
-    node.Add("command", JsonNode.Parse command)
+
+    // Every command carries a signed-in identity, because the kernel refuses
+    // one that does not (DF-TE-0016). Injected here rather than repeated in
+    // each command literal so the cases below read as the behaviour under
+    // test; the refusal itself is asserted directly further down.
+    let commandNode = JsonNode.Parse command
+
+    if isNull commandNode.["identity"] then
+        let identity = JsonObject()
+        identity.Add("provider", JsonValue.Create<string> "google")
+        identity.Add("audience", JsonValue.Create<string> testAudience)
+        identity.Add("idToken", JsonValue.Create<string> signedIn)
+        commandNode.AsObject().Add("identity", identity)
+
+    node.Add("command", commandNode)
     node.ToJsonString()
 
 let private answer (entries: TimeEntry list) (command: string) =

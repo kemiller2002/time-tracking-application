@@ -786,3 +786,135 @@ is reported as the `StoreError` it is.
   motion, quick starts — are not implemented. `Preferences` has one field
   because one has been asked for; the record exists so the rest have somewhere
   to arrive without changing every signature that carries preferences.
+
+---
+
+## DF-TE-0016
+
+**Title:** Google and Apple sign-in name the actor, and an unattributed change is refused
+
+**Status:** accepted · **Resolves:** `OQ-6` · **Source:** explicit user instruction
+
+### Decision
+
+A person signs in with **Google** or **Apple**. The actor recorded on every
+revision is `google:<sub>` or `apple:<sub>`. A command that carries no
+identity is **refused**, not recorded.
+
+That last sentence is the behavioural change. Until now the kernel attributed
+every change to the literal string `browser`, documented as a placeholder
+because OQ-6 had no answer. With an answer, a change nobody can be attributed
+to is a change that should not be recorded — so `attributionOf` fails instead
+of substituting.
+
+### Why the subject and not the email
+
+`sub` is stable and scoped to one issuer. Google's survives an email change;
+Apple's is the only stable handle at all, because Apple may substitute a
+per-application private relay address for the email.
+
+Recording an email would mean a person's history stopped being theirs the day
+they changed address — and worse, could make one person's old revisions read
+as another person's if an address were ever reassigned. The email is kept as a
+*display* fallback and nothing more.
+
+Prefixed with the provider because `sub` is unique only within one issuer.
+Without the prefix, a Google subject and an Apple subject could collide and
+two people would share a history.
+
+### What this does NOT make true, stated plainly
+
+**Attribution is not cryptographically trustworthy, and nothing in the code
+claims it is.** The ID token's signature is not verified.
+
+Verifying it in the browser was considered and rejected as close to theatre:
+the page that would do the checking is the same page that could skip it, and
+it already holds a repository token that can write anything. A forged token
+with the right `iss`, `aud` and `exp` would pass either way.
+
+What the claim checks *do* buy is real but narrower: a token from another
+issuer, a token minted for another application, an expired token and a token
+with no subject are all refused. That is the class of failure that actually
+occurs — misconfiguration, a stale session, the wrong client id — and each one
+gets a message a person can act on rather than a silent wrong actor.
+
+The verifiable authority for a change is the **commit**: GitHub authenticates
+whoever wrote it, and that is recorded outside any file this application
+writes. The actor inside the document is the *claimed* signed-in identity
+beside it. Making the recorded actor independently verifiable needs a check
+somewhere the page cannot reach — a server, or a workflow that validates the
+token against the issuer's keys before accepting a commit. That is `WI-0054`,
+filed rather than implied.
+
+### Where each part lives
+
+| Concern | Where | Why not elsewhere |
+|---|---|---|
+| What a provider is, what issuer it mints, what actor a subject names | Tier 1 `Identity` | these are rules, not transport |
+| Whether a token's claims are acceptable | Tier 1 `Identity.accept` | a decision; the page must not make it |
+| Decoding a JWT's base64url payload | browser kernel `CommandParsing` | base64 and JSON are infrastructure (TE-R-095), and a page that could pick fields out of a token could pick the wrong ones (TE-R-091) |
+| Acquiring a token from Google or Apple | `main.js` | an external effect, which is exactly what the bridge is for (TE-R-092) |
+| The words for a rejected sign-in | `Wording` | TE-R-053 |
+
+`Instant` is passed into `accept` rather than read, because Tier 1 performs no
+effects. There is **no leeway for clock skew**: a tolerance nobody stated
+would be invented, and the device/server skew question is separately open
+(TE-R-008).
+
+### What the design screens gave, and what they did not
+
+`static-ui-screens/sign-in.html` shows an email-and-password form with a
+passkey note. It is **not** adopted: the user chose Google and Apple, so the
+screen's layout carries over and its fields do not. `settings.html`'s identity
+chip is where the signed-in name belongs, and the sidebar's status panel now
+holds it.
+
+One thing had to be extended: the sidebar is `height: 100vh` with no scroll of
+its own, which suits eighteen screens that each carry one status panel. This
+page now carries two forms in it, and on a short viewport the lower one was
+clipped and its buttons unreachable. `overflow-y: auto` was added in the
+page's own style block, not in `styles.css`, for the same reason as the
+checkbox rule: that file is the shared design authority.
+
+### How each provider's flow works, and the one that nearly did not
+
+Google Identity Services returns an ID token to the browser with no client
+secret, so a static page can complete the flow.
+
+Apple was nearly a blocker. Sign in with Apple's `response_type` must be
+`code` or `code id_token`, and with the `form_post` response mode its return
+URL has to accept an HTTP POST — which a static page is not. The **popup**
+flow is the way through: `AppleID.auth.signIn()` with `usePopup: true` resolves
+in the page with `authorization.id_token`, and no server is involved. Had that
+not existed, Apple sign-in would have required a server this application does
+not have, and the honest answer would have been to say so rather than ship
+half of it.
+
+Both SDKs are loaded from their own providers, on demand, only when somebody
+asks to sign in with that provider. Not bundled — they are versioned by the
+provider and a vendored copy would be a stale one. Not loaded eagerly — a page
+nobody signs in on should not call out to two companies to say so.
+
+### Consequences
+
+- The client ids are supplied by the person, alongside the repository. They
+  are configuration rather than secrets — a client id is in the page's HTML
+  the moment an SDK initialises — but nothing in this repository can hold an
+  account belonging to somebody else.
+- The ID token is held in `sessionStorage`, for this tab only, like the
+  repository token and for the same reason: a shared device must not carry a
+  bearer credential into the next person's session.
+- Every existing kernel test now injects an identity, because a command
+  without one is refused. The refusal itself is asserted directly, and was
+  confirmed by re-introducing the `browser` placeholder and watching that one
+  test fail.
+- **No sign-in has ever been performed against a real Google client id or
+  Apple services id.** There is no account to use and the verification harness
+  has no network, so the browser checks stage what a completed sign-in leaves
+  behind — in the same storage slot, in the same shape — and every code path
+  after that point is the real one. This is the same gap `WI-0028` records for
+  the repository, and it is `WI-0055`.
+- The device label is still the literal `browser`. It was not part of OQ-6 and
+  remains unstated, and it is left alone rather than filled in alongside the
+  actor: one unresolved thing should not get quietly resolved on the
+  coat-tails of another.

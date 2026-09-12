@@ -165,3 +165,45 @@ let mergeRequest (sources: MergeSource list) : MergeEntriesRequest =
       Evidence = []
       Reason = reason "Same task split across two timer runs"
       Attribution = attribution "m1-r1" }
+
+// ---------------------------------------------------------------------------
+// Sign-in tokens
+// ---------------------------------------------------------------------------
+
+/// Mint an ID token the kernel will decode.
+///
+/// The signature segment is the literal `not-checked`, which is honest: the
+/// application does not verify signatures, and a test that signed its tokens
+/// would be asserting a property the code does not have. See
+/// `TimeEntry.Semantic.Identity` for what is and is not claimed by that.
+let idToken (provider: string) (audience: string) (subject: string) (expiresAtSeconds: int64) =
+    let issuer =
+        match provider with
+        | "google" -> "https://accounts.google.com"
+        | "apple" -> "https://appleid.apple.com"
+        | other -> other
+
+    let encode (raw: string) =
+        raw
+        |> System.Text.Encoding.UTF8.GetBytes
+        |> System.Convert.ToBase64String
+        // Base64url: the kernel restores these before decoding, so a token
+        // that still carried `+`, `/` or `=` would not exercise that path.
+        |> fun s -> s.TrimEnd('=').Replace('+', '-').Replace('/', '_')
+
+    let payload =
+        sprintf
+            """{"iss":"%s","sub":"%s","aud":"%s","exp":%d,"email":"person@example.invalid","name":"A Person"}"""
+            issuer
+            subject
+            audience
+            expiresAtSeconds
+
+    sprintf "%s.%s.not-checked" (encode """{"alg":"RS256","typ":"JWT"}""") (encode payload)
+
+/// The audience every test signs in against.
+let testAudience = "1234.apps.googleusercontent.com"
+
+/// A signed-in Google identity that has not expired for any `occurredAtMs`
+/// this suite uses. Expressed in seconds, as `exp` is.
+let signedIn = idToken "google" testAudience "1099" 4102444800L

@@ -23,8 +23,8 @@ and ROS forbids marking work complete merely because code exists, so the
 Evidence column is only `**VERIFIED**` where something actually ran:
 
 ```
-dotnet test TimeEntry.sln    309 passed, 0 failed
-npm run check:browser        118 checks passed in headless Chromium
+dotnet test TimeEntry.sln    332 passed, 0 failed
+npm run check:browser        126 checks passed in headless Chromium
 check-domain-architecture    0 tier-boundary violations
 ```
 
@@ -149,15 +149,15 @@ it, and no row below claims otherwise.
 
 | Category | Count |
 |---|---|
-| Requirements inventoried | 70 |
+| Requirements inventoried | 71 |
 | Rows marked **VERIFIED** by an executed test | **68** |
 | Structural only — the field exists, the affordance does not | 0 |
-| Partially verified — every layer exercised, never against a real repository (TE-R-099) | 1 |
+| Partially verified — every layer exercised, never against the real external service (TE-R-099, TE-R-124) | 2 |
 | **NOT IMPLEMENTED**, and said so rather than left implicit (TE-R-008) | 1 |
 
 ```
-dotnet test TimeEntry.sln    309 passed, 0 failed
-npm run check:browser        118 checks passed in headless Chromium
+dotnet test TimeEntry.sln    332 passed, 0 failed
+npm run check:browser        126 checks passed in headless Chromium
 npm run check                 20 passed
 check-domain-architecture      0 tier-boundary violations, adversarially
                                validated against seven injected violations
@@ -165,7 +165,7 @@ ros validate / registry        pass
 ```
 
 The counts above are produced by classifying each requirement row's Evidence
-cell — 68 + 0 + 1 + 1 = 70, which is the check that matters: every inventoried
+cell — 68 + 0 + 2 + 1 = 71, which is the check that matters: every inventoried
 requirement is in exactly one category, and none has quietly fallen out of the
 table.
 
@@ -181,6 +181,7 @@ be right. Counting rows rather than words is the fix.
 | TE-R-121 | Split children may share evidence | Two children claiming one item is accepted | WI-0051 | `Guards.requireReassignedEvidenceExists` | `SplitTests` "two children may claim the same piece of evidence", which fails against an injected uniqueness check | **VERIFIED** |
 | TE-R-122 | A removed entry reads "Removed" | Badge text and tone | WI-0051 | `Kernel.badgeView` | `verify-browser-kernel` removal checks | **VERIFIED** |
 | TE-R-123 | Overlap is not a defect | No overlap row is emitted | WI-0051 | `Kernel.reviewDay` | `verify-browser-kernel` "no overlap check is claimed" | **VERIFIED** |
+| TE-R-124 | Google/Apple sign-in names the actor | Actor is `provider:sub`; an unattributed command is refused | WI-0034 | `Semantic.Identity`, `CommandParsing.identityFrom`, `Kernel.identityView`, `main.js` sign-in | `IdentityTests` 23 cases; 7 browser checks | **PARTIALLY VERIFIED.** Every layer is exercised, but never against a real Google client id or Apple services id — there is no account and the harness has no network, so a completed sign-in is staged in the storage slot the real flow writes. WI-0055. Attribution is also *claimed*, not verifiable: WI-0054 |
 
 ## Orphan check
 
@@ -199,6 +200,12 @@ be right. Counting rows rather than words is the fix.
   the table is not read as stronger than it is:**
   - TE-R-099 (GitHub backend) exercises every layer — credential, transport,
     interpreter, kernel, page — but never against a real repository.
+  - TE-R-124 (Google/Apple sign-in) exercises every layer but never against a
+    real client id: there is no account and the harness has no network, so a
+    completed sign-in is staged in the storage slot the real flow writes. And
+    the attribution it produces is claimed rather than verifiable — signatures
+    are not checked, by decision (DF-TE-0016), with WI-0054 filed for the
+    check that would make it verifiable.
   - TE-R-112's touch-target check measures the *effective* target, so a
     checkbox is measured by its label. That is the honest reading of the
     requirement, and it is a weaker assertion than measuring the control.

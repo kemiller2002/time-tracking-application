@@ -33,6 +33,7 @@ module TimeEntry.Browser.Wording
 
 open TimeEntry.Semantic.Identifiers
 open TimeEntry.Semantic.Values
+open TimeEntry.Semantic.Identity
 open TimeEntry.Semantic.Duration
 open TimeEntry.Semantic.Catalogue
 open TimeEntry.Semantic.EntryState
@@ -115,6 +116,21 @@ let targetError (error: TargetError) =
     | TargetNotPositive _ -> "a tracking target must be more than no time at all"
     | TargetExceedsMaximum(_, maximumUnits) ->
         sprintf "a tracking target may not exceed %d hours" (maximumUnits / BillableUnitsPerHour)
+
+/// Why a sign-in was not accepted.
+///
+/// Each message names something the person can act on, and none of them
+/// quotes a client id or a subject: those are configuration and an opaque
+/// handle, and neither helps anybody signing in.
+let identityRejection (rejection: IdentityRejection) =
+    match rejection with
+    | IdentityIssuerMismatch(expected, _) ->
+        sprintf "that sign-in did not come from %s" expected
+    | IdentityAudienceMismatch _ -> "that sign-in was issued for a different application"
+    | IdentitySubjectMissing -> "that sign-in did not say who you are"
+    | IdentityExpired _ -> "that sign-in has expired — sign in again"
+    | IdentityProviderUnknown found ->
+        sprintf "'%s' is not a sign-in method this ledger accepts" found
 
 let dateError (error: DateError) =
     match error with
@@ -276,6 +292,7 @@ let ofError (error: obj) : string =
     | :? TextError as e -> textError e
     | :? DurationError as e -> durationError e
     | :? TargetError as e -> targetError e
+    | :? IdentityRejection as e -> identityRejection e
     | :? DateError as e -> dateError e
     | :? CatalogueError as e -> catalogueError e
     | :? DocumentError as e -> documentError e

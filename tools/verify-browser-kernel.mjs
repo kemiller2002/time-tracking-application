@@ -197,6 +197,65 @@ page.on('console', (m) => {
 
 console.log('browser kernel verification')
 
+// A completed sign-in, staged rather than performed.
+//
+// There is no Google or Apple account to sign in with here, and there is no
+// developer backdoor in the page to sign in without one — so the harness
+// writes what a completed sign-in leaves behind, in the same sessionStorage
+// slot and the same shape the real flow writes. Every code path after that
+// point is the real one; only the token's provenance is stubbed, exactly as
+// the repository is stubbed for the transport checks.
+//
+// The signature segment reads `not-checked` because that is the truth: the
+// application does not verify signatures, and a harness that signed its
+// tokens would be asserting a property the code does not have. See
+// domain/TimeEntry.Semantic/Identity.fs.
+const STUB_AUDIENCE = '1234.apps.googleusercontent.com'
+
+const base64url = (raw) =>
+  Buffer.from(raw).toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_')
+
+const stubToken = (claims) =>
+  `${base64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))}.${base64url(
+    JSON.stringify(claims)
+  )}.not-checked`
+
+const expiredToken = stubToken({
+  iss: 'https://accounts.google.com',
+  sub: '1099',
+  aud: STUB_AUDIENCE,
+  // 2001. Long expired against any clock this page will read.
+  exp: 1000000000,
+  name: 'A Person'
+})
+
+const signedInToken = stubToken({
+  iss: 'https://accounts.google.com',
+  sub: '1099',
+  aud: STUB_AUDIENCE,
+  exp: 4102444800,
+  email: 'person@example.invalid',
+  name: 'A Person'
+})
+
+// Written before the page's own scripts run, so the first load is already
+// signed in. Loading and then reloading would work too, but it aborts the
+// framework's in-flight fetches and fills the console with failures that
+// look like defects.
+await page.addInitScript(
+  ([audience, token]) => {
+    try {
+      sessionStorage.setItem(
+        'echelon-ledger.identity',
+        JSON.stringify({ provider: 'google', audience, idToken: token })
+      )
+    } catch {
+      // A blocked store would fail the checks below on its own terms.
+    }
+  },
+  [STUB_AUDIENCE, signedInToken]
+)
+
 await page.goto(`http://localhost:${PORT}/index.html`, { waitUntil: 'load' })
 const ready = await page
   .waitForFunction(() => globalThis.__kernel !== undefined, { timeout: 90000 })
@@ -353,6 +412,113 @@ if (ready) {
   )
 
   // -------------------------------------------------------------------------
+  // Signing in (DF-TE-0016, resolving OQ-6)
+  // -------------------------------------------------------------------------
+
+  // Every word here is the kernel's. The display name is its judgement about
+  // a token that might have carried no name, and the actor is the one it
+  // records on a revision.
+  check(
+    'the signed-in person is named as the token names them',
+    (await page.textContent('#identity-status'))?.trim() === 'A Person',
+    (await page.textContent('#identity-status'))?.trim()
+  )
+  check(
+    'and the actor recorded is the provider and subject, not the email',
+    (await page.textContent('#identity-help'))?.includes('google:1099') === true,
+    (await page.textContent('#identity-help'))?.trim()
+  )
+  // sign-in.html shows an email-and-password form. It is not adopted: the
+  // user chose Google and Apple, so the fields are provider buttons.
+  check(
+    'both named providers are offered, and no password field exists',
+    (await page.locator('#sign-in-google').count()) === 1 &&
+      (await page.locator('#sign-in-apple').count()) === 1 &&
+      (await page.locator('input[type=password]:not(#repo-token)').count()) === 0
+  )
+
+  // Signing out, and an expired token, are checked on their OWN pages.
+  //
+  // Both need the page to start in a different state, and the only way to
+  // change it is a reload — which would reset this page's ledger to the
+  // fixture and invalidate every check that follows. A separate page costs
+  // one more WASM boot and leaves this one alone.
+  const pageIn = async (identity) => {
+    const other = await browser.newPage()
+    other.on('pageerror', (e) => errors.push(String(e).slice(0, 200)))
+
+    if (identity) {
+      await other.addInitScript(
+        (stored) => {
+          try {
+            sessionStorage.setItem('echelon-ledger.identity', JSON.stringify(stored))
+          } catch {
+            // Checked below on its own terms.
+          }
+        },
+        identity
+      )
+    }
+
+    await other.goto(`http://localhost:${PORT}/index.html`, { waitUntil: 'load' })
+    await other.waitForFunction(() => globalThis.__kernel !== undefined, { timeout: 90000 })
+    return other
+  }
+
+  const signedOut = await pageIn(null)
+  check(
+    'a page with nobody signed in says so, and says why it matters',
+    (await signedOut.textContent('#identity-status'))?.trim() === 'Not signed in' &&
+      (await signedOut.textContent('#identity-help'))?.includes(
+        'every revision records who made it'
+      ) === true,
+    (await signedOut.textContent('#identity-help'))?.trim()
+  )
+
+  // A complete command — a date, a project, an activity type and a duration —
+  // with nobody signed in. Refused in the kernel's words, and nothing added.
+  const timelineBefore = await signedOut.locator('#timeline article.record').count()
+  await signedOut.fill('#manual-description', 'Recorded while signed out')
+  await signedOut.locator('#duration-grid button').first().click()
+  await signedOut.click('#create-form button[type=submit]')
+  await signedOut.waitForFunction(
+    () => document.getElementById('create-message')?.textContent?.length > 0
+  )
+  check(
+    'an unattributed change is refused, not recorded against a placeholder',
+    (await signedOut.textContent('#create-message'))?.trim() ===
+      'sign in with Google or Apple before recording time',
+    (await signedOut.textContent('#create-message'))?.trim()
+  )
+  check(
+    'and nothing was added to the ledger',
+    (await signedOut.locator('#timeline article.record').count()) === timelineBefore,
+    `${await signedOut.locator('#timeline article.record').count()} vs ${timelineBefore}`
+  )
+  await signedOut.close()
+
+  // An expired token is named as expired rather than as malformed. That is
+  // the difference between "sign in again" and "something is wrong with this
+  // application".
+  const expiredPage = await pageIn({
+    provider: 'google',
+    audience: STUB_AUDIENCE,
+    idToken: expiredToken
+  })
+  check(
+    'an expired sign-in is reported as expired, not as broken',
+    (await expiredPage.textContent('#identity-help'))?.trim() ===
+      'that sign-in has expired — sign in again',
+    (await expiredPage.textContent('#identity-help'))?.trim()
+  )
+  check(
+    'and the panel does not claim a signed-in person',
+    (await expiredPage.textContent('#identity-status'))?.trim() === 'Sign-in not accepted',
+    (await expiredPage.textContent('#identity-status'))?.trim()
+  )
+  await expiredPage.close()
+
+  // -------------------------------------------------------------------------
   // The monthly tracking target (DF-TE-0015, resolving OQ-9)
   // -------------------------------------------------------------------------
 
@@ -425,7 +591,7 @@ if (ready) {
   )
   check(
     'the page reports that it is not connected to a repository',
-    (await page.textContent('#sync-status'))?.trim() === 'Not signed in',
+    (await page.textContent('#sync-status'))?.trim() === 'No repository',
     (await page.textContent('#sync-status'))?.trim()
   )
 

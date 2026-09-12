@@ -38,6 +38,7 @@
     <Compile Include="CredentialTests.fs" />
     <!-- The browser kernel's command surface, tested without a browser. -->
     <Compile Include="KernelTests.fs" />
+    <Compile Include="IdentityTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

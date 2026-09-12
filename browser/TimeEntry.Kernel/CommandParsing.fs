@@ -24,6 +24,7 @@ open System.Text.Json.Nodes
 open TimeEntry.Semantic.Identifiers
 open TimeEntry.Semantic.Duration
 open TimeEntry.Semantic.Values
+open TimeEntry.Semantic.Identity
 open TimeEntry.Semantic.EntryState
 open TimeEntry.Transitions.Commands
 
@@ -142,9 +143,128 @@ let private eachOf (node: JsonNode) (name: string) (parse: JsonNode -> Result<'a
 /// (TE-R-093). There is no default — a command that cannot say when it
 /// happened is refused rather than stamped with zero.
 ///
-/// Actor and device are the browser session. Identity is genuinely
-/// unresolved in this slice — there is no sign-in — and is recorded as an
-/// open question rather than invented (OQ-6).
+/// Decode the payload of an OIDC ID token.
+///
+/// A JWT is three base64url segments separated by dots. Only the middle one
+/// is read: the header names an algorithm nothing here uses, and the
+/// signature is not checked (see `TimeEntry.Semantic.Identity` for exactly
+/// what that does and does not mean). Decoding belongs here rather than in
+/// Tier 1 because base64 and JSON are infrastructure (TE-R-095), and it
+/// belongs here rather than in the page because a token the page could pick
+/// fields out of is a token the page could pick the wrong fields out of
+/// (TE-R-091).
+///
+/// Base64url is not base64: `-` and `_` replace `+` and `/`, and the padding
+/// is omitted. Both are restored before decoding, because .NET's decoder
+/// accepts neither.
+let private claimsOf (idToken: string) : Result<IdentityClaims, string> =
+    let segments = idToken.Split('.')
+
+    if segments.Length <> 3 then
+        Error "that sign-in token is not in the expected form"
+    else
+        let padded =
+            let raw = segments.[1].Replace('-', '+').Replace('_', '/')
+
+            match raw.Length % 4 with
+            | 0 -> raw
+            | 2 -> raw + "=="
+            | 3 -> raw + "="
+            | _ -> raw
+
+        try
+            let json =
+                padded |> System.Convert.FromBase64String |> System.Text.Encoding.UTF8.GetString
+
+            match JsonNode.Parse json with
+            | null -> Error "that sign-in token carried no claims"
+            | claims ->
+                let text (name: string) =
+                    match claims.[name] with
+                    | null -> None
+                    | value ->
+                        let raw = value.ToString()
+                        if System.String.IsNullOrWhiteSpace raw then None else Some raw
+
+                // `aud` is a string or an array of strings in OIDC. Both are
+                // accepted; neither is assumed.
+                let audience =
+                    match claims.["aud"] with
+                    | :? JsonArray as items ->
+                        items
+                        |> Seq.choose (fun item ->
+                            match item with
+                            | null -> None
+                            | value -> Some(value.ToString()))
+                        |> List.ofSeq
+                    | null -> []
+                    | value -> [ value.ToString() ]
+
+                // `exp` is seconds since the epoch; every instant in this
+                // application is milliseconds (DF-TE-0009). Converting here
+                // is the whole reason a seconds/milliseconds mix-up cannot
+                // reach the domain.
+                match claims.["exp"] with
+                | null -> Error "that sign-in token does not say when it expires"
+                | value ->
+                    match System.Int64.TryParse(value.ToString()) with
+                    | false, _ -> Error "that sign-in token's expiry is not a number"
+                    | true, seconds ->
+                        Ok
+                            { Issuer = text "iss" |> Option.defaultValue ""
+                              Subject = text "sub" |> Option.defaultValue ""
+                              Audience = audience
+                              ExpiresAt = Instant.ofEpochMilliseconds (seconds * 1000L)
+                              Email = text "email"
+                              Name = text "name" }
+        with ex ->
+            Error(sprintf "that sign-in token could not be read (%s)" (ex.GetType().Name))
+
+/// Who is signed in, from the token the page acquired.
+///
+/// A command with no identity is REFUSED, not attributed to a placeholder.
+/// That is the substance of DF-TE-0016: every revision records an actor, and
+/// until OQ-6 was answered the only honest thing available was the literal
+/// `browser`. With an answer, a change nobody can be attributed to is a
+/// change that should not be recorded.
+let identityFrom (command: JsonNode) (now: Instant) : Result<SignedInIdentity, string> =
+    match command.["identity"] with
+    | null -> Error "sign in with Google or Apple before recording time"
+    | node ->
+        let field (name: string) =
+            match node.[name] with
+            | null -> Error(sprintf "missing 'identity.%s'" name)
+            | value ->
+                let raw = value.ToString()
+
+                if System.String.IsNullOrWhiteSpace raw then
+                    Error(sprintf "'identity.%s' is empty" name)
+                else
+                    Ok raw
+
+        field "provider"
+        |> Result.bind (fun name ->
+            match IdentityProvider.ofName name with
+            | None -> Error(Wording.identityRejection (IdentityProviderUnknown name))
+            | Some provider -> Ok provider)
+        |> Result.bind (fun provider ->
+            field "audience" |> Result.map (fun audience -> provider, audience))
+        |> Result.bind (fun (provider, audience) ->
+            field "idToken" |> Result.map (fun token -> provider, audience, token))
+        |> Result.bind (fun (provider, audience, token) ->
+            claimsOf token
+            |> Result.bind (fun claims ->
+                Identity.accept provider audience now claims
+                |> Result.mapError Wording.identityRejection))
+
+/// Actor and device: the actor is who signed in, the device is still the
+/// literal `browser`.
+///
+/// The device label was not part of OQ-6 and remains unstated: no document
+/// says whether it should be a browser name, an operating system, or
+/// something a person names themselves. It is left as it was rather than
+/// filled in alongside the actor, so that one unresolved thing does not get
+/// quietly resolved on the coat-tails of another.
 let attributionOf (command: JsonNode) (revisionId: string) : Result<Attribution, string> =
     let occurredAt =
         match command.["occurredAtMs"] with
@@ -156,19 +276,21 @@ let attributionOf (command: JsonNode) (revisionId: string) : Result<Attribution,
 
     occurredAt
     |> Result.bind (fun at ->
-        UserId.create "browser"
-        |> describe
-        |> Result.bind (fun actor ->
-            DeviceLabel.create "browser"
+        identityFrom command at
+        |> Result.bind (fun identity ->
+            Identity.actor identity
             |> describe
-            |> Result.bind (fun device ->
-                RevisionId.create revisionId
+            |> Result.bind (fun actor ->
+                DeviceLabel.create "browser"
                 |> describe
-                |> Result.map (fun revision ->
-                    { Actor = actor
-                      Device = device
-                      OccurredAt = at
-                      NewRevisionId = revision }))))
+                |> Result.bind (fun device ->
+                    RevisionId.create revisionId
+                    |> describe
+                    |> Result.map (fun revision ->
+                        { Actor = actor
+                          Device = device
+                          OccurredAt = at
+                          NewRevisionId = revision })))))
 
 /// Revision ids are derived from the entry id and the change, rather than
 /// supplied by the page.

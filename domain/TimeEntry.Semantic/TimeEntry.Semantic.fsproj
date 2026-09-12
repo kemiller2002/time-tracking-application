@@ -28,6 +28,7 @@
     <Compile Include="Duration.fs" />
     <Compile Include="Preferences.fs" />
     <Compile Include="Values.fs" />
+    <Compile Include="Identity.fs" />
     <Compile Include="Catalogue.fs" />
     <Compile Include="EntryState.fs" />
     <Compile Include="Capabilities.fs" />

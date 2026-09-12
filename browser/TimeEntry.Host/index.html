@@ -50,12 +50,47 @@
       gap: 0.5rem;
       min-height: 44px;
     }
+
+    /* The sidebar is `height: 100vh` with no scroll of its own, which is
+       right for the static screens: each carries one status panel. This page
+       now carries two forms in it — signing in, and the repository — and on a
+       short viewport the lower one was clipped and its buttons could not be
+       reached at all. A control that exists and cannot be operated is worse
+       than one that is absent.
+
+       Extended here rather than in styles.css for the same reason as above:
+       that file is the shared design authority and a rule added there would
+       apply to eighteen screens that never asked for it. */
+    .sidebar {
+      overflow-y: auto;
+    }
   </style>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   <div class="app-shell">
     <aside class="sidebar" aria-label="Primary navigation"><a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true">E</span><span class="brand-name">Echelon Ledger</span></a><nav class="nav-group"><a class="nav-link" aria-current="page" href="index.html"><span class="nav-mark" aria-hidden="true">TD</span>Today</a></nav><div class="sidebar-status"><div class="status-line"><span class="status-dot" aria-hidden="true"></span><strong id="sync-status">Not signed in</strong></div><p class="sidebar-meta" id="sync-meta">Changes are held in this page only.</p></div>
+      <!-- Signing in (DF-TE-0016, resolving OQ-6). The actor on every
+           revision is whoever signed in, and an unattributed change is
+           refused rather than recorded against a placeholder.
+
+           static-ui-screens/sign-in.html shows an email-and-password form.
+           That is NOT adopted: the user chose Google and Apple, so the
+           screen's layout carries over and its fields do not. The client ids
+           are configuration, not secrets, and are supplied here for the same
+           reason the repository is — nothing in this repository can hold an
+           account that belongs to somebody else. -->
+      <form class="sidebar-status" id="identity-form" novalidate>
+        <div class="status-line"><span class="status-dot" aria-hidden="true"></span><strong id="identity-status">Not signed in</strong></div>
+        <div class="field"><label for="google-client-id">Google client id</label><input id="google-client-id" type="text" autocomplete="off"></div>
+        <div class="field"><label for="apple-client-id">Apple services id</label><input id="apple-client-id" type="text" autocomplete="off"></div>
+        <div class="form-actions">
+          <button class="button button-secondary" type="button" id="sign-in-google">Sign in with Google</button>
+          <button class="button button-secondary" type="button" id="sign-in-apple">Sign in with Apple</button>
+          <button class="button" type="button" id="sign-out">Sign out</button>
+        </div>
+        <p class="field-help" id="identity-help"></p>
+      </form>
       <!-- Where the ledger lives, and the token that may write to it
            (DF-TE-0011). The token is held for this tab only — sessionStorage,
            not localStorage — and is never rendered back into the page. The

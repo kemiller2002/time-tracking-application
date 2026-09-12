@@ -14,6 +14,7 @@ open TimeEntry.Semantic.Catalogue
 open TimeEntry.Semantic.Duration
 open TimeEntry.Semantic.Preferences
 open TimeEntry.Semantic.Values
+open TimeEntry.Semantic.Identity
 open TimeEntry.Semantic.EntryState
 open TimeEntry.Semantic.Capabilities
 open TimeEntry.Projection.Query
@@ -930,6 +931,67 @@ let viewMonth (requestJson: string) : string =
 
                         node.Add("days", days)
                         node.ToJsonString(jsonOptions)
+    with ex ->
+        errorResult (ex.GetType().Name + ": " + ex.Message)
+
+
+// ---------------------------------------------------------------------------
+// Who is signed in
+// ---------------------------------------------------------------------------
+
+/// What the page should say about the current sign-in.
+///
+/// The page holds an ID token and must not look inside it: the display name,
+/// the actor and the verdict on whether the token is still usable are all
+/// decisions, and this is where decisions live (TE-R-091). A page that read
+/// `name` out of the payload itself would also have to decide what to do when
+/// there isn't one, which is exactly the judgement `Identity.display` makes.
+///
+/// Not signed in is `ok: true` with `signedIn: false`, not an error: nobody
+/// has done anything wrong by not having signed in yet. A token that is
+/// present but unusable IS an error, because something needs saying about it
+/// — most often that it has expired and the person should sign in again.
+let identityView (requestJson: string) : string =
+    try
+        match JsonNode.Parse requestJson with
+        | null -> errorResult "empty request"
+        | request ->
+            match request.["occurredAtMs"] with
+            | null -> errorResult "missing 'occurredAtMs'"
+            | value ->
+                match System.Int64.TryParse(value.ToString()) with
+                | false, _ -> errorResult "occurredAtMs must be an integer"
+                | true, ms ->
+                    let now = Instant.ofEpochMilliseconds ms
+
+                    match request.["identity"] with
+                    | null ->
+                        let node = JsonObject()
+                        node.Add("ok", JsonValue.Create true)
+                        node.Add("signedIn", JsonValue.Create false)
+                        node.Add("display", JsonValue.Create "Not signed in")
+                        node.ToJsonString(jsonOptions)
+                    | _ ->
+                        match CommandParsing.identityFrom request now with
+                        | Error detail -> errorResult detail
+                        | Ok identity ->
+                            match Identity.actor identity with
+                            | Error e -> errorResult (Wording.ofError (box e))
+                            | Ok actor ->
+                                let node = JsonObject()
+                                node.Add("ok", JsonValue.Create true)
+                                node.Add("signedIn", JsonValue.Create true)
+                                node.Add("display", JsonValue.Create(Identity.display identity))
+                                node.Add("actor", JsonValue.Create(UserId.value actor))
+
+                                node.Add(
+                                    "provider",
+                                    JsonValue.Create(
+                                        IdentityProvider.label (Identity.provider identity)
+                                    )
+                                )
+
+                                node.ToJsonString(jsonOptions)
     with ex ->
         errorResult (ex.GetType().Name + ": " + ex.Message)
 
