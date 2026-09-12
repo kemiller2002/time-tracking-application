@@ -159,6 +159,20 @@ let private loadOne (store: GitHubStore) (path: string) =
                     | Ok entry -> Choice1Of2 entry
     }
 
+/// Read one entry by identity.
+///
+/// Not an `Effect`. The domain's vocabulary for loading is `LoadEntries`, and
+/// adding a case to it for a host's convenience would let the UI's needs
+/// shape the domain. This is a host operation offered by the interpreter,
+/// which is where host operations belong.
+///
+/// It exists for conflict review: when a write is refused as stale, the
+/// person needs to see what the repository actually holds for that one entry
+/// — and reading the whole ledger to show them would both cost a tree walk
+/// and replace the state they are still deciding about.
+let readEntry (store: GitHubStore) (entryId: EntryId) : Async<Choice<TimeEntry, UnreadableEntry>> =
+    loadOne store (Layout.entryPath entryId)
+
 /// Read every entry document in the ledger.
 ///
 /// The `forDate` on `LoadEntries` is deliberately *not* used to narrow the

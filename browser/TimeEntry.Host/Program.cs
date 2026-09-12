@@ -62,6 +62,17 @@ public static partial class Interop
             FSharpOption<CancellationToken>.None);
 
     /// <summary>
+    /// Forwards a request to read one entry, for reviewing a stale write.
+    /// </summary>
+    [JSExport]
+    [return: JSMarshalAs<JSType.Promise<JSType.String>>]
+    internal static Task<string> ReviewEntry(string requestJson) =>
+        FSharpAsync.StartAsTask(
+            TimeEntry.Kernel.reviewEntry(requestJson),
+            FSharpOption<TaskCreationOptions>.None,
+            FSharpOption<CancellationToken>.None);
+
+    /// <summary>
     /// Forwards a split preview request.
     /// </summary>
     [JSExport]

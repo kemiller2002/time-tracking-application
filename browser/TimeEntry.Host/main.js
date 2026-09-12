@@ -135,6 +135,9 @@ let state = Object.freeze({
   message: null,
   // A stale write, kept until the person decides what to do about it.
   conflict: null,
+  // What the repository holds for the conflicted entry, fetched separately so
+  // the loaded set stays as it was.
+  conflictSaved: null,
   effects: [],
   performed: [],
   // Bumped on every state change. An asynchronous read that resolves after
@@ -650,16 +653,53 @@ const renderConflict = () => {
   panel.hidden = !state.conflict
   if (!state.conflict) return
 
-  // The versions are shown rather than a field-level diff. A diff would need
-  // the saved entry's values beside the proposed ones, which the page does not
-  // have until it reloads; showing the tokens is what can be said truthfully
-  // now. TE-R-071's "review" step is not built, and WI-0042 records that.
   setText(
     'conflict-detail',
     `Your change was made against version ${state.conflict.expectedVersion ?? 'unknown'}, ` +
       `but the repository now holds ${state.conflict.actualVersion ?? 'a different version'}. ` +
       `Nothing was saved.`
   )
+
+  // The saved entry, once the review has fetched it. Rendered in the same
+  // record shape as the timeline, from values the same projection computed —
+  // a second formatting path here is how a review panel starts disagreeing
+  // with the list behind it.
+  const saved = document.getElementById('conflict-saved')
+  if (!saved) return
+
+  if (!state.conflictSaved) {
+    saved.replaceChildren()
+    return
+  }
+
+  if (state.conflictSaved.found !== true) {
+    saved.replaceChildren(
+      el('p', 'notice-copy', `The repository could not return this entry: ${state.conflictSaved.detail}`)
+    )
+    return
+  }
+
+  const article = el('article', 'record')
+  const body = el('div', 'record-body')
+  const head = el('div', 'record-head')
+  head.append(
+    el('h2', 'activity-title', state.conflictSaved.description ?? 'No description'),
+    el('span', 'duration', state.conflictSaved.displayTime)
+  )
+  const meta = el('div', 'meta-row')
+  meta.append(
+    ...(state.conflictSaved.badges ?? []).map((badge) =>
+      el('span', `badge ${badge.tone}`, badge.text)
+    )
+  )
+  body.append(
+    el('p', 'eyebrow', 'Currently saved'),
+    head,
+    el('p', 'record-project', state.conflictSaved.classification),
+    meta
+  )
+  article.append(body)
+  saved.replaceChildren(article)
 }
 
 const render = () => {
@@ -744,8 +784,37 @@ const absorb = (answer, command) => {
       performed: [],
       // The command is kept so it can be applied again against whatever the
       // repository now holds, without the person retyping it (TE-R-071).
-      conflict: conflict ? { ...conflict, command } : null
+      conflict: conflict ? { ...conflict, command } : null,
+      conflictSaved: null
     })
+
+    // Fetch what the repository holds, for the review half of TE-R-071. It
+    // arrives after the panel, which is correct: the choice is available
+    // immediately and the detail fills in.
+    if (conflict) {
+      const connection = readConnection()
+      const entryId = conflict.entryId ?? command?.entryId
+
+      if (connection && entryId) {
+        const at = state.revision
+
+        kernel
+          .ReviewEntry(
+            JSON.stringify({
+              repository: connection.repository,
+              token: connection.token,
+              catalogue,
+              entryId
+            })
+          )
+          .then((raw) => {
+            // Discarded if the page moved on, for the same reason a stale
+            // load is.
+            if (state.revision === at) update({ conflictSaved: JSON.parse(raw) })
+          })
+          .catch(() => {})
+      }
+    }
 
     return
   }
@@ -774,6 +843,7 @@ const absorb = (answer, command) => {
     selectedForMerge: [],
     message: null,
     conflict: null,
+    conflictSaved: null,
     effects: answer.effects ?? [],
     // What was REQUESTED versus what was DONE are different facts, and the
     // page reports whichever it has. A conflict is not an error: it means the
@@ -922,7 +992,7 @@ const reconcile = async (applyAgain) => {
   const connection = readConnection()
   if (!conflict || !connection) return
 
-  update({ conflict: null, message: 'Reloading…' })
+  update({ conflict: null, conflictSaved: null, message: 'Reloading…' })
   await loadFromRepository(connection)
 
   if (!applyAgain) return

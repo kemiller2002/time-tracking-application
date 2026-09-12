@@ -138,12 +138,21 @@ const stub = createServer((request, response) => {
     }
 
     if (stubMode === 'conflict' && request.url.includes('/contents/')) {
-      // Someone else's version. The command will name the fixture's token,
-      // which is not this, so the precondition fails and nothing is written.
+      // Someone else's version, and someone else's CONTENT: a different
+      // description and a longer duration, so the review has something to
+      // show that the page could not have known.
+      const theirs = JSON.parse(
+        readFileSync('browser/TimeEntry.Host/sample-entry.json', 'utf8')
+      )
+      theirs.effective.description = 'Edited on another device'
+      theirs.effective.exact_duration_ms = 5400000
+      theirs.history[0].facts.description = 'Edited on another device'
+      theirs.history[0].facts.exact_duration_ms = 5400000
+
       reply(200, {
         sha: 'a-version-written-by-someone-else',
         encoding: 'base64',
-        content: Buffer.from('{}').toString('base64')
+        content: Buffer.from(JSON.stringify(theirs)).toString('base64')
       })
       return
     }
@@ -915,6 +924,39 @@ if (ready) {
     // TE-R-072: never resolved automatically. The panel offers the choice and
     // waits; an automatic re-read-and-overwrite would discard whoever else's
     // change arrived first.
+    // TE-R-071's review half: what the repository actually holds, which the
+    // person cannot see any other way. The proposed half is the form they
+    // just filled in.
+    const reviewed = await page
+      .waitForFunction(
+        () => {
+          const saved = document.getElementById('conflict-saved')
+          return saved && saved.textContent.includes('Currently saved')
+        },
+        { timeout: 30000 }
+      )
+      .then(() => true)
+      .catch(() => false)
+
+    check('the conflict shows what the repository actually holds', reviewed)
+
+    if (reviewed) {
+      const savedText = (await page.textContent('#conflict-saved'))?.trim() ?? ''
+      check(
+        "and it is the other device's values, not the page's",
+        savedText.includes('Edited on another device'),
+        savedText.slice(0, 90)
+      )
+      // 90 exact minutes displays as 1h 30m through the same projection the
+      // timeline uses. A second formatting path here would be how a review
+      // panel starts disagreeing with the list behind it.
+      check(
+        'rendered through the same projection as the timeline',
+        savedText.includes('1h 30m'),
+        savedText.slice(0, 90)
+      )
+    }
+
     check(
       'and offers both ways out rather than choosing one',
       (await page.locator('#conflict-retry').isVisible()) &&

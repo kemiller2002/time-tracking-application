@@ -92,6 +92,11 @@
       <section class="notice notice-warning" id="conflict-panel" hidden role="alert">
         <p class="notice-title">This entry changed somewhere else</p>
         <p class="notice-copy" id="conflict-detail"></p>
+        <!-- What the repository actually holds for this entry, read on its
+             own so the list the person is still deciding about is untouched.
+             Rendered in today.html's record shape, because it is the same
+             kind of thing. -->
+        <div class="timeline" id="conflict-saved"></div>
         <div class="form-actions">
           <button class="button button-primary" type="button" id="conflict-retry">Reload and apply my change again</button>
           <button class="button" type="button" id="conflict-discard">Reload and discard my change</button>

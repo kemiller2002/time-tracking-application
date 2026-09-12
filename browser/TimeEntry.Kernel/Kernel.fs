@@ -1114,6 +1114,97 @@ let loadLedgerWith
             return errorResult (ex.GetType().Name + ": " + ex.Message)
     }
 
+/// What the repository holds for one entry, for reviewing a stale write.
+///
+/// TE-R-071 asks a conflict to surface the current saved version against the
+/// proposed one. This is the saved half, and it is deliberately the only half
+/// this answers: the proposed half is the command the person just filled in
+/// and can still see, whereas what someone else wrote is invisible to them.
+///
+/// Projected through the same `EntryView` the timeline uses, so the values
+/// shown in a conflict are computed exactly like the values shown everywhere
+/// else. A second formatting path here is how a review panel starts
+/// disagreeing with the list behind it.
+///
+/// It reads ONE entry and does not touch the loaded set. Re-reading the whole
+/// ledger would replace the state the person is still deciding about, which
+/// is the one thing a review must not do.
+let reviewEntryWith
+    (storeFor: HttpProtocol.RepositoryRef -> Credential.CredentialSource -> Store.GitHubStore)
+    (requestJson: string)
+    : Async<string> =
+    async {
+        try
+            match JsonNode.Parse requestJson with
+            | null -> return errorResult "empty request"
+            | request ->
+                match sessionFrom request with
+                | Error detail -> return errorResult detail
+                | Ok(target, credential) ->
+
+                match
+                    (match request.["entryId"] with
+                     | null -> Error "missing 'entryId'"
+                     | value -> EntryId.create (value.ToString()) |> describe)
+                with
+                | Error detail -> return errorResult detail
+                | Ok entryId ->
+                    let catalogue =
+                        match request.["catalogue"] with
+                        | null -> Catalogue.empty
+                        | node ->
+                            match Serialization.readCatalogue (node.ToJsonString()) with
+                            | Error _ -> Catalogue.empty
+                            | Ok document ->
+                                Mapping.catalogueFromDocument document
+                                |> Result.defaultValue Catalogue.empty
+
+                    let store = storeFor target credential
+                    let! found = Interpreter.readEntry store entryId
+
+                    let node = JsonObject()
+                    node.Add("ok", JsonValue.Create true)
+
+                    match found with
+                    | Choice1Of2 entry ->
+                        let view = Projection.toView displayPolicy [] entry
+                        node.Add("found", JsonValue.Create true)
+                        node.Add("description", JsonValue.Create(Option.toObj view.Description))
+                        node.Add("classification", JsonValue.Create(classificationOf catalogue view))
+                        node.Add("displayTime", JsonValue.Create(displayTime view.DisplayHours view.DisplayMinutes))
+                        node.Add("durationMilliseconds", JsonValue.Create view.DurationMilliseconds)
+                        node.Add("countsTowardTotals", JsonValue.Create view.CountsTowardTotals)
+
+                        node.Add(
+                            "version",
+                            match entry.Version with
+                            | Some token -> JsonValue.Create(VersionToken.value token)
+                            | None -> null
+                        )
+
+                        let badges = JsonArray()
+
+                        for badge in view.Badges do
+                            let text, tone = badgeView badge
+                            let rendered = JsonObject()
+                            rendered.Add("text", JsonValue.Create text)
+                            rendered.Add("tone", JsonValue.Create tone)
+                            badges.Add rendered
+
+                        node.Add("badges", badges)
+                    | Choice2Of2 unreadable ->
+                        // Not an error: an entry that has been removed from the
+                        // repository entirely is a real thing to discover
+                        // during a conflict, and saying "not readable" is more
+                        // useful than failing the review.
+                        node.Add("found", JsonValue.Create false)
+                        node.Add("detail", JsonValue.Create unreadable.Detail)
+
+                    return node.ToJsonString(jsonOptions)
+        with ex ->
+            return errorResult (ex.GetType().Name + ": " + ex.Message)
+    }
+
 /// The store this runs against in a browser: the real GitHub transport.
 ///
 /// Separated from `persistWith` so the wiring above — dispatch, interpret,
@@ -1134,3 +1225,6 @@ let persist (requestJson: string) : Async<string> = persistWith httpStore reques
 
 /// Read the ledger and catalogue from the real repository.
 let loadLedger (requestJson: string) : Async<string> = loadLedgerWith httpStore requestJson
+
+/// Read one entry from the real repository, for reviewing a stale write.
+let reviewEntry (requestJson: string) : Async<string> = reviewEntryWith httpStore requestJson
