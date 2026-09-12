@@ -46,6 +46,14 @@ let ``the default day view hides non counting entries but discloses how many`` (
 
     let countingOnly = run dayQuery [ active; voided ]
     Assert.Equal(1, List.length countingOnly.Entries)
+    // The "discloses how many" half of this test's own name. It was missing,
+    // and its absence hid a real defect: visibility was folded into the
+    // selection filter, so a hidden entry was never counted as excluded and
+    // the default day view reported zero — silently unable to tell anyone
+    // that a removed entry existed (TE-R-030).
+    Assert.Equal(1, countingOnly.ExcludedEntries)
+    Assert.Equal(1, countingOnly.CountedEntries)
+    Assert.Equal(1800000L, countingOnly.TotalMilliseconds)
 
     let withVoided = run { dayQuery with Visibility = IncludeVoided } [ active; voided ]
     Assert.Equal(2, List.length withVoided.Entries)

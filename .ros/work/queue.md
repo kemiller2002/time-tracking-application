@@ -9,7 +9,7 @@
 | WI-0004 | TE-003 Domain state model: entry states, legal transitions, capabilities, obligations, effects | complete | domain | high |
 | WI-0005 | TE-004 Time unit domain: exact elapsed duration plus six-minute billing units | complete | domain | high |
 | WI-0006 | TE-005 GitHub persistence boundary: anti-corruption layer between F# domain and GitHub API | complete | persistence | high |
-| WI-0007 | TE-006 WASM/browser boundary: F# WASM via typescript-wasm-kernel with minimal TS surface | blocked | boundary | high |
+| WI-0007 | TE-006 WASM/browser boundary: F# WASM via typescript-wasm-kernel with minimal TS surface | complete | boundary | high |
 | WI-0008 | TE-007 Historical UI recovery: establish authoritative HTML/CSS screen provenance | complete | ui | high |
 | WI-0009 | TE-018 BLOCKED: .NET/F# toolchain unavailable - proxy denies all Microsoft distribution hosts | complete | blocker | high |
 | WI-0010 | TE-008 Create entry vertical slice | complete | slice | high |
@@ -33,3 +33,4 @@
 | WI-0028 | TE-028 Verify the GitHub transport write path against a scratch branch (needs a write-capable token; agent proxy denies API writes) | captured |  | medium |
 | WI-0029 | TE-029 Persist the project/activity catalogue and implement LoadProjects in the interpreter | complete |  | medium |
 | WI-0030 | TE-030 Source-generated JSON serialization so the WASM host can be trimmed (reflection-based System.Text.Json blocks IL trimming) | captured |  | medium |
+| WI-0031 | TE-031 Kernel command dispatch: browser submits commands, F# decides, effects returned as data | ready |  | medium |

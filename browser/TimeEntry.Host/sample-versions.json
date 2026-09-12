@@ -1,0 +1,6 @@
+{
+  "note": "Stands in for what the GitHub store returns: entry id -> blob SHA. A version is file metadata, never document content — storing a hash of a document inside that document would be circular. See domain/TimeEntry.Persistence/Documents.fs.",
+  "versions": {
+    "e1": "b6fc4c620b67d95f953a5c1c1230aaab5db5a1b0"
+  }
+}

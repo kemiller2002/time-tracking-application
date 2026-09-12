@@ -14,6 +14,27 @@ public static partial class Interop
     /// </summary>
     [JSExport]
     internal static string ViewDay(string requestJson) => TimeEntry.Kernel.viewDay(requestJson);
+
+    /// <summary>
+    /// Forwards a command to the F# kernel. Same contract: string in, string
+    /// out, no decisions here.
+    /// </summary>
+    [JSExport]
+    internal static string Dispatch(string requestJson) => TimeEntry.Kernel.dispatch(requestJson);
+
+    /// <summary>
+    /// Forwards a request for the six-minute duration options.
+    /// </summary>
+    [JSExport]
+    internal static string DurationGrid(string requestJson) =>
+        TimeEntry.Kernel.durationGrid(requestJson);
+
+    /// <summary>
+    /// Forwards a request for the catalogue's selectable choices.
+    /// </summary>
+    [JSExport]
+    internal static string CatalogueChoices(string requestJson) =>
+        TimeEntry.Kernel.catalogueChoices(requestJson);
 }
 
 public static class Program

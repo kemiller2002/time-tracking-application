@@ -28,6 +28,12 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Show the SDK the build will use
+        # global.json pins the 8.0 line. Printed because the failure it
+        # prevents — a newer preinstalled SDK resolving `wasm-tools` to the
+        # wrong band — is otherwise invisible until publish.
+        run: dotnet --version
+
       - name: Install WASM workloads
         run: dotnet workload install wasm-tools wasm-experimental
 

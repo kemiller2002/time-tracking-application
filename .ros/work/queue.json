@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "time-tracking-application",
-  "nextSeq": 31,
+  "nextSeq": 32,
   "items": [
     {
       "id": "WI-0001",
@@ -466,6 +466,20 @@
       "attachments": [],
       "createdAt": "2026-09-12T00:29:51.618Z",
       "updatedAt": "2026-09-12T00:29:51.618Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0031",
+      "title": "TE-031 Kernel command dispatch: browser submits commands, F# decides, effects returned as data",
+      "description": null,
+      "tags": [],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T00:36:23.992Z",
+      "updatedAt": "2026-09-12T00:55:00Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null

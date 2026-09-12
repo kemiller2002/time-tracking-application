@@ -109,7 +109,7 @@ module Projection =
             | Some raw when System.String.IsNullOrWhiteSpace raw -> true
             | Some raw -> matchesText (raw.Trim()) entry
 
-        projectOk && activityOk && dateOk && textOk && matchesVisibility query.Visibility entry
+        projectOk && activityOk && dateOk && textOk
 
     /// Sorting is total and tie-broken by entry id, so the order is fully
     /// determined by (state, query) and never depends on input order
@@ -182,9 +182,20 @@ module Projection =
         (entries: TimeEntry list)
         : ListProjection =
 
-        let matched = entries |> List.filter (matches query) |> sortBy query.Sort
+        // Selection and visibility are two separate questions, and keeping
+        // them separate is what lets a day view DISCLOSE a removed entry
+        // instead of hiding it (TE-R-030). `selected` is everything the query
+        // asked for; `matched` is the subset the caller chose to show.
+        //
+        // Folding visibility into the filter — as this did — made
+        // `ExcludedEntries` always zero under `CountingOnly`, so the default
+        // day view could not tell the user that an entry existed and was
+        // excluded. That silently contradicted this type's own documented
+        // contract.
+        let selected = entries |> List.filter (matches query)
+        let matched = selected |> List.filter (matchesVisibility query.Visibility) |> sortBy query.Sort
         let views = matched |> List.map (fun e -> toView policy (obligationsFor e) e)
-        let counting = matched |> List.filter TimeEntry.countsTowardTotals
+        let counting = selected |> List.filter TimeEntry.countsTowardTotals
 
         let totalMilliseconds =
             counting |> List.sumBy TimeEntry.contributedMilliseconds
@@ -207,6 +218,6 @@ module Projection =
           TotalDisplayHours = totalHours
           TotalDisplayMinutes = totalMinutes
           CountedEntries = List.length counting
-          ExcludedEntries = List.length matched - List.length counting
+          ExcludedEntries = List.length selected - List.length counting
           OpenObligations = views |> List.collect (fun v -> v.Obligations) |> List.distinct
           IsEmpty = List.isEmpty matched }
