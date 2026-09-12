@@ -166,6 +166,13 @@ let writeCatalogue (document: CatalogueDocument) : string =
         writeEntries writer "activity_types" document.activity_types
         writer.WriteEndObject())
 
+let writePreferences (document: PreferencesDocument) : string =
+    toJson (fun writer ->
+        writer.WriteStartObject()
+        writer.WriteString("schema_version", document.schema_version)
+        writer.WriteNumber("monthly_target_units", document.monthly_target_units)
+        writer.WriteEndObject())
+
 // ---------------------------------------------------------------------------
 // Reading
 // ---------------------------------------------------------------------------
@@ -292,3 +299,12 @@ let readCatalogue (content: string) : Result<CatalogueDocument, DecodeError> =
         { schema_version = required root "schema_version"
           projects = array root "projects" readEntry
           activity_types = array root "activity_types" readEntry })
+
+let readPreferences (content: string) : Result<PreferencesDocument, DecodeError> =
+    decode content (fun root ->
+        { schema_version = required root "schema_version"
+          // `number` returns 0 for a missing or non-numeric field, which is
+          // exactly this document's encoding of "no target set". The leniency
+          // is deliberate and matches the rest of this reader: a key deleted
+          // in a GitHub diff reads the same as a key set to zero.
+          monthly_target_units = number root "monthly_target_units" })

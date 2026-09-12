@@ -79,3 +79,12 @@ let isEntryPath (path: string) : bool =
 /// tree read never mistakes the catalogue for an entry.
 [<Literal>]
 let CataloguePath = "ledger/catalogue.json"
+
+/// The preferences file's path.
+///
+/// Beside the catalogue and outside `LedgerRoot`, for the same reason: a
+/// recursive tree read filters on `isEntryPath`, and a preferences file inside
+/// the entry root would be offered to the entry decoder and reported as one
+/// unreadable entry on every load.
+[<Literal>]
+let PreferencesPath = "ledger/preferences.json"

@@ -150,3 +150,25 @@ type CatalogueDocument =
     { schema_version: string
       projects: CatalogueEntryDocument array
       activity_types: CatalogueEntryDocument array }
+
+// ---------------------------------------------------------------------------
+// Preferences
+// ---------------------------------------------------------------------------
+
+/// The stored preferences.
+///
+/// One file, like the catalogue and unlike entries: entries get a file each so
+/// each carries an independent concurrency token, and preferences have no such
+/// need — there is one of them and one person setting it.
+///
+/// `monthly_target_units` is six-minute units, matching the currency the
+/// domain holds a target in (`TrackingTarget`). Stored as units rather than
+/// hours so the file cannot express a target the domain cannot hold, and so a
+/// later target of "seven and a half hours" needs no schema change. Zero means
+/// no target is set: the field is absent or zero, and both read as absence,
+/// because a hand-edited file in a GitHub diff may well have the key deleted
+/// rather than zeroed.
+[<CLIMutable>]
+type PreferencesDocument =
+    { schema_version: string
+      monthly_target_units: int64 }

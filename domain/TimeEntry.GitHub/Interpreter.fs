@@ -10,6 +10,7 @@ module TimeEntry.GitHub.Interpreter
 open TimeEntry.Semantic.Identifiers
 open TimeEntry.Semantic.Values
 open TimeEntry.Semantic.Catalogue
+open TimeEntry.Semantic.Preferences
 open TimeEntry.Semantic.EntryState
 open TimeEntry.Transitions.Effects
 open TimeEntry.Persistence
@@ -235,6 +236,97 @@ let private loadCatalogue (store: GitHubStore) =
                 match Mapping.catalogueFromDocument document with
                 | Error documentError -> return CatalogueUnreadable(sprintf "%A" documentError)
                 | Ok catalogue -> return CatalogueLoaded catalogue
+    }
+
+// ---------------------------------------------------------------------------
+// Preferences
+// ---------------------------------------------------------------------------
+
+/// What reading or writing the preferences file produced.
+///
+/// Three outcomes, not two, because "nothing is set" and "I could not find
+/// out" must not be the same answer. A month view that cannot read the file
+/// has to say so; if a failed read collapsed into `Preferences.none` it would
+/// instead say "no target set" and quietly invite the person to set one they
+/// already have.
+type PreferencesOutcome =
+    | PreferencesLoaded of Preferences
+    /// The file exists but could not be interpreted — corrupt JSON, a newer
+    /// schema, or a value outside the domain's range.
+    | PreferencesUnreadable of detail: string
+    /// The store could not be reached, or refused.
+    | PreferencesUnavailable of StoreError
+
+/// Read the preferences.
+///
+/// Not an `Effect`, for the same reason as `readEntry`: Tier 2's effect
+/// vocabulary describes ledger transitions, and a preference is not one.
+/// Nothing is recorded when a preference changes, no revision is appended and
+/// no capability depends on it, so giving the domain an effect case for it
+/// would let a host's needs put a non-fact into the ledger's language.
+///
+/// A file that is not present is `Preferences.none`, not an error: a ledger
+/// where nobody has set anything yet is the ordinary first state. That is the
+/// opposite of the catalogue, where absence IS an error (`Catalogue.empty`
+/// refuses every project, so returning it would present a failed read as "you
+/// have no projects"). Nothing is refused for want of a preference.
+let readPreferences (store: GitHubStore) : Async<PreferencesOutcome> =
+    async {
+        let! file = store.ReadFile Layout.PreferencesPath
+
+        match file with
+        | Error error -> return PreferencesUnavailable error
+        | Ok None -> return PreferencesLoaded Preferences.none
+        | Ok(Some stored) ->
+            match Serialization.readPreferences stored.Content with
+            | Error decodeError -> return PreferencesUnreadable(sprintf "%A" decodeError)
+            | Ok document ->
+                match Mapping.preferencesFromDocument document with
+                | Error documentError -> return PreferencesUnreadable(sprintf "%A" documentError)
+                | Ok preferences -> return PreferencesLoaded preferences
+    }
+
+/// Write the preferences, replacing exactly the version that was read.
+///
+/// Compare-and-swap on both the file's blob SHA and the branch ref, the same
+/// as every ledger write: the preferences file is one file that two devices
+/// could write at once, and losing one of those writes silently is no more
+/// acceptable here than it is for an entry.
+///
+/// What is deliberately NOT here is conflict *reconciliation*. A refused
+/// ledger write becomes a reviewable conflict because the person needs to
+/// choose between two versions of a record of what happened (TE-R-071). A
+/// refused preference write needs no review: the value is small, the person
+/// has it in front of them, and re-reading and setting it again loses nothing.
+/// The refusal is reported as the `StoreError` it is.
+let savePreferences (store: GitHubStore) (preferences: Preferences) : Async<Result<Preferences, StoreError>> =
+    async {
+        let! existing = store.ReadFile Layout.PreferencesPath
+
+        match existing with
+        | Error error -> return Error error
+        | Ok current ->
+            let! head = store.ReadHead()
+
+            match head with
+            | Error error -> return Error error
+            | Ok headSha ->
+                let content =
+                    preferences |> Mapping.preferencesToDocument |> Serialization.writePreferences
+
+                let request =
+                    { Message = "Set tracking preferences"
+                      Writes =
+                        [ { Path = Layout.PreferencesPath
+                            Content = content
+                            ExpectedSha = current |> Option.map (fun file -> file.Sha) } ]
+                      ExpectedHeadSha = headSha }
+
+                let! committed = store.Commit request
+
+                match committed with
+                | Error error -> return Error error
+                | Ok _ -> return Ok preferences
     }
 
 // ---------------------------------------------------------------------------

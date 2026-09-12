@@ -151,14 +151,33 @@
         <p class="field-help" id="review-attest"></p>
       </section>
       <!-- The month, adopted from static-ui-screens/month.html: the metric
-           row, the metric cards, and the daily-rhythm bars. What is NOT here
-           is the progress bar against an "80h target" — no repository
-           document states a target or who sets one, so rendering a bar
-           against an invented number would be inventing a requirement
-           (OQ-9). -->
+           row, the metric cards, the progress bar and the daily-rhythm bars.
+           The bar is present but starts hidden: the person using the ledger
+           sets the target (DF-TE-0015), and until one is set there is nothing
+           to draw a bar against. month.html's "80h" is not adopted as a
+           default — no document says where 80 comes from. -->
       <section class="surface surface-pad" id="month-panel" aria-labelledby="month-title">
         <div class="section-head"><div><h2 class="section-title" id="month-title">September 2026</h2><p class="section-kicker">A factual summary of recorded business activity.</p></div></div>
         <div class="metric-row"><div><p class="summary-label">Recorded this month</p><p class="summary-value" id="month-total">—</p></div><div><p class="summary-label">Decimal hours</p><p class="summary-value" id="month-decimal">—</p></div></div>
+        <div class="section" id="month-target" hidden>
+          <div class="progress-track" role="img" id="month-progress" aria-label="">
+            <div class="progress-bar" id="month-progress-bar"></div>
+          </div>
+          <div class="progress-labels"><span id="month-progress-recorded"></span><span id="month-progress-target"></span></div>
+          <div class="notice notice-warning section">
+            <p class="notice-title" id="month-target-headline"></p>
+            <p class="notice-copy" id="month-target-detail"></p>
+          </div>
+        </div>
+        <form class="section" id="target-form">
+          <div class="field">
+            <label for="target-hours">Monthly tracking target, in whole hours</label>
+            <input id="target-hours" name="hours" type="number" inputmode="numeric" min="1" step="1" autocomplete="off">
+            <p class="field-help" id="target-help">Nobody has set a target for this ledger.</p>
+          </div>
+          <button class="button button-secondary button-small" type="submit" id="target-set">Set target</button>
+          <button class="button button-secondary button-small" type="button" id="target-clear">Remove target</button>
+        </form>
         <div class="metrics-grid section">
           <section class="metric-card"><p class="metric-label">Active days</p><p class="metric-value" id="month-days">—</p><p class="metric-detail" id="month-entries"></p></section>
           <section class="metric-card"><p class="metric-label">Evidence coverage</p><p class="metric-value" id="month-evidence">—</p><p class="metric-detail" id="month-evidence-detail"></p></section>

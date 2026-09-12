@@ -361,3 +361,53 @@ module PeriodSummary =
                 | Void _ -> true
                 | _ -> false)
             |> List.length }
+
+// ---------------------------------------------------------------------------
+// Progress against a tracking target
+// ---------------------------------------------------------------------------
+
+/// How a period's recorded total compares to the target set for it.
+///
+/// A separate projection rather than fields on `PeriodSummary`, because the
+/// two answer different questions from different authorities: a summary is
+/// derived entirely from the ledger, while a target is a preference somebody
+/// set. Folding the target in would mean every caller of `PeriodSummary` had
+/// to supply one, and a month with no target set would have to be represented
+/// as a target of zero — which is a target, and a false one.
+///
+/// The caller therefore holds `TrackingTarget option` and builds this only
+/// when there is something to build it from (DF-TE-0015).
+type TargetProgress =
+    { TargetUnits: int
+      TargetDisplayHours: int
+      TargetDisplayMinutes: int
+      /// Whole per-cent, truncated, and NOT capped at 100. Exceeding a target
+      /// is a fact worth reporting; a caller drawing a bar clamps its own
+      /// width. Truncated rather than rounded so the figure never claims more
+      /// progress than was recorded — 79.9 hours against 80 reads 99%.
+      PercentRecorded: int
+      /// Never negative: "minus four hours remaining" is not a remainder.
+      RemainingUnits: int
+      RemainingDisplayHours: int
+      RemainingDisplayMinutes: int
+      Reached: bool }
+
+module TargetProgress =
+
+    /// Integer arithmetic throughout (TE-R-007). Both sides are already in
+    /// six-minute units, so the comparison needs no conversion and introduces
+    /// no rounding of its own.
+    let against (target: TrackingTarget) (summary: PeriodSummary) : TargetProgress =
+        let targetUnits = TrackingTarget.units target
+        let recorded = summary.TotalBillableUnits
+        let remaining = max 0 (targetUnits - recorded)
+        let targetHours, targetMinutes = TrackingTarget.toHoursAndMinutes target
+
+        { TargetUnits = targetUnits
+          TargetDisplayHours = targetHours
+          TargetDisplayMinutes = targetMinutes
+          PercentRecorded = recorded * 100 / targetUnits
+          RemainingUnits = remaining
+          RemainingDisplayHours = remaining * MinutesPerBillableUnit / 60
+          RemainingDisplayMinutes = remaining * MinutesPerBillableUnit % 60
+          Reached = remaining = 0 }

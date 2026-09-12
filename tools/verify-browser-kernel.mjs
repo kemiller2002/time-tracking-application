@@ -353,6 +353,68 @@ if (ready) {
   )
 
   // -------------------------------------------------------------------------
+  // The monthly tracking target (DF-TE-0015, resolving OQ-9)
+  // -------------------------------------------------------------------------
+
+  // The fixture's preferences file sets 60 hours — 600 units — and the month
+  // holds 17 units. Every figure below was computed in F#: the page's whole
+  // contribution to this section is one `hidden` flag and one `style` width.
+  check('a set target shows its progress panel', await page.isVisible('#month-target'))
+  check(
+    'the bar width is the kernel\'s percentage, not the page\'s',
+    (await page.locator('#month-progress-bar').getAttribute('style')) === 'width: 2%;',
+    await page.locator('#month-progress-bar').getAttribute('style')
+  )
+  check(
+    'the target label is the kernel\'s wording',
+    (await page.textContent('#month-progress-target'))?.trim() === '60h 00m target',
+    (await page.textContent('#month-progress-target'))?.trim()
+  )
+  // The recorded figure beside the bar is the same string the metric row
+  // shows. Two formatting paths for one quantity is how a bar starts
+  // disagreeing with the total above it.
+  check(
+    'and the recorded figure agrees with the month total',
+    (await page.textContent('#month-progress-recorded'))?.trim() ===
+      `${(await page.textContent('#month-total'))?.trim()} recorded`,
+    (await page.textContent('#month-progress-recorded'))?.trim()
+  )
+  check(
+    'the remainder and the determination are stated, not implied',
+    (await page.textContent('#month-target-headline'))?.trim() === 'Tracking target reached: No' &&
+      (await page.textContent('#month-target-detail'))?.includes('58h 18m remains') === true &&
+      (await page.textContent('#month-target-detail'))?.includes(
+        'Formal program determination: Not evaluated.'
+      ) === true,
+    (await page.textContent('#month-target-detail'))?.trim()
+  )
+  // The bar is role="img", so this label is its only accessible name. An
+  // empty one would leave a screen reader with an unnamed image (TE-R-111).
+  check(
+    'the bar carries an accessible name composed in F#',
+    (await page.locator('#month-progress').getAttribute('aria-label')) ===
+      '2 percent of a 60h 00m tracking target recorded',
+    await page.locator('#month-progress').getAttribute('aria-label')
+  )
+  // Setting a target writes to the ledger, so it needs a repository. Saying
+  // so beats a request that fails for a reason nobody can see.
+  await page.fill('#target-hours', '40')
+  await page.click('#target-set')
+  await page.waitForFunction(
+    () =>
+      document
+        .getElementById('create-message')
+        ?.textContent?.includes('Connect a repository') === true
+  )
+  check(
+    'setting a target with no repository connected says what is missing',
+    (await page.textContent('#create-message'))?.includes(
+      'Connect a repository before setting a target'
+    ),
+    (await page.textContent('#create-message'))?.trim()
+  )
+
+  // -------------------------------------------------------------------------
   // The form's choices are the kernel's, not the markup's
   // -------------------------------------------------------------------------
 

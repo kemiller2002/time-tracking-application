@@ -14,6 +14,7 @@ open TimeEntry.Semantic.Identifiers
 open TimeEntry.Semantic.Duration
 open TimeEntry.Semantic.Values
 open TimeEntry.Semantic.Catalogue
+open TimeEntry.Semantic.Preferences
 open TimeEntry.Semantic.EntryState
 open TimeEntry.Persistence.Documents
 
@@ -462,3 +463,41 @@ let catalogueFromDocument (document: CatalogueDocument) : Result<Catalogue, Docu
             |> traverse (fun (index, item) ->
                 activityTypeFromDocument (sprintf "activity_types[%d]" index) item)
             |> Result.map (fun activityTypes -> Catalogue.ofLists projects activityTypes))
+
+// ---------------------------------------------------------------------------
+// Preferences
+// ---------------------------------------------------------------------------
+
+let preferencesToDocument (preferences: Preferences) : PreferencesDocument =
+    { schema_version = CurrentSchemaVersion
+      monthly_target_units =
+        preferences.MonthlyTarget
+        |> Option.map (fun target -> int64 (TrackingTarget.units target))
+        // Zero for "no target set". `TrackingTarget` cannot hold zero, so the
+        // encoding is unambiguous: no legal target ever writes this value.
+        |> Option.defaultValue 0L }
+
+/// Absence and a refused value are different outcomes.
+///
+/// A missing or zero `monthly_target_units` is "no target set" and reads as
+/// `None`. A value outside `TrackingTarget`'s range is a *corrupt file*, not
+/// an absent preference, and is reported as `InvalidField` — the alternative
+/// would be to silently present a hand-edited target of minus four hours as
+/// "you have not set one", which loses the fact that the file needs attention.
+let preferencesFromDocument (document: PreferencesDocument) : Result<Preferences, DocumentError> =
+    if isNull (box document) then
+        Error(MissingField "document")
+    elif document.schema_version <> CurrentSchemaVersion then
+        Error(UnsupportedSchemaVersion(document.schema_version, CurrentSchemaVersion))
+    elif document.monthly_target_units = 0L then
+        Ok Preferences.none
+    elif document.monthly_target_units > int64 Int32.MaxValue
+         || document.monthly_target_units < int64 Int32.MinValue then
+        Error(InvalidField("monthly_target_units", "outside the representable range"))
+    else
+        match TrackingTarget.ofUnits (int document.monthly_target_units) with
+        | Error(TargetNotPositive units) ->
+            Error(InvalidField("monthly_target_units", sprintf "%d is not a positive number of units" units))
+        | Error(TargetExceedsMaximum(units, maximum)) ->
+            Error(InvalidField("monthly_target_units", sprintf "%d units exceeds the maximum of %d" units maximum))
+        | Ok target -> Ok { MonthlyTarget = Some target }

@@ -167,7 +167,7 @@ see [`DECISIONS.md`](DECISIONS.md).
 | OQ-6 | Who is the actor on a change made in the browser? | TE-R-031, TE-R-052 | `static-ui-screens/sign-in.html` shows a sign-in screen and `settings.html` an identity chip, but no document states where the identity comes from, how it is verified, or what it is recorded as. Every history revision requires an actor, so the browser kernel currently attributes changes to the literal `browser` — a placeholder, not a decision. |
 | OQ-7 | How should a removed or replaced entry be labelled in a list? | TE-R-030 | **RESOLVED by DF-TE-0014** — a removed entry is labelled "Removed". The question also asked about a replaced entry and the answer named only the removed one, so the superseded label is re-filed as OQ-12 rather than assumed to follow. |
 | OQ-8 | How does the browser authenticate to the GitHub API? | TE-R-090, TE-R-070 | **RESOLVED by DF-TE-0011** — the browser supplies a token. Because the user stated the mechanism may change, it is one implementation of a `CredentialSource` port rather than the shape the transport is written against, so a device flow, an installation token or a same-origin proxy each slot in without the transport changing. |
-| OQ-9 | What is the monthly tracking target, and who sets it? | `month.html` (no TE-R covers the monthly summary; the row previously cited TE-R-082, which is chronological display) | **ANSWERED — the person using the ledger sets it.** Recorded here until `DF-TE-0015` and the mechanism land; until then the month view still reports the figures without a target, because there is nowhere yet for a set target to live. `month.html`'s 80 hours remains a figure no document justifies and is not adopted as a default. |
+| OQ-9 | What is the monthly tracking target, and who sets it? | `month.html` (no TE-R covers the monthly summary; the row previously cited TE-R-082, which is chronological display) | **RESOLVED by DF-TE-0015** — the person using the ledger sets it, and it is stored in the ledger at `ledger/preferences.json` so it survives a change of device. There is no default: a ledger with no target set reports its figures and draws no bar. `month.html`'s 80 hours is not adopted, as a default or as a fixture. |
 | OQ-10 | Is overlapping recorded time a defect, and against what? | `review.html` (no TE-R covers the daily checks; the row previously cited TE-R-083, which is empty states) | **RESOLVED by DF-TE-0013** — it is not a defect: time is recorded in six-minute units, so two records may legitimately cover the same stretch of clock. `review.html`'s "No overlapping time" row is therefore not implemented and nothing stands in its place. Reconciling genuinely double-counted time is deferred work (WI-0052), which would need start and end times the ledger does not keep. |
 | OQ-11 | May two split children claim the same piece of evidence? | TE-R-045 | **RESOLVED by DF-TE-0012** — yes. Reassignment copies rather than partitions, because one document can support both halves of a session. A test asserts it, so the permissive reading is no longer merely the absence of a check. |
 | OQ-12 | How should a *replaced* (superseded) entry be labelled in a list? | TE-R-030 | The narrower half of OQ-7, which DF-TE-0014 settled only for the removed case. The kernel uses "Replaced" against `badge-change` — still a reading of `remove.html`'s vocabulary, not a stated word. Kept separate from "Removed" because a superseded entry has a successor and a removed one does not. |
@@ -175,3 +175,17 @@ see [`DECISIONS.md`](DECISIONS.md).
 These are recorded per the execution rule "Do not invent missing requirements.
 Do not silently resolve ambiguous requirements." They block the specific
 transitions named, not the whole domain.
+
+## K. Requirements stated by the user during execution
+
+These were open questions until the user answered them. They are listed
+separately from A–I because their source is this execution rather than a
+repository document, and a reader should be able to tell which is which.
+Each carries the decision record that states it.
+
+| ID | Requirement | Source |
+|---|---|---|
+| TE-R-120 | The monthly tracking target MUST be set by the person using the ledger, MUST survive a change of device, and MUST NOT default to any figure. | user instruction (OQ-9); `DF-TE-0015` |
+| TE-R-121 | Two split children MAY claim the same piece of evidence. | user instruction (OQ-11); `DF-TE-0012` |
+| TE-R-122 | An entry removed from totals MUST be labelled "Removed" in a list. | user instruction (OQ-7); `DF-TE-0014` |
+| TE-R-123 | Overlapping recorded time MUST NOT be reported as a defect. | user instruction (OQ-10); `DF-TE-0013` |

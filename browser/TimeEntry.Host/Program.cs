@@ -92,6 +92,18 @@ public static partial class Interop
             FSharpOption<CancellationToken>.None);
 
     /// <summary>
+    /// Forwards a request to set or clear the monthly tracking target.
+    /// Asynchronous because it writes to the repository.
+    /// </summary>
+    [JSExport]
+    [return: JSMarshalAs<JSType.Promise<JSType.String>>]
+    internal static Task<string> SetMonthlyTarget(string requestJson) =>
+        FSharpAsync.StartAsTask(
+            TimeEntry.Kernel.setMonthlyTarget(requestJson),
+            FSharpOption<TaskCreationOptions>.None,
+            FSharpOption<CancellationToken>.None);
+
+    /// <summary>
     /// Forwards a split preview request.
     /// </summary>
     [JSExport]

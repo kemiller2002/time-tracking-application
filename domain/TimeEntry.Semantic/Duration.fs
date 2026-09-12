@@ -156,3 +156,59 @@ module BillableUnits =
     let toHoursAndMinutes (BillableUnits u) : int * int =
         let totalMinutes = u * MinutesPerBillableUnit
         totalMinutes / 60, totalMinutes % 60
+
+/// Why a supplied tracking target was refused.
+type TargetError =
+    | TargetNotPositive of units: int
+    | TargetExceedsMaximum of units: int * maximumUnits: int
+
+/// A year of full-time work in six-minute units, as a bound on arithmetic
+/// rather than a statement about anyone's month. `MaximumDurationMilliseconds`
+/// exists for the same reason and says the same thing about itself.
+[<Literal>]
+let MaximumTargetUnits = 20000
+
+/// How much recorded time a month is being tracked against.
+///
+/// Held in six-minute units, not hours and not milliseconds. Units because
+/// that is what the figure is compared against — the month view reports a
+/// billed total (DF-TE-0002), and a target in a finer currency than the total
+/// it is measured against would invite a comparison that is exact on one side
+/// and rounded on the other. A target is not elapsed time, so it is
+/// deliberately NOT a `Duration`: nothing happened for this long.
+///
+/// How a recorded period compares to a target is NOT here: comparison mixes
+/// a preference with a projection of the ledger, which is Tier 3's job.
+/// `TimeEntry.Projection.TargetProgress` does it. This type only says what a
+/// target is and converts itself for display.
+///
+/// Who sets it: the person using the ledger (DF-TE-0015, resolving OQ-9).
+/// There is no default. `static-ui-screens/month.html` shows "80h target", but
+/// no document says where 80 comes from, so this type cannot produce one
+/// unasked — absence is represented by the caller holding
+/// `TrackingTarget option`, and a month with no target set reports its figures
+/// without a bar.
+type TrackingTarget =
+    private
+    | TrackingTarget of units: int
+
+    member this.Units = let (TrackingTarget u) = this in u
+
+module TrackingTarget =
+
+    let ofUnits (units: int) : Result<TrackingTarget, TargetError> =
+        if units <= 0 then Error(TargetNotPositive units)
+        elif units > MaximumTargetUnits then Error(TargetExceedsMaximum(units, MaximumTargetUnits))
+        else Ok(TrackingTarget units)
+
+    /// Whole hours, which is how the design writes a target ("80h target").
+    /// Ten units to the hour exactly, so this converts without rounding.
+    let ofHours (hours: int) : Result<TrackingTarget, TargetError> =
+        ofUnits (hours * BillableUnitsPerHour)
+
+    let units (TrackingTarget u) = u
+
+    /// TE-R-085: presentation-boundary conversion, as `BillableUnits`.
+    let toHoursAndMinutes (TrackingTarget u) : int * int =
+        let totalMinutes = u * MinutesPerBillableUnit
+        totalMinutes / 60, totalMinutes % 60

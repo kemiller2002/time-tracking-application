@@ -23,8 +23,8 @@ and ROS forbids marking work complete merely because code exists, so the
 Evidence column is only `**VERIFIED**` where something actually ran:
 
 ```
-dotnet test TimeEntry.sln    276 passed, 0 failed
-npm run check:browser        111 checks passed in headless Chromium
+dotnet test TimeEntry.sln    309 passed, 0 failed
+npm run check:browser        118 checks passed in headless Chromium
 check-domain-architecture    0 tier-boundary violations
 ```
 
@@ -149,15 +149,15 @@ it, and no row below claims otherwise.
 
 | Category | Count |
 |---|---|
-| Requirements inventoried | 66 |
-| Rows marked **VERIFIED** by an executed test | **64** |
+| Requirements inventoried | 70 |
+| Rows marked **VERIFIED** by an executed test | **68** |
 | Structural only — the field exists, the affordance does not | 0 |
 | Partially verified — every layer exercised, never against a real repository (TE-R-099) | 1 |
 | **NOT IMPLEMENTED**, and said so rather than left implicit (TE-R-008) | 1 |
 
 ```
-dotnet test TimeEntry.sln    276 passed, 0 failed
-npm run check:browser        111 checks passed in headless Chromium
+dotnet test TimeEntry.sln    309 passed, 0 failed
+npm run check:browser        118 checks passed in headless Chromium
 npm run check                 20 passed
 check-domain-architecture      0 tier-boundary violations, adversarially
                                validated against seven injected violations
@@ -165,13 +165,22 @@ ros validate / registry        pass
 ```
 
 The counts above are produced by classifying each requirement row's Evidence
-cell — 64 + 0 + 1 + 1 = 66, which is the check that matters: every inventoried
+cell — 68 + 0 + 1 + 1 = 70, which is the check that matters: every inventoried
 requirement is in exactly one category, and none has quietly fallen out of the
 table.
 
 A first attempt at this counted occurrences of the word "VERIFIED" and came to
 64 of 66, with three other categories also non-zero — arithmetic that cannot
 be right. Counting rows rather than words is the fix.
+
+## K. Requirements stated by the user during execution
+
+| Req | Rule | Acceptance criterion | WI | Code | Test | Evidence |
+|---|---|---|---|---|---|---|
+| TE-R-120 | The person sets the monthly target | Stored in the ledger; no default; three absences kept distinct | WI-0053 | `TrackingTarget`, `Preferences`, `TargetProgress`, `Interpreter.readPreferences`/`savePreferences`, `Kernel.viewMonth`/`setMonthlyTarget` | `TargetTests` 33 cases; 7 browser checks | **VERIFIED** |
+| TE-R-121 | Split children may share evidence | Two children claiming one item is accepted | WI-0051 | `Guards.requireReassignedEvidenceExists` | `SplitTests` "two children may claim the same piece of evidence", which fails against an injected uniqueness check | **VERIFIED** |
+| TE-R-122 | A removed entry reads "Removed" | Badge text and tone | WI-0051 | `Kernel.badgeView` | `verify-browser-kernel` removal checks | **VERIFIED** |
+| TE-R-123 | Overlap is not a defect | No overlap row is emitted | WI-0051 | `Kernel.reviewDay` | `verify-browser-kernel` "no overlap check is claimed" | **VERIFIED** |
 
 ## Orphan check
 

@@ -110,6 +110,12 @@ let durationError (error: DurationError) =
         sprintf "a single entry may not exceed %s" (exactTime maximumMilliseconds)
     | IntervalEndsBeforeStart -> "that period ends before it starts"
 
+let targetError (error: TargetError) =
+    match error with
+    | TargetNotPositive _ -> "a tracking target must be more than no time at all"
+    | TargetExceedsMaximum(_, maximumUnits) ->
+        sprintf "a tracking target may not exceed %d hours" (maximumUnits / BillableUnitsPerHour)
+
 let dateError (error: DateError) =
     match error with
     | DateOutOfRange _ -> "that is not a date this ledger can record"
@@ -269,6 +275,7 @@ let ofError (error: obj) : string =
     | :? IdentifierError as e -> identifierError e
     | :? TextError as e -> textError e
     | :? DurationError as e -> durationError e
+    | :? TargetError as e -> targetError e
     | :? DateError as e -> dateError e
     | :? CatalogueError as e -> catalogueError e
     | :? DocumentError as e -> documentError e

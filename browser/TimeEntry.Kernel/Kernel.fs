@@ -12,6 +12,7 @@ open System.Text.Json.Nodes
 open TimeEntry.Semantic.Identifiers
 open TimeEntry.Semantic.Catalogue
 open TimeEntry.Semantic.Duration
+open TimeEntry.Semantic.Preferences
 open TimeEntry.Semantic.Values
 open TimeEntry.Semantic.EntryState
 open TimeEntry.Semantic.Capabilities
@@ -686,6 +687,95 @@ let reviewDay (requestJson: string) : string =
 /// states a target, where it comes from, or who sets it. Rendering a bar
 /// against an invented number would be inventing a requirement, so the
 /// figures are reported without one and OQ-9 records the gap.
+/// The preferences the page holds, decoded here rather than in the page.
+///
+/// The page carries the preferences file the same way it carries entry
+/// documents: verbatim, as it was read. Decoding it in F# means the page never
+/// learns what `monthly_target_units` is, and a corrupt file produces one
+/// worded message instead of a JavaScript `undefined` propagating into a bar
+/// width (TE-R-091).
+///
+/// An absent `preferences` key is "nothing set", not an error. A month can be
+/// viewed before any target exists, and requiring the key would make the first
+/// view of a new ledger fail.
+let private preferencesFrom (request: JsonNode) : Result<Preferences, string> =
+    match request.["preferences"] with
+    | null -> Ok Preferences.none
+    | node ->
+        match Serialization.readPreferences (node.ToJsonString()) with
+        | Error decodeError -> Error(Wording.ofError (box decodeError))
+        | Ok document ->
+            match Mapping.preferencesFromDocument document with
+            | Error documentError -> Error(Wording.ofError (box documentError))
+            | Ok preferences -> Ok preferences
+
+/// Progress against a set target, as the design writes it.
+///
+/// Emitted as `null` when no target is set, and the page renders no bar. That
+/// is the whole of DF-TE-0015's restraint: `month.html` draws a bar against
+/// "80h target", and since no document says where 80 comes from, a ledger with
+/// no target set gets its figures and no bar rather than a bar against an
+/// invented number.
+///
+/// `barPercent` is clamped to 100 and `percentRecorded` is not. A bar wider
+/// than its track is a rendering bug; "112% recorded" is a fact. Separating
+/// them here keeps the page from having to decide which it wants.
+let private targetNode (summary: PeriodSummary) (target: TrackingTarget) : JsonObject =
+    let progress = TargetProgress.against target summary
+    let node = JsonObject()
+    node.Add("targetUnits", JsonValue.Create progress.TargetUnits)
+
+    node.Add(
+        "displayTarget",
+        JsonValue.Create(displayTime progress.TargetDisplayHours progress.TargetDisplayMinutes)
+    )
+
+    node.Add("percentRecorded", JsonValue.Create progress.PercentRecorded)
+    node.Add("barPercent", JsonValue.Create(min 100 progress.PercentRecorded))
+    node.Add("reached", JsonValue.Create progress.Reached)
+
+    node.Add(
+        "displayRemaining",
+        JsonValue.Create(displayTime progress.RemainingDisplayHours progress.RemainingDisplayMinutes)
+    )
+
+    // `month.html`'s two lines, worded here. "Formal program determination:
+    // Not evaluated" is kept verbatim from the design: the screen states
+    // plainly that this view makes no such determination, and dropping that
+    // sentence would let a reader take the bar for one.
+    // The bar is `role="img"`, so its only accessible name is this label.
+    // `month.html` writes it as "68 percent of 80 hour tracking target
+    // recorded" — a sentence, composed from two domain figures, which is
+    // exactly the kind of string TE-R-085 keeps out of the page.
+    node.Add(
+        "ariaLabel",
+        JsonValue.Create(
+            sprintf
+                "%d percent of a %s tracking target recorded"
+                progress.PercentRecorded
+                (displayTime progress.TargetDisplayHours progress.TargetDisplayMinutes)
+        )
+    )
+
+    node.Add(
+        "headline",
+        JsonValue.Create(if progress.Reached then "Tracking target reached: Yes" else "Tracking target reached: No")
+    )
+
+    node.Add(
+        "detail",
+        JsonValue.Create(
+            if progress.Reached then
+                "Formal program determination: Not evaluated."
+            else
+                sprintf
+                    "%s remains. Formal program determination: Not evaluated."
+                    (displayTime progress.RemainingDisplayHours progress.RemainingDisplayMinutes)
+        )
+    )
+
+    node
+
 let viewMonth (requestJson: string) : string =
     try
         match JsonNode.Parse requestJson with
@@ -794,6 +884,14 @@ let viewMonth (requestJson: string) : string =
                                     summary.EntriesWithEvidence * 100 / summary.CountedEntries
                             )
                         )
+
+                        match preferencesFrom request with
+                        | Error detail -> errorResult detail
+                        | Ok preferences ->
+
+                        match preferences.MonthlyTarget with
+                        | None -> node.Add("target", null)
+                        | Some target -> node.Add("target", targetNode summary target)
 
                         let days = JsonArray()
 
@@ -1578,6 +1676,13 @@ let loadLedgerWith
 
                     let! catalogueOutcome = Interpreter.interpret store LoadProjects
 
+                    // Read with the ledger rather than on its own, so the page
+                    // has the month's target at the same moment it has the
+                    // month's entries. A second round trip from the page would
+                    // let the two arrive out of order and render a bar against
+                    // a total that has not loaded yet.
+                    let! preferencesOutcome = Interpreter.readPreferences store
+
                     let node = JsonObject()
 
                     match entriesOutcome with
@@ -1641,6 +1746,29 @@ let loadLedgerWith
                                 "catalogueError",
                                 JsonValue.Create "The repository answered with something other than a catalogue."
                             )
+
+                        // Preferences are returned in their STORED form,
+                        // like entries and the catalogue: the page hands the
+                        // document straight back to `viewMonth`, which decodes
+                        // it. An unreadable or unreachable preferences file is
+                        // named rather than silently treated as "no target
+                        // set" — the ledger may well have one.
+                        match preferencesOutcome with
+                        | Interpreter.PreferencesLoaded preferences ->
+                            node.Add(
+                                "preferences",
+                                JsonNode.Parse(
+                                    Serialization.writePreferences (
+                                        Mapping.preferencesToDocument preferences
+                                    )
+                                )
+                            )
+                        | Interpreter.PreferencesUnreadable detail ->
+                            node.Add("preferences", null)
+                            node.Add("preferencesError", JsonValue.Create detail)
+                        | Interpreter.PreferencesUnavailable error ->
+                            node.Add("preferences", null)
+                            node.Add("preferencesError", JsonValue.Create(Wording.storeError error))
 
                         return node.ToJsonString(jsonOptions)
                     | Interpreter.Failed error -> return errorResult (Wording.storeError error)
@@ -1750,6 +1878,95 @@ let reviewEntryWith
 /// network at all. A `persist` that built its own `HttpClient` inline could
 /// only be tested by talking to GitHub, which would make the most important
 /// part of this file the least covered.
+/// Set or clear the monthly tracking target.
+///
+/// The person using the ledger sets it (DF-TE-0015, resolving OQ-9), so this
+/// is the one thing the browser writes that is not a ledger fact. It appends
+/// no revision and attributes nothing: a preference is not a record of
+/// something that happened, and giving it an `Attribution` would put a
+/// non-event into the history the ledger exists to keep.
+///
+/// The request is whole hours, because "80h target" is how the design states
+/// one and a whole hour is what a person types. Units are the stored currency
+/// and hours are the typed one; converting here means the page never does
+/// arithmetic on a domain quantity (TE-R-085).
+///
+/// `clear: true` removes the target, and is a distinct instruction rather than
+/// `hours: 0`. Zero is not a target, so a form that submitted it would be
+/// asking for something unrepresentable; saying "clear" says what was meant.
+let setMonthlyTargetWith
+    (storeFor: HttpProtocol.RepositoryRef -> Credential.CredentialSource -> Store.GitHubStore)
+    (requestJson: string)
+    : Async<string> =
+    async {
+        try
+            match JsonNode.Parse requestJson with
+            | null -> return errorResult "empty request"
+            | request ->
+                match sessionFrom request with
+                | Error detail -> return errorResult detail
+                | Ok(target, credential) ->
+
+                let clearing =
+                    match request.["clear"] with
+                    | null -> false
+                    | value ->
+                        match System.Boolean.TryParse(value.ToString()) with
+                        | true, parsed -> parsed
+                        | _ -> false
+
+                let intended =
+                    if clearing then
+                        Ok None
+                    else
+                        match request.["hours"] with
+                        | null -> Error "missing 'hours'"
+                        | value ->
+                            match System.Int32.TryParse(value.ToString()) with
+                            | false, _ -> Error "'hours' must be a whole number of hours"
+                            | true, hours ->
+                                TrackingTarget.ofHours hours
+                                |> Result.mapError (fun e -> Wording.targetError e)
+                                |> Result.map Some
+
+                match intended with
+                | Error detail -> return errorResult detail
+                | Ok monthlyTarget ->
+                    let store = storeFor target credential
+                    let! saved = Interpreter.savePreferences store { MonthlyTarget = monthlyTarget }
+
+                    match saved with
+                    | Error error -> return errorResult (Wording.storeError error)
+                    | Ok preferences ->
+                        let node = JsonObject()
+                        node.Add("ok", JsonValue.Create true)
+
+                        node.Add(
+                            "preferences",
+                            JsonNode.Parse(
+                                Serialization.writePreferences (Mapping.preferencesToDocument preferences)
+                            )
+                        )
+
+                        // Worded here so the page reports what happened
+                        // without composing a sentence of its own
+                        // (TE-R-085).
+                        node.Add(
+                            "outcome",
+                            JsonValue.Create(
+                                match preferences.MonthlyTarget with
+                                | None -> "The monthly tracking target was removed."
+                                | Some set ->
+                                    let hours, minutes = TrackingTarget.toHoursAndMinutes set
+                                    sprintf "The monthly tracking target is now %s." (displayTime hours minutes)
+                            )
+                        )
+
+                        return node.ToJsonString(jsonOptions)
+        with ex ->
+            return errorResult (ex.GetType().Name + ": " + ex.Message)
+    }
+
 let private httpStore (target: HttpProtocol.RepositoryRef) (credential: Credential.CredentialSource) =
     // Not disposed: the store closes over it and is used after this returns.
     // One client per persist rather than one per request — a client per
@@ -1766,3 +1983,6 @@ let loadLedger (requestJson: string) : Async<string> = loadLedgerWith httpStore 
 
 /// Read one entry from the real repository, for reviewing a stale write.
 let reviewEntry (requestJson: string) : Async<string> = reviewEntryWith httpStore requestJson
+
+/// Set or clear the monthly tracking target in the real repository.
+let setMonthlyTarget (requestJson: string) : Async<string> = setMonthlyTargetWith httpStore requestJson

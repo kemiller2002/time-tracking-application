@@ -697,3 +697,92 @@ lose that from the list, which is the one place a reader sees both.
 - `Kernel.changeWording` continues to render the fuller "Removed from totals"
   on a detail screen, where there is room for it. The badge is the list label
   this decision fixes.
+
+---
+
+## DF-TE-0015
+
+**Title:** The person using the ledger sets the monthly tracking target
+
+**Status:** accepted · **Resolves:** `OQ-9` · **Source:** explicit user instruction
+
+### Decision
+
+The monthly tracking target is set by the person using the ledger. There is
+**no default**: a ledger with no target set reports its figures and draws no
+progress bar.
+
+`static-ui-screens/month.html` renders a bar against "80h target". 80 is not
+adopted, here or anywhere: no repository document says where it comes from,
+whether it varies by person or month, or what it is for. A default would be
+that invented requirement wearing a plausible number.
+
+### Where it lives, and why there
+
+In the ledger, at `ledger/preferences.json`, beside the catalogue.
+
+The alternative was the browser — `localStorage`, or the `sessionStorage` the
+credential already uses. It was rejected for one reason: a target set on a
+phone would then be invisible on a laptop, and `settings.html` describes
+preferences as "Personal to this account", not personal to a device. The
+ledger is the only store this application has that is neither per-device nor
+per-session, and the target is small enough that putting it there costs one
+file.
+
+Stored in six-minute units rather than hours, so the file cannot express a
+target the domain cannot hold, and a later "seven and a half hours" needs no
+schema change. Zero encodes "no target set", which is unambiguous because
+`TrackingTarget` cannot hold zero — no legal target ever writes that value.
+
+### What each tier got, and what it did not
+
+| Tier | Addition | Deliberately not there |
+|---|---|---|
+| 1 | `TrackingTarget` (units, positive, bounded), `Preferences` | any comparison against a recorded total — that mixes a preference with a projection |
+| 3 | `TargetProgress.against` | fields on `PeriodSummary`: every caller would then have to supply a target, and an unset one would have to be represented as zero, which is a target and a false one |
+| 4 | `PreferencesDocument`, `Layout.PreferencesPath`, `Interpreter.readPreferences` / `savePreferences` | an `Effect` case — see below |
+| Kernel | `viewMonth`'s `target` node, `setMonthlyTarget` | any figure or sentence composed in the page |
+
+**Not an `Effect`.** Tier 2's effect vocabulary describes ledger transitions.
+Setting a preference appends no revision, attributes nothing to anybody, and
+no capability depends on it — so giving the domain an effect case for it would
+let a host's need put a non-fact into the language the ledger keeps its facts
+in. It is a host operation on the interpreter, exactly like `readEntry`.
+
+**Written with the same compare-and-swap as a ledger write**, on both the
+file's blob SHA and the branch ref: it is one file two devices could write at
+once. What it does *not* get is conflict *reconciliation*. A refused ledger
+write becomes a reviewable conflict because the person must choose between two
+versions of a record of what happened (TE-R-071); a refused preference write
+needs no review, because the value is small and in front of them. The refusal
+is reported as the `StoreError` it is.
+
+### Three absences that must not collapse into one
+
+- **No target set** — `Preferences.none`. The ordinary first state of a new
+  ledger. Nothing is refused for want of a target.
+- **No preferences file** — read as "no target set", not as an error. This is
+  the opposite of the catalogue, where absence *is* an error, because
+  `Catalogue.empty` refuses every project and returning it would present a
+  failed read as "you have no projects". Nothing is refused for want of a
+  preference, so absence is safe here and not there.
+- **A preferences file that cannot be read** — `PreferencesUnreadable`, and
+  the month view fails in words. Reporting this as "no target set" would hide
+  a file that needs attention behind an invitation to set something the person
+  has already set. A hand-edited negative target is a corrupt file, not an
+  absent preference, and is reported as `InvalidField`.
+
+### Consequences
+
+- The percentage is truncated, not rounded, so it never claims more progress
+  than was recorded: 79.9 hours against 80 reads 99%. A test fails against an
+  injected rounding, and that was confirmed.
+- `percentRecorded` is not capped; `barPercent` is. Exceeding a target is a
+  fact worth reporting, and a bar wider than its track is a rendering bug.
+  Separating them keeps the page from having to decide which it wanted.
+- The fixture page carries a 60-hour target rather than 80, so the figure no
+  document justifies does not return as a fixture.
+- `settings.html`'s other preferences — appearance, larger controls, reduced
+  motion, quick starts — are not implemented. `Preferences` has one field
+  because one has been asked for; the record exists so the rest have somewhere
+  to arrive without changing every signature that carries preferences.

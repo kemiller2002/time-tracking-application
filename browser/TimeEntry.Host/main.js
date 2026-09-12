@@ -26,13 +26,19 @@ const ask = (fn, request) => JSON.parse(fn(JSON.stringify(request)))
 // splits, and a merge needs two sources that were each read at a known
 // version. Nothing the page creates has a version until effects are actually
 // performed (WI-0033, OQ-8), so the fixture has to supply them.
-let [storedEntry, secondEntry, thirdEntry, catalogue, versionFixture] = await Promise.all([
-  fetch('./sample-entry.json').then((r) => r.json()),
-  fetch('./sample-entry-2.json').then((r) => r.json()),
-  fetch('./sample-entry-3.json').then((r) => r.json()),
-  fetch('./sample-catalogue.json').then((r) => r.json()),
-  fetch('./sample-versions.json').then((r) => r.json())
-])
+// The preferences fixture carries a 60-hour target. 60 rather than
+// month.html's 80 deliberately: 80 is the figure no document justifies
+// (OQ-9), and a fixture repeating it would read as a default returning by the
+// back door. This one is a value somebody set, which is what a target is.
+let [storedEntry, secondEntry, thirdEntry, catalogue, versionFixture, preferencesFixture] =
+  await Promise.all([
+    fetch('./sample-entry.json').then((r) => r.json()),
+    fetch('./sample-entry-2.json').then((r) => r.json()),
+    fetch('./sample-entry-3.json').then((r) => r.json()),
+    fetch('./sample-catalogue.json').then((r) => r.json()),
+    fetch('./sample-versions.json').then((r) => r.json()),
+    fetch('./sample-preferences.json').then((r) => r.json())
+  ])
 
 // Version tokens travel beside the documents, not inside them: a token is a
 // hash OF a document. The store knows path -> blob SHA; the page carries that
@@ -140,6 +146,13 @@ let state = Object.freeze({
   conflictSaved: null,
   effects: [],
   performed: [],
+  // The preferences document as the repository holds it, carried verbatim.
+  // The page never reads a field out of it — `ViewMonth` decodes it — so a
+  // target cannot become a number this file knows how to arithmetic on
+  // (TE-R-091). `null` means nothing is set, or nothing was loaded; which of
+  // those it is, `preferencesError` says.
+  preferences: preferencesFixture,
+  preferencesError: null,
   // Bumped on every state change. An asynchronous read that resolves after
   // the page has moved on is stale, and applying it would silently discard
   // whatever moved it.
@@ -853,11 +866,54 @@ const renderReview = () => {
   )
 }
 
+// Progress against the monthly target, or nothing at all.
+//
+// Every string and every number here was computed by the kernel: the two
+// labels, the sentence beside them, the accessible name of the bar, and the
+// bar's own width. The page's whole contribution is `hidden` and a `style`
+// attribute (TE-R-085).
+//
+// `null` means no target is set, and then there is no bar — the restraint
+// DF-TE-0015 asked for. month.html's "80h" is not a fallback.
+const renderTarget = (target, displayRecorded) => {
+  const panel = document.getElementById('month-target')
+  if (panel) panel.hidden = !target
+  if (!target) {
+    setText(
+      'target-help',
+      state.preferencesError ?? 'Nobody has set a target for this ledger.'
+    )
+    return
+  }
+
+  const bar = document.getElementById('month-progress-bar')
+  if (bar) bar.style.width = `${target.barPercent}%`
+  document.getElementById('month-progress')?.setAttribute('aria-label', target.ariaLabel)
+  setText('month-progress-recorded', `${displayRecorded} recorded`)
+  setText('month-progress-target', `${target.displayTarget} target`)
+  setText('month-target-headline', target.headline)
+  setText('month-target-detail', target.detail)
+  setText('target-help', `The target for this ledger is ${target.displayTarget}.`)
+}
+
 // The month. Recomputed from the same entries the day view reads, so the two
 // cannot disagree about what is recorded.
 const renderMonth = () => {
-  const summary = ask(kernel.ViewMonth, { entries: state.entries, year: 2026, month: 9 })
-  if (summary.ok !== true) return
+  const summary = ask(kernel.ViewMonth, {
+    entries: state.entries,
+    year: 2026,
+    month: 9,
+    preferences: state.preferences
+  })
+  if (summary.ok !== true) {
+    // A preferences file that cannot be read fails the whole month view, and
+    // the kernel's words say why. Drawing the figures and quietly omitting
+    // the bar would hide a file that needs attention.
+    setText('target-help', summary.error)
+    return
+  }
+
+  renderTarget(summary.target, summary.displayTotal)
 
   setText('month-total', summary.displayTotal)
   setText('month-decimal', summary.displayDecimalHours)
@@ -1146,10 +1202,63 @@ const loadFromRepository = async (connection) => {
     view: derive(answer.entries, state.visibility),
     selectedForMerge: [],
     message: answer.catalogueError ?? null,
+    // Read in the same answer as the entries, so the month's target and the
+    // month's total describe one moment.
+    preferences: answer.preferences ?? null,
+    preferencesError: answer.preferencesError ?? null,
     effects: [],
     performed: []
   })
 }
+
+// Setting the target is the one write that is not a ledger fact: it appends
+// no revision and attributes nothing. It still needs a repository, because
+// the target lives in the ledger so that it survives a change of device.
+const writeTarget = async (body) => {
+  const connection = readConnection()
+  if (!connection) {
+    update({ message: 'Connect a repository before setting a target.' })
+    return
+  }
+
+  const startedAt = state.revision
+  const answer = JSON.parse(
+    await kernel.SetMonthlyTarget(
+      JSON.stringify({
+        repository: connection.repository,
+        token: connection.token,
+        ...body
+      })
+    )
+  )
+
+  if (state.revision !== startedAt) return
+
+  if (answer.ok !== true) {
+    update({ message: answer.error })
+    return
+  }
+
+  update({
+    preferences: answer.preferences,
+    preferencesError: null,
+    message: answer.outcome
+  })
+}
+
+document.getElementById('target-form')?.addEventListener('submit', (event) => {
+  event.preventDefault()
+  // The typed value is passed through as text. Parsing it is the kernel's —
+  // a page that parsed it would have to decide what "eighty" means, and
+  // deciding is what this file must not do.
+  writeTarget({ hours: value('target-hours') }).catch((error) =>
+    update({ message: String(error) })
+  )
+})
+
+document.getElementById('target-clear')?.addEventListener('click', () => {
+  writeTarget({ clear: true }).catch((error) => update({ message: String(error) }))
+})
 
 document.getElementById('repo-form')?.addEventListener('submit', (event) => {
   event.preventDefault()

@@ -33,6 +33,7 @@
     <Compile Include="ProjectionTests.fs" />
     <Compile Include="PersistenceTests.fs" />
     <Compile Include="InterpreterTests.fs" />
+    <Compile Include="TargetTests.fs" />
     <Compile Include="HttpProtocolTests.fs" />
     <Compile Include="CredentialTests.fs" />
     <!-- The browser kernel's command surface, tested without a browser. -->

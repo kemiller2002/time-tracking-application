@@ -70,6 +70,7 @@
     <WasmExtraFilesToDeploy Include="sample-entry-3.json" />
     <WasmExtraFilesToDeploy Include="sample-catalogue.json" />
     <WasmExtraFilesToDeploy Include="sample-versions.json" />
+    <WasmExtraFilesToDeploy Include="sample-preferences.json" />
     <WasmExtraFilesToDeploy Include="../../static-ui-screens/styles.css" />
   </ItemGroup>
 

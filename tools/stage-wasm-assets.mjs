@@ -32,6 +32,7 @@ const ASSETS = [
   ['sample-entry-3.json', 'sample-entry-3.json'],
   ['sample-catalogue.json', 'sample-catalogue.json'],
   ['sample-versions.json', 'sample-versions.json'],
+  ['sample-preferences.json', 'sample-preferences.json'],
   ['../../static-ui-screens/styles.css', 'styles.css']
 ]
 

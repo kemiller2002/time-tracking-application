@@ -26,6 +26,7 @@
     <!-- Order is significant in F#. -->
     <Compile Include="Identifiers.fs" />
     <Compile Include="Duration.fs" />
+    <Compile Include="Preferences.fs" />
     <Compile Include="Values.fs" />
     <Compile Include="Catalogue.fs" />
     <Compile Include="EntryState.fs" />
