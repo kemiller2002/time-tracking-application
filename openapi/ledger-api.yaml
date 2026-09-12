@@ -260,10 +260,15 @@ paths:
     get:
       operationId: getDayReview
       description: >-
-        Same as GET /days/{date} plus a warnings list. warnings is always
-        empty today — none of the overlap, incomplete-description, or
+        Same as GET /days/{date} plus a warnings list. Today, the only
+        warning implemented is amended_after_review: an activity whose
+        updated_at is later than the date's most recent attestation's
+        attested_at. The overlap, incomplete-description, and
         missing-evidence checks the execution contract's Capability 13
-        describes are implemented yet.
+        also describes are not implemented — those can't currently occur
+        anyway (overlap and blank required fields are already rejected at
+        write time; evidence is optional by design), so there is nothing
+        to warn about there yet.
       parameters:
         - name: date
           in: path
@@ -271,7 +276,7 @@ paths:
           schema: {type: string, format: date}
       responses:
         '200':
-          description: Day summary with (currently always-empty) review warnings
+          description: Day summary with review warnings
           content:
             application/json:
               schema: {$ref: '#/components/schemas/DayReviewResponse'}
@@ -1029,11 +1034,15 @@ components:
           properties:
             warnings:
               type: array
-              items: {type: object}
+              items:
+                type: object
+                required: [code, activity_id]
+                properties:
+                  code: {const: amended_after_review}
+                  activity_id: {type: string, minLength: 1}
               description: >-
-                Always empty today; none of the overlap, incomplete-
-                description, or missing-evidence checks the execution
-                contract's Capability 13 describes are implemented yet.
+                Empty when the date has no attestation yet, or when nothing
+                changed after the most recent one.
     DayReviewResponse:
       type: object
       required: [data, meta]

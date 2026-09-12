@@ -106,6 +106,12 @@ export class MemoryLedgerStore {
     }return [...map.values()].map(clone);
   }
   day(date){const activities=this.activities().filter(a=>a.started_at.slice(0,10)===date);return this.#summary(activities,{date});}
+  dayReview(date){
+    const day=this.day(date);
+    const attestation=this.attestations.filter(a=>a.date===date).at(-1)??null;
+    const warnings=attestation?day.activities.filter(a=>Date.parse(a.updated_at)>Date.parse(attestation.attested_at)).map(a=>({code:'amended_after_review',activity_id:a.activity_id})):[];
+    return {...day,warnings};
+  }
   month(month){const activities=this.activities().filter(a=>a.started_at.slice(0,7)===month);return this.#summary(activities,{month});}
   #summary(activities,identity){const included=activities.filter(a=>!a.voided);const totalMs=included.reduce((s,a)=>s+a.exact_duration_ms,0);const by=(key)=>Object.fromEntries([...new Set(included.map(x=>x[key]))].map(k=>[k,included.filter(x=>x[key]===k).reduce((s,x)=>s+x.exact_duration_ms,0)]));return {...identity,projection_version:version(this.events.length),activities:included,total_exact_ms:totalMs,total_minutes:Number((totalMs/60000).toFixed(4)),decimal_hours:Number((totalMs/3600000).toFixed(4)),by_activity_type:by('activity_type_id'),by_project:by('project_id'),manual_count:included.filter(x=>x.entry_method==='manual').length,correction_count:included.filter(x=>x.history.some(e=>e.event_type==='activity.amended')).length,void_count:activities.filter(x=>x.voided).length,evidence_coverage:included.length?included.filter(x=>x.evidence.length).length/included.length:0};}
   attestDay(date,input,actor='owner'){const day=this.day(date);if(input.projection_version&&input.projection_version!==day.projection_version)throw new ServiceError('stale_projection','The day changed before attestation.',{status:409,details:{current:day}});const event=this.append('day.attested',date,{projection_version:day.projection_version,statement:requireField(input.statement,'statement')},actor);const result={attestation_id:event.event_id,date,projection_version:day.projection_version,attested_at:event.occurred_at};this.attestations.push(result);return clone(result);}

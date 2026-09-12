@@ -169,6 +169,20 @@ test('void, restore, evidence, day and month projections reconcile',async()=>{
   const attested=await call(b,'/days/2026-08-02/attest',{method:'POST',payload:{projection_version:day.projection_version,statement:'Accurate to the best of my knowledge'}});assert.equal(attested.status,200);
 });
 
+test('day review flags an activity amended after it was attested',async()=>{
+  const b=bindings();
+  const untouched=(await call(b,'/activities',{method:'POST',payload:{activity_type_id:'research',project_id:'general',description:'Stable',business_purpose:'Planning',started_at:'2026-08-02T09:00:00Z',ended_at:'2026-08-02T09:30:00Z'}})).body.data;
+  const activity=(await call(b,'/activities',{method:'POST',payload:{activity_type_id:'research',project_id:'general',description:'Will change',business_purpose:'Planning',started_at:'2026-08-02T10:00:00Z',ended_at:'2026-08-02T10:30:00Z'}})).body.data;
+  const beforeAttest=(await call(b,'/days/2026-08-02/review')).body.data;assert.deepEqual(beforeAttest.warnings,[]);
+  const day=(await call(b,'/days/2026-08-02')).body.data;
+  await call(b,'/days/2026-08-02/attest',{method:'POST',payload:{projection_version:day.projection_version,statement:'Accurate to the best of my knowledge'}});
+  const rightAfterAttest=(await call(b,'/days/2026-08-02/review')).body.data;assert.deepEqual(rightAfterAttest.warnings,[]);
+  await call(b,`/activities/${activity.activity_id}/amendments`,{method:'POST',payload:{base_version:activity.version,changes:{description:'Changed after review'},reason:'correction'}});
+  const afterAmend=(await call(b,'/days/2026-08-02/review')).body.data;
+  assert.deepEqual(afterAmend.warnings,[{code:'amended_after_review',activity_id:activity.activity_id}]);
+  assert.equal(afterAmend.warnings.some(w=>w.activity_id===untouched.activity_id),false);
+});
+
 test('split preserves duration and merge prevents report double counting',async()=>{
   const b=bindings();const source=(await call(b,'/activities',{method:'POST',payload:{activity_type_id:'research',project_id:'general',description:'Mixed work',business_purpose:'Business development',started_at:'2026-08-02T12:00:00Z',ended_at:'2026-08-02T13:00:00Z'}})).body.data;
   const split=(await call(b,`/activities/${source.activity_id}/split`,{method:'POST',payload:{base_version:source.version,reason:'Two activities',parts:[{duration_ms:36*60000,activity_type_id:'research',project_id:'general',description:'Research',business_purpose:'Planning'},{duration_ms:24*60000,activity_type_id:'linkedin-marketing',project_id:'echelon-foundry',description:'LinkedIn',business_purpose:'Marketing'}]}})).body.data;
