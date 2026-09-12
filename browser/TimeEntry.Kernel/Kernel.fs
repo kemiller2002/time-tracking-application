@@ -20,6 +20,7 @@ open TimeEntry.Transitions.Commands
 open TimeEntry.Transitions.Effects
 open TimeEntry.Transitions.Transitions
 open TimeEntry.Persistence
+open TimeEntry.Browser
 
 /// Rounding policy for display. A single place, so the browser cannot pick
 /// its own and disagree with the server's totals.
@@ -389,71 +390,9 @@ let catalogueChoices (requestJson: string) : string =
 // Command dispatch
 // ---------------------------------------------------------------------------
 
-/// Read a required string from a JSON object.
-let private text (node: JsonNode) (name: string) =
-    match node.[name] with
-    | null -> Error(sprintf "missing '%s'" name)
-    | value ->
-        let raw = value.ToString()
-
-        if System.String.IsNullOrWhiteSpace raw then
-            Error(sprintf "'%s' is empty" name)
-        else
-            Ok raw
-
-let private optionalText (node: JsonNode) (name: string) =
-    match node.[name] with
-    | null -> None
-    | value ->
-        let raw = value.ToString()
-        if System.String.IsNullOrWhiteSpace raw then None else Some raw
-
-/// Who made the change, when, and from where.
-///
-/// The clock is read by the host and passed in as data: Tier 1 and Tier 2
-/// perform no effects, so `OccurredAt` can only ever arrive as an argument
-/// (TE-R-093). There is no default — a command that cannot say when it
-/// happened is refused rather than stamped with zero.
-///
-/// Actor and device are the browser session. Identity is genuinely
-/// unresolved in this slice — there is no sign-in — and is recorded as an
-/// open question rather than invented (OQ-6).
-let private attributionOf (command: JsonNode) (revisionId: string) : Result<Attribution, string> =
-    let occurredAt =
-        match command.["occurredAtMs"] with
-        | null -> Error "missing 'occurredAtMs'"
-        | value ->
-            match System.Int64.TryParse(value.ToString()) with
-            | true, ms -> Ok(Instant.ofEpochMilliseconds ms)
-            | _ -> Error "occurredAtMs must be an integer"
-
-    occurredAt
-    |> Result.bind (fun at ->
-        UserId.create "browser"
-        |> describe
-        |> Result.bind (fun actor ->
-            DeviceLabel.create "browser"
-            |> describe
-            |> Result.bind (fun device ->
-                RevisionId.create revisionId
-                |> describe
-                |> Result.map (fun revision ->
-                    { Actor = actor
-                      Device = device
-                      OccurredAt = at
-                      NewRevisionId = revision }))))
-
-let private parseDate (raw: string) =
-    let parts = raw.Split('-')
-
-    if parts.Length <> 3 then
-        Error "date must be YYYY-MM-DD"
-    else
-        match
-            System.Int32.TryParse parts.[0], System.Int32.TryParse parts.[1], System.Int32.TryParse parts.[2]
-        with
-        | (true, y), (true, m), (true, d) -> EntryDate.ofYearMonthDay y m d |> describe
-        | _ -> Error "date must be YYYY-MM-DD"
+// Field reading, validation and command construction all live in
+// `CommandParsing`. Keeping them out of this file is what stops the
+// dispatcher growing a second, looser idea of what a valid command is.
 
 /// Name the effect the domain asked for, without performing it.
 ///
@@ -561,95 +500,7 @@ let dispatch (requestJson: string) : string =
             |> Result.bind (fun cat ->
                 match request.["command"] with
                 | null -> Error "missing 'command'"
-                | command ->
-                    match text command "kind" with
-                    | Error e -> Error e
-                    | Ok "create" ->
-                        // Every value is validated by a domain smart
-                        // constructor. The kernel parses JSON; it does not
-                        // decide what is valid.
-                        text command "entryId"
-                        |> Result.bind (fun id -> EntryId.create id |> describe)
-                        |> Result.bind (fun entryId ->
-                            text command "projectId"
-                            |> Result.bind (fun raw -> ProjectId.create raw |> describe)
-                            |> Result.map (fun project -> entryId, project))
-                        |> Result.bind (fun (entryId, project) ->
-                            text command "activityTypeId"
-                            |> Result.bind (fun raw -> ActivityTypeId.create raw |> describe)
-                            |> Result.map (fun activityType -> entryId, project, activityType))
-                        |> Result.bind (fun (entryId, project, activityType) ->
-                            text command "date"
-                            |> Result.bind parseDate
-                            |> Result.map (fun date -> entryId, project, activityType, date))
-                        |> Result.bind (fun (entryId, project, activityType, date) ->
-                            // Accepts either exact milliseconds (a stopped
-                            // timer) or whole billable units (the
-                            // six-minute manual grid, system-prompt 8.4).
-                            //
-                            // Units rather than minutes is deliberate: the
-                            // browser must not multiply by 6 or by 60,000,
-                            // because that would put the unit definition in
-                            // two places and a time conversion in the
-                            // bridge (TE-R-085). It sends a count; F#
-                            // converts.
-                            (match command.["durationMs"], command.["durationUnits"] with
-                             | null, null -> Error "missing 'durationMs' or 'durationUnits'"
-                             | value, _ when not (isNull value) ->
-                                 match System.Int64.TryParse(value.ToString()) with
-                                 | true, ms -> Duration.ofMilliseconds ms |> describe
-                                 | _ -> Error "durationMs must be an integer"
-                             | _, units ->
-                                 match System.Int64.TryParse(units.ToString()) with
-                                 | true, count ->
-                                     Duration.ofMilliseconds (count * MillisecondsPerBillableUnit)
-                                     |> describe
-                                 | _ -> Error "durationUnits must be an integer")
-                            |> Result.map (fun duration -> entryId, project, activityType, date, duration))
-                        |> Result.bind (fun (entryId, project, activityType, date, duration) ->
-                            (match optionalText command "description" with
-                             | None -> Ok None
-                             | Some raw -> Description.create raw |> describe |> Result.map Some)
-                            |> Result.bind (fun description ->
-                                attributionOf command (EntryId.value entryId + "-r1")
-                                |> Result.map (fun attribution ->
-                                    cat,
-                                    CreateEntry
-                                        { NewEntryId = entryId
-                                          Facts =
-                                            { Project = project
-                                              ActivityType = activityType
-                                              Date = date
-                                              Duration = duration
-                                              Description = description
-                                              Origin = Timed
-                                              Evidence = [] }
-                                          Attribution = attribution })))
-                    | Ok "void" ->
-                        // Voiding takes a reason and the version the caller
-                        // read. Both are required by the command type itself,
-                        // which is why this branch cannot forget either
-                        // (TE-R-070, system-prompt 8.9).
-                        text command "entryId"
-                        |> Result.bind (fun id -> EntryId.create id |> describe)
-                        |> Result.bind (fun entryId ->
-                            text command "expectedVersion"
-                            |> Result.bind (fun raw -> VersionToken.create raw |> describe)
-                            |> Result.map (fun version -> entryId, version))
-                        |> Result.bind (fun (entryId, version) ->
-                            text command "reason"
-                            |> Result.bind (fun raw -> Reason.create raw |> describe)
-                            |> Result.map (fun reason -> entryId, version, reason))
-                        |> Result.bind (fun (entryId, version, reason) ->
-                            attributionOf command (EntryId.value entryId + "-void")
-                            |> Result.map (fun attribution ->
-                                cat,
-                                VoidEntry
-                                    { EntryId = entryId
-                                      ExpectedVersion = version
-                                      Reason = reason
-                                      Attribution = attribution }))
-                    | Ok other -> Error(sprintf "unsupported command kind '%s'" other))
+                | command -> CommandParsing.parse command |> Result.map (fun parsed -> cat, parsed))
 
         match built with
         | Error detail -> errorResult detail

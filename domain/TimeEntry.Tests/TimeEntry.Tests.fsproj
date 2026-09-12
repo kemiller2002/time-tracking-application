@@ -34,6 +34,8 @@
     <Compile Include="PersistenceTests.fs" />
     <Compile Include="InterpreterTests.fs" />
     <Compile Include="HttpProtocolTests.fs" />
+    <!-- The browser kernel's command surface, tested without a browser. -->
+    <Compile Include="KernelTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -48,6 +50,7 @@
     <ProjectReference Include="../TimeEntry.Projection/TimeEntry.Projection.fsproj" />
     <ProjectReference Include="../TimeEntry.Persistence/TimeEntry.Persistence.fsproj" />
     <ProjectReference Include="../TimeEntry.GitHub/TimeEntry.GitHub.fsproj" />
+    <ProjectReference Include="../../browser/TimeEntry.Kernel/TimeEntry.Kernel.fsproj" />
   </ItemGroup>
 
 </Project>
