@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { handleRequest, defaultBindings } from '../worker/src/handler.js';
 import { MemoryLedgerStore } from '../worker/src/store.js';
 
-const bindings=()=>({...defaultBindings,store:new MemoryLedgerStore({now:(()=>{let n=Date.parse('2026-08-02T13:00:00Z');return()=>n+=60000;})()})});
+const bindings=()=>({...defaultBindings,store:new MemoryLedgerStore({now:(()=>{let n=Date.parse('2026-08-02T13:00:00Z');return()=>n+=60000;})(),directories:{projects:defaultBindings.projects,activityTypes:defaultBindings.activityTypes,tags:defaultBindings.tags}})});
 const call=async(b,path,{method='GET',payload,requestId=crypto.randomUUID()}={})=>{
   const response=await handleRequest(new Request(`https://ledger.test/api/v1${path}`,{method,headers:{'content-type':'application/json','x-request-id':requestId,'idempotency-key':requestId},body:method==='GET'?undefined:JSON.stringify({request_id:requestId,client_timestamp:'2026-08-02T13:00:00Z',payload:payload??{}})}),b);
   return {status:response.status,body:await response.json()};
@@ -79,8 +79,52 @@ test('amendments are re-validated by the same rules as creation',async()=>{
   assert.equal(selfOverlap.status,200);
 });
 
+test('creating an activity with an unknown or archived project/activity-type/tag is rejected',async()=>{
+  const b=bindings();
+  const base={activity_type_id:'research',project_id:'general',description:'x',business_purpose:'y',started_at:'2026-08-02T09:00:00Z',ended_at:'2026-08-02T09:30:00Z'};
+  const unknownProject=await call(b,'/activities',{method:'POST',payload:{...base,project_id:'does-not-exist'}});
+  assert.equal(unknownProject.status,400);assert.equal(unknownProject.body.error.code,'project_not_found');
+  const archivedProject=await call(b,'/activities',{method:'POST',payload:{...base,project_id:'archived-initiative'}});
+  assert.equal(archivedProject.status,400);assert.equal(archivedProject.body.error.code,'project_inactive');
+  const unknownType=await call(b,'/activities',{method:'POST',payload:{...base,activity_type_id:'does-not-exist'}});
+  assert.equal(unknownType.status,400);assert.equal(unknownType.body.error.code,'activity_type_not_found');
+  const retiredType=await call(b,'/activities',{method:'POST',payload:{...base,activity_type_id:'retired-type'}});
+  assert.equal(retiredType.status,400);assert.equal(retiredType.body.error.code,'activity_type_inactive');
+  const unknownTag=await call(b,'/activities',{method:'POST',payload:{...base,tags:['does-not-exist']}});
+  assert.equal(unknownTag.status,400);assert.equal(unknownTag.body.error.code,'tag_not_found');
+  const inactiveTag=await call(b,'/activities',{method:'POST',payload:{...base,tags:['legacy']}});
+  assert.equal(inactiveTag.status,400);assert.equal(inactiveTag.body.error.code,'tag_inactive');
+  const activeTag=await call(b,'/activities',{method:'POST',payload:{...base,tags:['billable']}});
+  assert.equal(activeTag.status,201);
+});
+
+test('project/activity-type exemption: unchanged assignment survives archival, new assignment does not',async()=>{
+  const activeProject={id:'temp-active',name:'Temp Active',active:true,version:'v1'};
+  const otherArchivedProject={id:'temp-archived',name:'Temp Archived',active:false,version:'v1'};
+  const activityType={id:'temp-type',name:'Temp Type',active:true,version:'v1'};
+  const b={...defaultBindings,store:new MemoryLedgerStore({now:(()=>{let n=Date.parse('2026-08-02T13:00:00Z');return()=>n+=60000;})(),directories:{projects:[activeProject,otherArchivedProject],activityTypes:[activityType],tags:[]}})};
+  const created=(await call(b,'/activities',{method:'POST',payload:{activity_type_id:'temp-type',project_id:'temp-active',description:'Work',business_purpose:'Purpose',started_at:'2026-08-02T09:00:00Z',ended_at:'2026-08-02T09:30:00Z'}})).body.data;
+  activeProject.active=false;
+  const unrelatedAmend=await call(b,`/activities/${created.activity_id}/amendments`,{method:'POST',payload:{base_version:created.version,changes:{description:'Updated description'},reason:'tweak'}});
+  assert.equal(unrelatedAmend.status,200);assert.equal(unrelatedAmend.body.data.project_id,'temp-active');
+  const reassign=await call(b,`/activities/${created.activity_id}/amendments`,{method:'POST',payload:{base_version:unrelatedAmend.body.data.version,changes:{project_id:'temp-archived'},reason:'move'}});
+  assert.equal(reassign.status,400);assert.equal(reassign.body.error.code,'project_inactive');
+});
+
+test('tag exemption: only a newly-assigned tag must be active',async()=>{
+  const legacyTag={id:'temp-legacy',name:'Temp Legacy',active:true,version:'v1'};
+  const otherInactiveTag={id:'temp-other',name:'Temp Other',active:false,version:'v1'};
+  const b={...defaultBindings,store:new MemoryLedgerStore({now:(()=>{let n=Date.parse('2026-08-02T13:00:00Z');return()=>n+=60000;})(),directories:{projects:defaultBindings.projects,activityTypes:defaultBindings.activityTypes,tags:[legacyTag,otherInactiveTag]}})};
+  const created=(await call(b,'/activities',{method:'POST',payload:{activity_type_id:'research',project_id:'general',description:'Work',business_purpose:'Purpose',tags:['temp-legacy'],started_at:'2026-08-02T09:00:00Z',ended_at:'2026-08-02T09:30:00Z'}})).body.data;
+  legacyTag.active=false;
+  const keepExisting=await call(b,`/activities/${created.activity_id}/amendments`,{method:'POST',payload:{base_version:created.version,changes:{description:'Updated'},reason:'tweak'}});
+  assert.equal(keepExisting.status,200);assert.deepEqual(keepExisting.body.data.tags,['temp-legacy']);
+  const addInactive=await call(b,`/activities/${created.activity_id}/amendments`,{method:'POST',payload:{base_version:keepExisting.body.data.version,changes:{tags:['temp-legacy','temp-other']},reason:'add tag'}});
+  assert.equal(addInactive.status,400);assert.equal(addInactive.body.error.code,'tag_inactive');
+});
+
 test('void, restore, evidence, day and month projections reconcile',async()=>{
-  const b=bindings();const activity=(await call(b,'/activities',{method:'POST',payload:{activity_type_id:'development',project_id:'helixnote',description:'Build service',business_purpose:'Deliver product',started_at:'2026-08-02T10:00:00Z',ended_at:'2026-08-02T11:00:00Z'}})).body.data;
+  const b=bindings();const activity=(await call(b,'/activities',{method:'POST',payload:{activity_type_id:'software-development',project_id:'helixnote',description:'Build service',business_purpose:'Deliver product',started_at:'2026-08-02T10:00:00Z',ended_at:'2026-08-02T11:00:00Z'}})).body.data;
   const evidence=(await call(b,`/activities/${activity.activity_id}/evidence`,{method:'POST',payload:{base_version:activity.version,type:'url',uri:'https://example.test/evidence',label:'Work reference'}})).body.data;assert.equal(evidence.activity.evidence.length,1);
   const voided=(await call(b,`/activities/${activity.activity_id}/void`,{method:'POST',payload:{base_version:evidence.activity.version,reason:'Duplicate'}})).body.data;assert.equal(voided.voided,true);assert.equal((await call(b,'/days/2026-08-02')).body.data.total_exact_ms,0);
   const evidenceOnVoided=await call(b,`/activities/${activity.activity_id}/evidence`,{method:'POST',payload:{base_version:voided.version,type:'note',note:'Still linkable while voided'}});assert.equal(evidenceOnVoided.status,201);

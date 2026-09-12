@@ -6,12 +6,17 @@ const meta=requestId=>({request_id:requestId,server_time:new Date().toISOString(
 const success=(data,requestId,status=200)=>json({data,meta:meta(requestId)},status,requestId);
 const failure=(error,requestId)=>json({error:{code:error.code??'internal_error',message:error.message??'The service could not complete the request.',retryable:error.retryable??false,details:error.details??{}},meta:meta(requestId)},error.status??500,requestId);
 
+const projects=[{id:'echelon-foundry',name:'Echelon Foundry',active:true,version:'v1'},{id:'visual-engineering',name:'Visual Engineering',active:true,version:'v1'},{id:'helixnote',name:'HelixNote',active:true,version:'v1'},{id:'general',name:'General',active:true,version:'v1'},{id:'archived-initiative',name:'Archived Initiative',active:false,version:'v1'}];
+const activityTypes=[{id:'research',name:'Research',active:true,version:'v1'},{id:'linkedin-marketing',name:'LinkedIn marketing',active:true,version:'v1'},{id:'software-development',name:'Software development',active:true,version:'v1'},{id:'administration',name:'Administration',active:true,version:'v1'},{id:'meeting',name:'Meeting',active:true,version:'v1'},{id:'retired-type',name:'Retired type',active:false,version:'v1'}];
+const tags=[{id:'billable',name:'Billable',active:true,version:'v1'},{id:'client-facing',name:'Client-facing',active:true,version:'v1'},{id:'internal-only',name:'Internal only',active:true,version:'v1'},{id:'legacy',name:'Legacy',active:false,version:'v1'}];
+
 export const defaultBindings={
-  store:new MemoryLedgerStore(),
+  store:new MemoryLedgerStore({directories:{projects,activityTypes,tags}}),
   auth:{mode:'development',authenticate:()=>({user_id:'owner',roles:['owner']})},
   config:{schema_version:'1.0.0',projection_version:'service-config-1',timezone:'America/Indiana/Indianapolis',display:{six_minute_controls:true,theme:'system'},features:{evidence_uploads:true,offline_commands:true,reports:true}},
-  projects:[{id:'echelon-foundry',name:'Echelon Foundry',active:true,version:'v1'},{id:'visual-engineering',name:'Visual Engineering',active:true,version:'v1'},{id:'helixnote',name:'HelixNote',active:true,version:'v1'},{id:'general',name:'General',active:true,version:'v1'}],
-  activityTypes:[{id:'research',name:'Research',active:true,version:'v1'},{id:'linkedin-marketing',name:'LinkedIn marketing',active:true,version:'v1'},{id:'software-development',name:'Software development',active:true,version:'v1'},{id:'administration',name:'Administration',active:true,version:'v1'},{id:'meeting',name:'Meeting',active:true,version:'v1'}]
+  projects,
+  activityTypes,
+  tags
 };
 
 const parseBody=async request=>{if(request.method==='GET'||request.method==='DELETE'&&!request.headers.get('content-length'))return{};try{return await request.json();}catch{throw new ServiceError('invalid_json','Request body must be valid JSON.');}};
@@ -27,6 +32,7 @@ export async function handleRequest(request,bindings=defaultBindings){
     if(path==='/config'&&request.method==='GET')return success(bindings.config,requestId);
     if(path==='/projects'&&request.method==='GET')return success(bindings.projects,requestId);
     if(path==='/activity-types'&&request.method==='GET')return success(bindings.activityTypes,requestId);
+    if(path==='/tags'&&request.method==='GET')return success(bindings.tags,requestId);
     const body=await parseBody(request);const payload=body.payload??body;const commandId=body.request_id??request.headers.get('idempotency-key')??requestId;
     if(request.method!=='GET'){const replay=bindings.store.replay(commandId);if(replay)return success({...replay,idempotent_replay:true},requestId);}
     let result;let status=200;
