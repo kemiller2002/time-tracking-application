@@ -13,6 +13,7 @@ open System
 open TimeEntry.Semantic.Identifiers
 open TimeEntry.Semantic.Duration
 open TimeEntry.Semantic.Values
+open TimeEntry.Semantic.Catalogue
 open TimeEntry.Semantic.EntryState
 open TimeEntry.Persistence.Documents
 
@@ -370,3 +371,94 @@ let fromDocument (version: VersionToken option) (document: EntryDocument) : Resu
                   Effective = facts
                   History = revisions
                   Version = version }))
+
+// ---------------------------------------------------------------------------
+// Catalogue
+// ---------------------------------------------------------------------------
+
+let private catalogueEntryFields
+    (path: string)
+    (document: CatalogueEntryDocument)
+    : Result<string * CatalogueName * CatalogueStatus * VersionToken, DocumentError> =
+    if isNull (box document) then
+        Error(MissingField path)
+    else
+        requireText (path + ".id") document.id
+        |> Result.bind (fun id ->
+            requireText (path + ".name") document.name
+            |> Result.bind (fun rawName -> CatalogueName.create rawName |> at (path + ".name"))
+            |> Result.bind (fun name ->
+                requireText (path + ".version") document.version
+                |> Result.bind (fun rawVersion ->
+                    VersionToken.create rawVersion |> at (path + ".version"))
+                |> Result.map (fun projectionVersion ->
+                    id, name, CatalogueStatus.ofActiveFlag document.active, projectionVersion)))
+
+let private projectFromDocument
+    (path: string)
+    (document: CatalogueEntryDocument)
+    : Result<Project, DocumentError> =
+    catalogueEntryFields path document
+    |> Result.bind (fun (id, name, status, projectionVersion) ->
+        ProjectId.create id
+        |> at (path + ".id")
+        |> Result.map (fun projectId ->
+            { Id = projectId
+              Name = name
+              Status = status
+              ProjectionVersion = projectionVersion }: Project))
+
+let private activityTypeFromDocument
+    (path: string)
+    (document: CatalogueEntryDocument)
+    : Result<ActivityType, DocumentError> =
+    catalogueEntryFields path document
+    |> Result.bind (fun (id, name, status, projectionVersion) ->
+        ActivityTypeId.create id
+        |> at (path + ".id")
+        |> Result.map (fun activityTypeId ->
+            { Id = activityTypeId
+              Name = name
+              Status = status
+              ProjectionVersion = projectionVersion }: ActivityType))
+
+/// Total: every catalogue has a document form.
+///
+/// Present for round-trip testing and for a future writer, even though this
+/// application only ever reads the catalogue — a mapping verified in one
+/// direction only is a mapping whose losses are invisible.
+let catalogueToDocument (catalogue: Catalogue) : CatalogueDocument =
+    let entry id name status projectionVersion : CatalogueEntryDocument =
+        { id = id
+          name = CatalogueName.value name
+          active = CatalogueStatus.toActiveFlag status
+          version = VersionToken.value projectionVersion }
+
+    { schema_version = CurrentSchemaVersion
+      projects =
+        catalogue.Projects
+        |> Map.toList
+        |> List.map (fun (_, p) -> entry (ProjectId.value p.Id) p.Name p.Status p.ProjectionVersion)
+        |> Array.ofList
+      activity_types =
+        catalogue.ActivityTypes
+        |> Map.toList
+        |> List.map (fun (_, a) ->
+            entry (ActivityTypeId.value a.Id) a.Name a.Status a.ProjectionVersion)
+        |> Array.ofList }
+
+let catalogueFromDocument (document: CatalogueDocument) : Result<Catalogue, DocumentError> =
+    if isNull (box document) then
+        Error(MissingField "document")
+    elif document.schema_version <> CurrentSchemaVersion then
+        Error(UnsupportedSchemaVersion(document.schema_version, CurrentSchemaVersion))
+    else
+        itemsOf document.projects
+        |> List.mapi (fun index item -> index, item)
+        |> traverse (fun (index, item) -> projectFromDocument (sprintf "projects[%d]" index) item)
+        |> Result.bind (fun projects ->
+            itemsOf document.activity_types
+            |> List.mapi (fun index item -> index, item)
+            |> traverse (fun (index, item) ->
+                activityTypeFromDocument (sprintf "activity_types[%d]" index) item)
+            |> Result.map (fun activityTypes -> Catalogue.ofLists projects activityTypes))

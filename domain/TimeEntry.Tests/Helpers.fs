@@ -40,12 +40,14 @@ let catalogueName raw = CatalogueName.create raw |> expect
 let project id status : Project =
     { Id = projectId id
       Name = catalogueName id
-      Status = status }
+      Status = status
+      ProjectionVersion = version "catalogue-v1" }
 
 let activityType id status : ActivityType =
     { Id = activityTypeId id
       Name = catalogueName id
-      Status = status }
+      Status = status
+      ProjectionVersion = version "catalogue-v1" }
 
 /// The catalogue the suites operate against. Carries an archived project and
 /// an archived activity type so DF-TE-0007's refusals have something real to

@@ -9,6 +9,7 @@ module TimeEntry.GitHub.Interpreter
 
 open TimeEntry.Semantic.Identifiers
 open TimeEntry.Semantic.Values
+open TimeEntry.Semantic.Catalogue
 open TimeEntry.Semantic.EntryState
 open TimeEntry.Transitions.Effects
 open TimeEntry.Persistence
@@ -40,10 +41,16 @@ type EffectOutcome =
     | Persisted of versions: (EntryId * VersionToken) list
     /// TE-R-070/TE-R-072: nothing was written, and the domain must reconcile.
     | Conflicted of PersistConflict
+    | CatalogueLoaded of Catalogue
+    /// The catalogue file is missing or cannot be interpreted.
+    ///
+    /// Distinct from `Failed` because the remedy differs: a transport failure
+    /// is retryable, a corrupt catalogue needs a human. Both prevent recording
+    /// time, and neither may be reported as an *empty* catalogue — an empty
+    /// catalogue refuses every project, which a test in `CatalogueTests`
+    /// pins.
+    | CatalogueUnreadable of detail: string
     | Failed of StoreError
-    /// An effect this interpreter does not yet execute. Explicit so a missing
-    /// capability cannot be mistaken for a successful no-op.
-    | NotSupported of effect: string * workItem: string
 
 // ---------------------------------------------------------------------------
 // Writing
@@ -195,6 +202,27 @@ let private loadEntries (store: GitHubStore) =
             return EntriesLoaded(entries, unreadable)
     }
 
+/// Read the catalogue.
+///
+/// A missing or corrupt catalogue is reported as unreadable, never as an empty
+/// catalogue: `Catalogue.empty` refuses every project, so returning it would
+/// present "the project list failed to load" as "you have no projects".
+let private loadCatalogue (store: GitHubStore) =
+    async {
+        let! file = store.ReadFile Layout.CataloguePath
+
+        match file with
+        | Error error -> return Failed error
+        | Ok None -> return CatalogueUnreadable(Layout.CataloguePath + " is not present")
+        | Ok(Some stored) ->
+            match Serialization.readCatalogue stored.Content with
+            | Error decodeError -> return CatalogueUnreadable(sprintf "%A" decodeError)
+            | Ok document ->
+                match Mapping.catalogueFromDocument document with
+                | Error documentError -> return CatalogueUnreadable(sprintf "%A" documentError)
+                | Ok catalogue -> return CatalogueLoaded catalogue
+    }
+
 // ---------------------------------------------------------------------------
 // Dispatch
 // ---------------------------------------------------------------------------
@@ -204,12 +232,7 @@ let interpret (store: GitHubStore) (effect: Effect) : Async<EffectOutcome> =
     match effect with
     | LoadEntries _ -> loadEntries store
 
-    | LoadProjects ->
-        // The `Catalogue` domain type now exists (WI-0026); its *persistence*
-        // does not (WI-0029). Reported explicitly rather than returning an
-        // empty list, because an empty catalogue refuses every project — a
-        // test in CatalogueTests pins exactly that failure mode.
-        async { return NotSupported("LoadProjects", "WI-0029") }
+    | LoadProjects -> loadCatalogue store
 
     | PersistNewEntry request -> commitAll store "Record time entry" [ request ]
     | PersistCorrection request -> commitAll store "Correct time entry" [ request ]

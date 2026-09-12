@@ -16,6 +16,7 @@ open TimeEntry.Transitions.Commands
 open TimeEntry.Transitions.Effects
 open TimeEntry.Transitions.Transitions
 open TimeEntry.Persistence
+open TimeEntry.Semantic.Catalogue
 open TimeEntry.GitHub.Store
 open TimeEntry.GitHub.Interpreter
 open TimeEntry.Tests.Helpers
@@ -359,14 +360,79 @@ let ``rate limiting is reported as a failure carrying the advised wait`` () =
     | other -> failwithf "expected Failed RateLimited, got %A" other
 
 [<Fact>]
-let ``loading projects reports that it is unimplemented rather than empty`` () =
-    // Returning [] would look like "this user has no projects" and silently
-    // break project validation.
+let ``loading the catalogue returns projects and activity types`` () =
+    let catalogueJson =
+        Serialization.writeCatalogue (Mapping.catalogueToDocument catalogue)
+
+    let fake = Fake([ Layout.CataloguePath, catalogueJson ])
+
+    match run LoadProjects fake with
+    | CatalogueLoaded loaded ->
+        // Round-trips through the stored form, archived entries included.
+        Assert.Equal(3, loaded.Projects.Count)
+        Assert.Equal(3, loaded.ActivityTypes.Count)
+
+        match Catalogue.tryProject (projectId "retired-client") loaded with
+        | Some project -> Assert.Equal(Archived, project.Status)
+        | None -> failwith "the archived project should still be listed"
+    | other -> failwithf "expected CatalogueLoaded, got %A" other
+
+[<Fact>]
+let ``a missing catalogue is unreadable, never an empty catalogue`` () =
+    // Returning Catalogue.empty would present "the project list failed to
+    // load" as "you have no projects", and an empty catalogue refuses every
+    // project.
     let fake = Fake([])
 
     match run LoadProjects fake with
-    | NotSupported("LoadProjects", workItem) -> Assert.Equal("WI-0029", workItem)
-    | other -> failwithf "expected NotSupported, got %A" other
+    | CatalogueUnreadable detail -> Assert.Contains("catalogue.json", detail)
+    | other -> failwithf "expected CatalogueUnreadable, got %A" other
+
+[<Fact>]
+let ``a corrupt catalogue is unreadable rather than partially loaded`` () =
+    let fake = Fake([ Layout.CataloguePath, "{ not json" ])
+
+    match run LoadProjects fake with
+    | CatalogueUnreadable detail -> Assert.Contains("MalformedJson", detail)
+    | other -> failwithf "expected CatalogueUnreadable, got %A" other
+
+[<Fact>]
+let ``a catalogue with an invalid entry is unreadable rather than silently short`` () =
+    // Dropping the bad entry would silently make a live project unavailable,
+    // which then refuses new time against it for no visible reason.
+    let fake =
+        Fake(
+            [ Layout.CataloguePath,
+              """{ "schema_version": "1.0.0",
+                    "projects": [ { "id": "Bad Id", "name": "x", "active": true, "version": "v1" } ],
+                    "activity_types": [] }""" ]
+        )
+
+    match run LoadProjects fake with
+    | CatalogueUnreadable detail -> Assert.Contains("projects[0].id", detail)
+    | other -> failwithf "expected CatalogueUnreadable, got %A" other
+
+[<Fact>]
+let ``a transport failure loading the catalogue is a failure, not unreadable`` () =
+    // Retryable versus needs-a-human: the remedies differ.
+    let fake = Fake([], TransportFailure "connection reset")
+
+    match run LoadProjects fake with
+    | Failed(TransportFailure _) -> ()
+    | other -> failwithf "expected Failed, got %A" other
+
+[<Fact>]
+let ``the catalogue is not mistaken for an entry by a tree listing`` () =
+    let good = { persistedEntry "e1" (minutes 30) "x" with Version = None }
+
+    let catalogueJson =
+        Serialization.writeCatalogue (Mapping.catalogueToDocument catalogue)
+
+    let fake = Fake([ storedFor good; Layout.CataloguePath, catalogueJson ])
+
+    match run (LoadEntries defaultDate) fake with
+    | EntriesLoaded([ _ ], []) -> ()
+    | other -> failwithf "the catalogue must not load as an entry, got %A" other
 
 [<Fact>]
 let ``the interpreter performs no write while merely loading`` () =

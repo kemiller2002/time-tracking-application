@@ -72,3 +72,10 @@ let isEntryPath (path: string) : bool =
     not (isNull path)
     && path.StartsWith(LedgerRoot + "/", System.StringComparison.Ordinal)
     && path.EndsWith(".json", System.StringComparison.Ordinal)
+
+/// The catalogue's path.
+///
+/// Outside `LedgerRoot` so that `isEntryPath` cannot match it and a recursive
+/// tree read never mistakes the catalogue for an entry.
+[<Literal>]
+let CataloguePath = "ledger/catalogue.json"

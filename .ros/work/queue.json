@@ -448,10 +448,10 @@
       "description": null,
       "tags": [],
       "priority": "medium",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-12T00:14:19.836Z",
-      "updatedAt": "2026-09-12T00:14:19.836Z",
+      "updatedAt": "2026-09-12T00:18:51.989Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null

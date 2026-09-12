@@ -55,15 +55,27 @@ module CatalogueStatus =
         | Available -> true
         | Archived -> false
 
+/// The schemas title these types "Project projection" and "Activity type
+/// projection", and require a `version` field. Both facts matter:
+///
+/// - *Projection* means the catalogue is upstream output this application
+///   reads, not state it owns. There is no write path for it here.
+/// - The required `version` is carried rather than dropped. The domain never
+///   acts on it, but a ledger whose whole purpose is auditability should be
+///   able to say which catalogue version a classification was made against,
+///   and silently discarding a field the contract requires is how that
+///   becomes impossible later.
 type Project =
     { Id: ProjectId
       Name: CatalogueName
-      Status: CatalogueStatus }
+      Status: CatalogueStatus
+      ProjectionVersion: VersionToken }
 
 type ActivityType =
     { Id: ActivityTypeId
       Name: CatalogueName
-      Status: CatalogueStatus }
+      Status: CatalogueStatus
+      ProjectionVersion: VersionToken }
 
 /// The loaded catalogue.
 ///

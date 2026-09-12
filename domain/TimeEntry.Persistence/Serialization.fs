@@ -52,3 +52,20 @@ let read (content: string) : Result<EntryDocument, DecodeError> =
             // become one unreadable entry, not a failed projection
             // (TE-R-084).
             Error(MalformedJson ex.Message)
+
+let writeCatalogue (document: CatalogueDocument) : string =
+    JsonSerializer.Serialize(document, options)
+
+let readCatalogue (content: string) : Result<CatalogueDocument, DecodeError> =
+    if System.String.IsNullOrWhiteSpace content then
+        Error EmptyContent
+    else
+        try
+            let document = JsonSerializer.Deserialize<CatalogueDocument>(content, options)
+
+            if isNull (box document) then
+                Error(MalformedJson "catalogue decoded to null")
+            else
+                Ok document
+        with :? JsonException as ex ->
+            Error(MalformedJson ex.Message)

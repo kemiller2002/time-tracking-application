@@ -123,3 +123,30 @@ type DocumentError =
     | EmptyHistory
     /// `state_kind` and the fields it requires disagree.
     | StateFieldsInconsistent of stateKind: string * detail: string
+
+// ---------------------------------------------------------------------------
+// Catalogue
+// ---------------------------------------------------------------------------
+
+/// One catalogue entry, field-for-field as
+/// `schemas/domain/project.schema.json` and
+/// `activity-type.schema.json` define it: `id`, `name`, `active`, `version`.
+/// Both schemas are identical, so one document type serves both.
+[<CLIMutable>]
+type CatalogueEntryDocument =
+    { id: string
+      name: string
+      active: bool
+      version: string }
+
+/// The stored catalogue.
+///
+/// A single file, unlike entries. Entries get a file each because each needs
+/// its own independent concurrency token (see `EntryDocument`); the catalogue
+/// is a read-only upstream projection this application never writes, so there
+/// is no write contention to avoid and one file is simpler to review.
+[<CLIMutable>]
+type CatalogueDocument =
+    { schema_version: string
+      projects: CatalogueEntryDocument array
+      activity_types: CatalogueEntryDocument array }

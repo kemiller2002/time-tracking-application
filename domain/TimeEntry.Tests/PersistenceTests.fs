@@ -423,3 +423,57 @@ let ``distinct entries never share a path`` () =
         |> List.map (fun id -> entryPath (entryId id))
 
     Assert.Equal(6, paths |> List.distinct |> List.length)
+
+// ---------------------------------------------------------------------------
+// Catalogue
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``the catalogue round-trips exactly`` () =
+    let json = writeCatalogue (catalogueToDocument catalogue)
+
+    match readCatalogue json with
+    | Error e -> failwithf "decode failed: %A" e
+    | Ok document ->
+        match catalogueFromDocument document with
+        | Error e -> failwithf "mapping failed: %A" e
+        // Structural equality over both maps: names, statuses and projection
+        // versions all have to survive, not just the ids.
+        | Ok result -> Assert.Equal(catalogue, result)
+
+[<Fact>]
+let ``the stored catalogue uses the schema's field names`` () =
+    // schemas/domain/project.schema.json requires exactly id, name, active,
+    // version. Diverging would produce records that fail schema validation.
+    let json = writeCatalogue (catalogueToDocument catalogue)
+
+    for field in [ "\"id\""; "\"name\""; "\"active\""; "\"version\"" ] do
+        Assert.Contains(field, json)
+
+[<Fact>]
+let ``the projection version survives persistence`` () =
+    // Carried rather than dropped so a ledger can say which catalogue version
+    // a classification was made against.
+    let json = writeCatalogue (catalogueToDocument catalogue)
+    let loaded = readCatalogue json |> Result.toOption |> Option.get
+    let result = catalogueFromDocument loaded |> Result.toOption |> Option.get
+
+    match TimeEntry.Semantic.Catalogue.Catalogue.tryProject (projectId "echelon-foundry") result with
+    | Some project -> Assert.Equal(version "catalogue-v1", project.ProjectionVersion)
+    | None -> failwith "project missing after round trip"
+
+[<Fact>]
+let ``an archived catalogue entry round-trips as archived`` () =
+    // The active:boolean mapping is the contract; inverting it would silently
+    // re-open archived projects.
+    let json = writeCatalogue (catalogueToDocument catalogue)
+    let loaded = readCatalogue json |> Result.toOption |> Option.get
+    let result = catalogueFromDocument loaded |> Result.toOption |> Option.get
+
+    match TimeEntry.Semantic.Catalogue.Catalogue.tryProject (projectId "retired-client") result with
+    | Some project -> Assert.Equal(TimeEntry.Semantic.Catalogue.Archived, project.Status)
+    | None -> failwith "archived project missing after round trip"
+
+[<Fact>]
+let ``the catalogue path is not an entry path`` () =
+    Assert.False(isEntryPath CataloguePath)

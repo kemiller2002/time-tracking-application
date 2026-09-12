@@ -140,7 +140,7 @@ marking work complete merely because code exists.
 | Partially verified — transport write path unexercised | 1 (TE-R-099) |
 | Blocked by an open question | **0** — all five resolved as `DF-TE-0004..0008` |
 
-Test suite: 195 cases, 0 failures, 181 ms. Tier-boundary check: 14 F# files,
+Test suite: 205 cases, 0 failures, 236 ms. Tier-boundary check: 14 F# files,
 0 violations, adversarially validated against three injected violations.
 
 ## Orphan check
