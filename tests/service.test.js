@@ -17,6 +17,25 @@ test('timer enforces one active timer and preserves idempotency',async()=>{
   const stopped=await call(b,'/timers/stop',{method:'POST'});assert.equal(stopped.body.data.status,'stopped');assert.ok(stopped.body.data.exact_duration_ms>0);assert.equal((await call(b,'/timers/current')).body.data.timer,null);
 });
 
+test('a timer stopped under 30 seconds is discarded and must not be recorded',async()=>{
+  let clock=Date.parse('2026-08-02T13:00:00Z');
+  const b={...defaultBindings,store:new MemoryLedgerStore({now:()=>clock})};
+  await call(b,'/timers/start',{method:'POST',payload:{activity_type_id:'research',project_id:'visual-engineering'}});
+  clock+=15000;
+  const stopped=await call(b,'/timers/stop',{method:'POST'});
+  assert.equal(stopped.body.data.status,'discarded');assert.equal(stopped.body.data.discarded,true);assert.equal(stopped.body.data.exact_duration_ms,15000);
+  assert.equal((await call(b,'/timers/current')).body.data.timer,null);
+});
+
+test('a timer stopped at 30 seconds or more is recorded normally',async()=>{
+  let clock=Date.parse('2026-08-02T13:00:00Z');
+  const b={...defaultBindings,store:new MemoryLedgerStore({now:()=>clock})};
+  await call(b,'/timers/start',{method:'POST',payload:{activity_type_id:'research',project_id:'visual-engineering'}});
+  clock+=30000;
+  const stopped=await call(b,'/timers/stop',{method:'POST'});
+  assert.equal(stopped.body.data.status,'stopped');assert.equal(stopped.body.data.discarded,false);assert.equal(stopped.body.data.exact_duration_ms,30000);
+});
+
 test('activities are append-only projections with optimistic corrections',async()=>{
   const b=bindings();const created=(await call(b,'/activities',{method:'POST',payload:{activity_type_id:'research',project_id:'visual-engineering',description:'Read research',business_purpose:'Inform product design',started_at:'2026-08-02T09:00:00Z',ended_at:'2026-08-02T09:42:00Z',entry_method:'manual',reconstruction_reason:'Recorded after completion'}})).body.data;
   assert.equal(created.exact_duration_ms,42*60000);assert.equal(created.version,'v1');

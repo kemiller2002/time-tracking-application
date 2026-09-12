@@ -149,7 +149,10 @@ paths:
         (paused intervals excluded), rounded to the nearest whole minute for
         exact_minutes. This does not itself create an activity record — the
         caller separately calls POST /activities with the resulting times to
-        record it, matching how a manual entry is recorded.
+        record it, matching how a manual entry is recorded. If the elapsed
+        working time is under 30 seconds, status is discarded (discarded is
+        true) and the caller must not call POST /activities for it — per
+        DOMAIN-REQUIREMENTS.md, nothing is recorded for a session that short.
       responses:
         '200':
           description: Timer stopped
@@ -671,15 +674,21 @@ components:
       allOf:
         - $ref: '#/components/schemas/Timer'
         - type: object
-          required: [status, stopped_at, exact_duration_ms, exact_minutes]
+          required: [status, stopped_at, exact_duration_ms, exact_minutes, discarded]
           properties:
-            status: {const: stopped}
+            status: {enum: [stopped, discarded]}
             stopped_at: {type: string, format: date-time}
             exact_duration_ms: {type: integer, minimum: 0}
             exact_minutes:
               type: number
               minimum: 0
               description: exact_duration_ms rounded to the nearest whole minute
+            discarded:
+              type: boolean
+              description: >-
+                True when exact_duration_ms is under 30 seconds (status is
+                then discarded). The caller must not record an activity for a
+                discarded stop.
     StartTimerRequest:
       type: object
       required: [activity_type_id, project_id]
