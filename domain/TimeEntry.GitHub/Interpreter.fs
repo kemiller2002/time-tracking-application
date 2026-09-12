@@ -239,6 +239,23 @@ let private loadCatalogue (store: GitHubStore) =
     }
 
 // ---------------------------------------------------------------------------
+// The server's clock
+// ---------------------------------------------------------------------------
+
+/// What the server last said the time was, as an `Instant`.
+///
+/// The boundary TE-R-094 asks for: the store speaks in header milliseconds
+/// and the domain speaks in `Instant`, and the conversion happens here, in the
+/// same place a blob SHA becomes a `VersionToken`.
+///
+/// `None` until some response has been seen. That is not an error and must
+/// not be reported as a clock that agrees: "the server has not told us the
+/// time" and "the clocks match" are different facts, and a caller decides
+/// what to do with the first (DF-TE-0017).
+let observedServerTime (store: GitHubStore) : Instant option =
+    store.ObservedServerTimeMs() |> Option.map Instant.ofEpochMilliseconds
+
+// ---------------------------------------------------------------------------
 // Preferences
 // ---------------------------------------------------------------------------
 

@@ -34,6 +34,7 @@ module TimeEntry.Browser.Wording
 open TimeEntry.Semantic.Identifiers
 open TimeEntry.Semantic.Values
 open TimeEntry.Semantic.Identity
+open TimeEntry.Semantic.Clock
 open TimeEntry.Semantic.Duration
 open TimeEntry.Semantic.Catalogue
 open TimeEntry.Semantic.EntryState
@@ -131,6 +132,27 @@ let identityRejection (rejection: IdentityRejection) =
     | IdentityExpired _ -> "that sign-in has expired — sign in again"
     | IdentityProviderUnknown found ->
         sprintf "'%s' is not a sign-in method this ledger accepts" found
+
+/// The clock-skew warning (TE-R-008).
+///
+/// Says which way the device is wrong and by how much, because the two
+/// directions have different consequences: a device running ahead can stamp
+/// an entry into a day that has not started, and one running behind can stamp
+/// it into a day already reviewed. "Your clock is wrong" alone tells a person
+/// nothing they can act on.
+///
+/// Deliberately does NOT say the ledger is wrong. Nothing recorded is
+/// invalidated by a skewed clock — the durations were measured by one clock
+/// and are internally consistent — so the warning is about which DAY a new
+/// entry will land on, and it says so rather than implying worse.
+let clockSkew (comparison: ClockComparison) =
+    // The preposition belongs to the direction, not to the sentence: "ahead
+    // of" takes one and "behind" does not, and a shared "%s of" produced
+    // "behind of the repository's".
+    sprintf
+        "This device's clock is %s the repository's by %s. Time recorded now may be dated to the wrong day."
+        (if comparison.DeviceAhead then "ahead of" else "behind")
+        (exactTime (abs comparison.DifferenceMilliseconds))
 
 let dateError (error: DateError) =
     match error with

@@ -79,4 +79,18 @@ type GitHubStore =
       /// Paths under the ledger root, from one recursive tree read.
       ListEntryPaths: unit -> Async<Result<string list, StoreError>>
       ReadHead: unit -> Async<Result<string, StoreError>>
-      Commit: CommitRequest -> Async<Result<CommitResult, StoreError>> }
+      Commit: CommitRequest -> Async<Result<CommitResult, StoreError>>
+      /// Epoch milliseconds from the most recent response's `Date` header, or
+      /// `None` if no response has been seen yet.
+      ///
+      /// In GitHub's vocabulary, like everything else here: a header value,
+      /// not an `Instant`. The interpreter converts it, which is the same
+      /// boundary that turns a blob SHA into a `VersionToken` (TE-R-094).
+      ///
+      /// NOT a request. Every HTTP response already carries the server's
+      /// clock, so asking for it separately would spend a round trip to learn
+      /// something the last one already said (DF-TE-0017). It is `unit ->`
+      /// rather than a value because the answer changes as responses arrive,
+      /// and a value captured at construction would be the time the store was
+      /// built rather than the time it last heard from the server.
+      ObservedServerTimeMs: unit -> int64 option }

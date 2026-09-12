@@ -15,6 +15,7 @@ open TimeEntry.Semantic.Duration
 open TimeEntry.Semantic.Preferences
 open TimeEntry.Semantic.Values
 open TimeEntry.Semantic.Identity
+open TimeEntry.Semantic.Clock
 open TimeEntry.Semantic.EntryState
 open TimeEntry.Semantic.Capabilities
 open TimeEntry.Projection.Query
@@ -936,6 +937,46 @@ let viewMonth (requestJson: string) : string =
 
 
 // ---------------------------------------------------------------------------
+// The device clock against the repository's
+// ---------------------------------------------------------------------------
+
+/// The clock-skew assessment, or nothing to say.
+///
+/// Emitted as `null` when the repository has not yet told us the time, which
+/// is the ordinary state of a page that has not loaded anything. "No server
+/// time" must not render as "the clocks agree": a reassurance nothing checked
+/// is the failure mode this whole codebase keeps refusing.
+///
+/// The tolerance is reported alongside the verdict so a reader can see what
+/// "materially" was taken to mean, rather than having to trust the boolean
+/// (DF-TE-0017).
+let private clockNode (device: Instant) (server: Instant) : JsonObject =
+    let comparison = assessDefault device server
+    let node = JsonObject()
+    node.Add("differenceMilliseconds", JsonValue.Create comparison.DifferenceMilliseconds)
+    node.Add("toleranceMilliseconds", JsonValue.Create comparison.ToleranceMilliseconds)
+    node.Add("isMaterial", JsonValue.Create comparison.IsMaterial)
+    node.Add("deviceAhead", JsonValue.Create comparison.DeviceAhead)
+
+    node.Add(
+        "displayDifference",
+        JsonValue.Create(displayExact (abs comparison.DifferenceMilliseconds))
+    )
+
+    // The sentence only exists when there is something to warn about. A
+    // caller that finds `warning: null` has nothing to show, and cannot
+    // accidentally show a warning that reads as reassurance.
+    node.Add(
+        "warning",
+        if comparison.IsMaterial then
+            JsonValue.Create(Wording.clockSkew comparison) :> JsonNode
+        else
+            null
+    )
+
+    node
+
+// ---------------------------------------------------------------------------
 // Who is signed in
 // ---------------------------------------------------------------------------
 
@@ -1808,6 +1849,25 @@ let loadLedgerWith
                                 "catalogueError",
                                 JsonValue.Create "The repository answered with something other than a catalogue."
                             )
+
+                        // The repository's clock against this device's
+                        // (TE-R-008). `deviceNowMs` is the host's reading, and
+                        // is optional: a caller that does not supply one gets
+                        // no assessment rather than an assessment against
+                        // zero.
+                        match
+                            request.["deviceNowMs"], Interpreter.observedServerTime store
+                        with
+                        | null, _
+                        | _, None -> node.Add("clock", null)
+                        | value, Some server ->
+                            match System.Int64.TryParse(value.ToString()) with
+                            | false, _ -> node.Add("clock", null)
+                            | true, deviceMs ->
+                                node.Add(
+                                    "clock",
+                                    clockNode (Instant.ofEpochMilliseconds deviceMs) server
+                                )
 
                         // Preferences are returned in their STORED form,
                         // like entries and the catalogue: the page hands the

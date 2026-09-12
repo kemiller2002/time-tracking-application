@@ -23,8 +23,8 @@ and ROS forbids marking work complete merely because code exists, so the
 Evidence column is only `**VERIFIED**` where something actually ran:
 
 ```
-dotnet test TimeEntry.sln    332 passed, 0 failed
-npm run check:browser        126 checks passed in headless Chromium
+dotnet test TimeEntry.sln    348 passed, 0 failed
+npm run check:browser        128 checks passed in headless Chromium
 check-domain-architecture    0 tier-boundary violations
 ```
 
@@ -50,7 +50,7 @@ it, and no row below claims otherwise.
 | TE-R-005 | elapsed = end − start − paused | Paused intervals subtract | WI-0005 | `Duration.ofInterval` | `DurationTests` "elapsed time subtracts paused intervals" | **VERIFIED** |
 | TE-R-006 | No JS-interval time | The bridge is forbidden arithmetic; a check enforces it | WI-0007 | `check-domain-architecture` bridge rules | adversarially verified (`.reduce` injection caught) | **VERIFIED** (structurally) |
 | TE-R-007 | No authoritative floating point | No `float` in Tiers 1–3; integer `int64` ms | WI-0005 | `Duration.fs`, `Projection.fs` | `ProjectionTests` "totals sum exact seconds rather than per entry rounded units" | **VERIFIED** |
-| TE-R-008 | Warn on device/server clock skew | — | WI-0048 | — | — | **NOT IMPLEMENTED.** The host supplies `occurredAtMs` and the repository supplies nothing comparable, so there is no server time to compare against. Needs a decision about where authoritative time comes from before it can be built |
+| TE-R-008 | Warn on device/server clock skew | Three states kept distinct: no server time, agreeing, material. Direction and magnitude both named | WI-0048 | `Semantic.Clock`, `Store.ObservedServerTimeMs`, `HttpStore.observe`, `Interpreter.observedServerTime`, `Kernel.clockNode`, `Wording.clockSkew` | `ClockTests` 16 cases; 2 browser checks | **PARTIALLY VERIFIED.** The assessment, its boundary and its wording are tested against a store double that can be told what the server said. The *rendering* of a material warning is not verified in Chromium: the harness stub 404s every read, so `loadLedger` never succeeds there — the same limitation TE-R-099 records, resolving with WI-0028 |
 | TE-R-009 | Quick durations 6..60 | Grid generated from `MillisecondsPerBillableUnit`, not hard-coded | WI-0031 | `Kernel.durationGrid` | `verify-browser-kernel` "the duration grid is computed in F#, labels and all" | **VERIFIED** |
 
 ## B. Entry lifecycle
@@ -152,20 +152,20 @@ it, and no row below claims otherwise.
 | Requirements inventoried | 71 |
 | Rows marked **VERIFIED** by an executed test | **68** |
 | Structural only — the field exists, the affordance does not | 0 |
-| Partially verified — every layer exercised, never against the real external service (TE-R-099, TE-R-124) | 2 |
-| **NOT IMPLEMENTED**, and said so rather than left implicit (TE-R-008) | 1 |
+| Partially verified — every layer exercised, never against the real external service (TE-R-099, TE-R-124, TE-R-008) | 3 |
+| **NOT IMPLEMENTED** | 0 |
 
 ```
-dotnet test TimeEntry.sln    332 passed, 0 failed
-npm run check:browser        126 checks passed in headless Chromium
-npm run check                 20 passed
+dotnet test TimeEntry.sln    348 passed, 0 failed
+npm run check:browser        128 checks passed in headless Chromium
+npm run check                 33 passed
 check-domain-architecture      0 tier-boundary violations, adversarially
                                validated against seven injected violations
 ros validate / registry        pass
 ```
 
 The counts above are produced by classifying each requirement row's Evidence
-cell — 68 + 0 + 2 + 1 = 71, which is the check that matters: every inventoried
+cell — 68 + 0 + 3 + 0 = 71, which is the check that matters: every inventoried
 requirement is in exactly one category, and none has quietly fallen out of the
 table.
 
@@ -190,16 +190,18 @@ be right. Counting rows rather than words is the fix.
   additions beyond stated requirements are the bounded-maximum guard in
   `Duration` and the `ExcludedEntries` disclosure in `ListProjection`, both
   documented in-code as engineering constraints rather than requirements.
-- **Acceptance criteria with no verification mechanism:** one. TE-R-008
-  (warn on device/server clock skew) cannot be built before it is decided
-  where authoritative time comes from — the host supplies `occurredAtMs` and
-  the repository supplies nothing to compare it against. Marked NOT
-  IMPLEMENTED rather than left implicit, and tracked as WI-0048.
+- **Acceptance criteria with no verification mechanism:** none. TE-R-008 was
+  the last one, and `DF-TE-0017` settled what it needed: server time is the
+  `Date` header the repository already sends, and "materially" is one billable
+  unit as an overridable default.
 
 - **Requirements whose verification is weaker than it looks, stated here so
   the table is not read as stronger than it is:**
   - TE-R-099 (GitHub backend) exercises every layer — credential, transport,
     interpreter, kernel, page — but never against a real repository.
+  - TE-R-008 (clock skew) is assessed and worded under test, but the
+    rendering of a material warning is not verified in Chromium: the harness
+    stub 404s every read, so `loadLedger` never succeeds there.
   - TE-R-124 (Google/Apple sign-in) exercises every layer but never against a
     real client id: there is no account and the harness has no network, so a
     completed sign-in is staged in the storage slot the real flow writes. And

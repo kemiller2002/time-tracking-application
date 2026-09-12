@@ -928,3 +928,112 @@ nobody signs in on should not call out to two companies to say so.
   remains unstated, and it is left alone rather than filled in alongside the
   actor: one unresolved thing should not get quietly resolved on the
   coat-tails of another.
+
+---
+
+## DF-TE-0017
+
+**Title:** Server time is the `Date` header the repository already sends, and "materially" is one billable unit
+
+**Status:** accepted · **Resolves:** the two unknowns blocking `TE-R-008`
+
+### Context
+
+TE-R-008 — "a warning MUST be shown when device time and server time differ
+materially" — was the one requirement in `TRACEABILITY.md` marked **NOT
+IMPLEMENTED**, because two things it depends on were unstated: where server
+time comes from, and what counts as material. Neither could be invented, so
+the row said so rather than shipping a warning against a number nobody chose.
+
+### Decision, part one: where server time comes from
+
+**The `Date` header on responses this application is already making.**
+
+RFC 9110 §6.6.1 requires a server to send `Date` on a response, and it is the
+time the message was originated. The backing repository is reached over HTTP
+(`DF-TE-0001`), so the server's clock is arriving with every read the ledger
+already performs.
+
+What that rules out, and why each alternative is worse:
+
+| Alternative | Why not |
+|---|---|
+| A request whose only purpose is to read the clock | Spends a round trip to learn what the previous response already said, on every load |
+| An external time service | A dependency added for convenience, and a second authority to reconcile with |
+| The commit timestamp of the last write | It is whatever clock wrote it — possibly this same skewed device |
+| Treat the device as authoritative | Then there is nothing to compare, and the requirement is unimplementable rather than implemented |
+
+Recorded on **failed** responses too. A 401 or a 409 carries a `Date`, and a
+clock hours out is exactly the sort of thing that causes failures — discarding
+the evidence on the error path would throw it away when it is most useful.
+
+### Decision, part two: what "materially" means
+
+**One billable unit — six minutes — as a default the caller may override.**
+
+Derived rather than picked: a six-minute unit is the smallest quantity this
+ledger distinguishes, so a disagreement below one unit cannot change any
+figure a person sees in a total. At or beyond a unit, it can.
+
+It is a **parameter with a stated default**, not a constant. No repository
+document states a tolerance, so this is a reading, and `Clock.assess` takes
+the tolerance as an argument so that a caller who learns better can say so
+without editing the module. A test asserts the default equals
+`MillisecondsPerBillableUnit`, so the derivation cannot quietly drift into an
+arbitrary number.
+
+At the tolerance **exactly**, not material. The tolerance reads as "up to this
+much is tolerated", and a boundary that refused the value it names would make
+a stated six minutes behave as five minutes fifty-nine. A test fails against
+`>=`, confirmed.
+
+### Three states, not two
+
+- **No server time yet** — `clock: null`. The ordinary state of a page that
+  has not loaded anything. It must not render as "the clocks agree": that is a
+  reassurance nothing checked, which is the failure mode this codebase keeps
+  refusing (see `DF-TE-0013`, `DF-TE-0015`).
+- **Clocks agree** — `isMaterial: false`, and `warning: null`. The sentence
+  exists only when there is something to warn about, so a page cannot render
+  reassurance by accident.
+- **Material skew** — `isMaterial: true` and a worded warning.
+
+### What the warning says, and what it is careful not to say
+
+It names the **direction** and the **magnitude**, because the two directions
+have different consequences: a device running ahead can stamp an entry into a
+day that has not started, and one behind into a day already reviewed. "Your
+clock is wrong" alone tells a person nothing they can act on.
+
+It does **not** say anything already recorded is wrong. Durations are measured
+by one clock and are internally consistent, so the risk is which *day* new
+time is dated to — and the sentence says exactly that rather than implying
+worse. A test asserts the warning does not contain "invalid".
+
+### Consequences
+
+- `GitHubStore` gains `ObservedServerTimeMs: unit -> int64 option`, in the
+  store's own vocabulary; the interpreter converts it to `Instant`, the same
+  boundary that turns a blob SHA into a `VersionToken` (TE-R-094). It is a
+  function rather than a value because the answer changes as responses arrive.
+- `HttpStore`'s session holds a ref cell for it. Mutation, permitted because
+  it stands in for an external system that genuinely changes over time — the
+  same allowance the test store double takes. Nothing below Tier 4 sees it.
+- `deviceNowMs` on a load request is **optional**, and its absence yields no
+  assessment rather than an assessment against zero.
+- Writing the warning found a real defect in its own first draft: a shared
+  `"%s of"` produced "behind **of** the repository's". The preposition belongs
+  to the direction, not to the sentence. Caught by the test for the
+  behind-direction case, which is why both directions are asserted rather than
+  just the one.
+- The **rendering** of a material warning is not verified in Chromium: the
+  harness's stub 404s every read, so `loadLedger` never succeeds there. The
+  assessment, its boundary and its wording are verified in `ClockTests`
+  against a store double that can be told what the server said. This is the
+  same limitation TE-R-099 already records for the whole repository-load
+  render path, and it resolves when `WI-0028` does.
+- **Not addressed:** a skew smaller than the tolerance can still move an entry
+  across midnight. The tolerance is about figures in a total, and near a day
+  boundary any skew at all matters. Narrowing the tolerance would not fix that
+  — only comparing the *date* the two clocks are in would, and no requirement
+  asks for it. Stated here rather than left for someone to discover.

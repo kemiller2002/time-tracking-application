@@ -50,7 +50,7 @@
 | WI-0045 | TE-045 Daily review screen wired against the domain's obligations | complete |  | medium |
 | WI-0046 | TE-046 Entry history (TE-R-052): what changed, why, when, by whom, from which device | complete |  | medium |
 | WI-0047 | TE-047 Word each rejection explicitly instead of sprintf %A — TE-R-053 requires it, and it is what now blocks trimming | complete |  | medium |
-| WI-0048 | TE-048 Warn on device/server clock skew (TE-R-008) — needs a decision on where authoritative time comes from | captured |  | medium |
+| WI-0048 | TE-048 Warn on device/server clock skew (TE-R-008) — needs a decision on where authoritative time comes from | ready |  | medium |
 | WI-0049 | TE-049 Evidence reassignment affordance on split (TE-R-045 is structural only) | complete |  | medium |
 | WI-0050 | TE-050 Attribute the branch's build and configuration files, and make the local ROS gate match CI's | complete |  | medium |
 | WI-0051 | TE-051 Record the answers to OQ-7, OQ-10 and OQ-11 and verify the behaviour they settle | complete |  | medium |
@@ -58,4 +58,4 @@
 | WI-0053 | TE-053 A monthly tracking target the person using the ledger sets (OQ-9) | complete |  | medium |
 | WI-0054 | TE-054 Make attribution independently verifiable (DF-TE-0016 leaves the recorded actor self-asserted) | captured |  | medium |
 | WI-0055 | TE-055 Sign in against a real Google client id and Apple services id (never performed: no accounts, no network in the harness) | captured |  | medium |
-| WI-0056 | TE-056 Merge main (upstream PRs #1-#15) into the branch and attribute the paths it brings | ready |  | medium |
+| WI-0056 | TE-056 Merge main (upstream PRs #1-#15) into the branch and attribute the paths it brings | complete |  | medium |

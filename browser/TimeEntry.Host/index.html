@@ -91,6 +91,11 @@
         </div>
         <p class="field-help" id="identity-help"></p>
       </form>
+      <!-- The device clock against the repository's (TE-R-008). Hidden unless
+           the difference is material: a permanent "clocks agree" line would
+           be a reassurance nothing checked until a load has happened. The
+           sentence is the kernel's. -->
+      <p class="notice notice-warning" id="clock-warning" role="status" aria-live="polite" hidden></p>
       <!-- Where the ledger lives, and the token that may write to it
            (DF-TE-0011). The token is held for this tab only — sessionStorage,
            not localStorage — and is never rendered back into the page. The

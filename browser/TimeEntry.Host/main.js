@@ -209,6 +209,9 @@ let state = Object.freeze({
   // display name, the actor and whether it is still usable are all the
   // kernel's (TE-R-091).
   identity: readIdentity(),
+  // The kernel's clock-skew assessment from the last load, or null if the
+  // repository has not told us the time yet.
+  clock: null,
   // Bumped on every state change. An asynchronous read that resolves after
   // the page has moved on is stale, and applying it would silently discard
   // whatever moved it.
@@ -1028,8 +1031,20 @@ const renderIdentity = () => {
   )
 }
 
+// The clock warning, shown only when the kernel says the difference is
+// material and hidden otherwise. `warning` is null unless there is something
+// to warn about, so the page cannot render reassurance by mistake.
+const renderClock = () => {
+  const element = document.getElementById('clock-warning')
+  if (!element) return
+  const warning = state.clock?.warning ?? null
+  element.hidden = !warning
+  element.textContent = warning ?? ''
+}
+
 const render = () => {
   renderIdentity()
+  renderClock()
   renderDay(state.view)
   renderReview()
   renderMonth()
@@ -1261,7 +1276,11 @@ const loadFromRepository = async (connection) => {
       JSON.stringify({
         repository: connection.repository,
         token: connection.token,
-        date: DATE
+        date: DATE,
+        // The host reads its own clock; the kernel compares it with the
+        // `Date` header the repository already sent (TE-R-008). The page
+        // never subtracts the two.
+        deviceNowMs: Date.now()
       })
     )
   )
@@ -1291,6 +1310,9 @@ const loadFromRepository = async (connection) => {
     // month's total describe one moment.
     preferences: answer.preferences ?? null,
     preferencesError: answer.preferencesError ?? null,
+    // `null` when the repository has not said what time it is. Distinct from
+    // "the clocks agree", which is `isMaterial: false`.
+    clock: answer.clock ?? null,
     effects: [],
     performed: []
   })

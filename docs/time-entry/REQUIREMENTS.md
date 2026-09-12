@@ -48,7 +48,7 @@ see [`DECISIONS.md`](DECISIONS.md).
 | TE-R-005 | Elapsed time MUST derive from authoritative timestamps: `elapsed = now - started_at - paused intervals`. | system-prompt §16 |
 | TE-R-006 | The UI MUST NOT increment time solely from a JavaScript interval. | system-prompt §16 |
 | TE-R-007 | Totals MUST NOT use floating-point arithmetic as authoritative for billable time. | user-instruction §21 |
-| TE-R-008 | A warning MUST be shown when device time and server time differ materially. | system-prompt §16 |
+| TE-R-008 | A warning MUST be shown when device time and server time differ materially. | system-prompt §16; server time and "materially" settled by `DF-TE-0017` |
 | TE-R-009 | Quick-duration inputs are 6,12,18,24,30,36,42,48,54,60 minutes. | system-prompt §8.4 |
 
 > **Reconciliation note (TE-R-001 vs TE-R-002/003).** The user instruction

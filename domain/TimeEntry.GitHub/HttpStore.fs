@@ -60,7 +60,29 @@ let private headerInt (response: HttpResponseMessage) (name: string) =
 /// or installation token does, because it expires and the refresh has to
 /// happen somewhere. Asking every time is what lets the mechanism change
 /// without this file changing (DF-TE-0011).
-let private send (credential: CredentialSource) (client: HttpClient) (request: HttpRequestMessage) =
+/// Where the server clock comes in.
+///
+/// `Date` is required of every HTTP response (RFC 9110 §6.6.1), so the
+/// server's time is already arriving with every read and needs no request of
+/// its own (DF-TE-0017, TE-R-008). Recorded on the way past, including on a
+/// FAILED response: a 409 or a 401 carries a `Date` too, and a clock that is
+/// hours out is exactly the sort of thing that causes failures, so throwing
+/// the evidence away on the error path would discard it when it is most
+/// useful.
+///
+/// A ref cell, which is mutation — permitted here because it stands in for an
+/// external system that genuinely changes over time, the same allowance the
+/// test store double takes. Nothing below Tier 4 sees it.
+let private observe (observed: int64 option ref) (response: HttpResponseMessage) =
+    if response.Headers.Date.HasValue then
+        observed.Value <- Some(response.Headers.Date.Value.ToUnixTimeMilliseconds())
+
+let private send
+    (observed: int64 option ref)
+    (credential: CredentialSource)
+    (client: HttpClient)
+    (request: HttpRequestMessage)
+    =
     async {
         let! authorization = credential.Acquire()
 
@@ -81,6 +103,7 @@ let private send (credential: CredentialSource) (client: HttpClient) (request: H
         try
             let! response = client.SendAsync request |> Async.AwaitTask
             let! body = response.Content.ReadAsStringAsync() |> Async.AwaitTask
+            observe observed response
 
             if response.IsSuccessStatusCode then
                 return Ok body
@@ -121,19 +144,23 @@ let private send (credential: CredentialSource) (client: HttpClient) (request: H
 [<NoEquality; NoComparison>]
 type Session =
     { Client: HttpClient
-      Credential: CredentialSource }
+      Credential: CredentialSource
+      /// Epoch milliseconds from the most recent response's `Date` header.
+      /// Shared by every request this session makes, so the latest answer
+      /// wins — which is what "the server's clock" means.
+      ObservedServerTimeMs: int64 option ref }
 
 let private get (session: Session) (url: string) =
     async {
         use request = new HttpRequestMessage(HttpMethod.Get, url)
-        return! send session.Credential session.Client request
+        return! send session.ObservedServerTimeMs session.Credential session.Client request
     }
 
 let private json (session: Session) (method: HttpMethod) (url: string) (body: JsonObject) =
     async {
         use request = new HttpRequestMessage(method, url)
         request.Content <- new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json")
-        return! send session.Credential session.Client request
+        return! send session.ObservedServerTimeMs session.Credential session.Client request
     }
 
 let private parse (body: string) : Result<JsonNode, StoreError> =
@@ -165,7 +192,8 @@ let configure (client: HttpClient) (credential: CredentialSource) : Session =
     client.DefaultRequestHeaders.UserAgent.Add(Headers.ProductInfoHeaderValue("echelon-ledger", "1.0"))
 
     { Client = client
-      Credential = credential }
+      Credential = credential
+      ObservedServerTimeMs = ref None }
 
 // ---------------------------------------------------------------------------
 // Reads
@@ -429,4 +457,5 @@ let create (session: Session) (target: RepositoryRef) : GitHubStore =
                         entries |> List.map fst |> List.filter Layout.isEntryPath)
             }
       ReadHead = fun () -> readHead session target
-      Commit = commit session target }
+      Commit = commit session target
+      ObservedServerTimeMs = fun () -> session.ObservedServerTimeMs.Value }

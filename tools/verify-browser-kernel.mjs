@@ -412,6 +412,30 @@ if (ready) {
   )
 
   // -------------------------------------------------------------------------
+  // The clock warning (TE-R-008, DF-TE-0017)
+  // -------------------------------------------------------------------------
+
+  // No load has happened, so the repository has not said what time it is and
+  // there is nothing to warn about. The check that matters here is the
+  // ABSENCE of a reassurance: a visible "clocks agree" line before any
+  // response has been seen would be an assurance nothing checked.
+  //
+  // The assessment itself, its boundary and its wording are verified in
+  // `ClockTests` against a store double, which can be told what the server
+  // said. This harness cannot: its stub 404s every read, so `loadLedger`
+  // never succeeds here — the same limitation TE-R-099 already records for
+  // the whole repository-load render path.
+  check(
+    'no clock warning is shown before the repository has said the time',
+    await page.isHidden('#clock-warning')
+  )
+  check(
+    'and the element carries no text to leak into a screen reader',
+    (await page.textContent('#clock-warning'))?.trim() === '',
+    (await page.textContent('#clock-warning'))?.trim()
+  )
+
+  // -------------------------------------------------------------------------
   // Signing in (DF-TE-0016, resolving OQ-6)
   // -------------------------------------------------------------------------
 

@@ -39,6 +39,7 @@
     <!-- The browser kernel's command surface, tested without a browser. -->
     <Compile Include="KernelTests.fs" />
     <Compile Include="IdentityTests.fs" />
+    <Compile Include="ClockTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

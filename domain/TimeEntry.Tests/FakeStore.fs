@@ -39,6 +39,11 @@ type Fake(initial: (string * string) list, ?failWith: StoreError) =
     /// can never exercise the ref compare-and-swap.
     let mutable onBeforeCommit: (unit -> unit) option = None
 
+    /// What the store reports as the server's clock. `None` until a test says
+    /// otherwise, which is the honest default: a store nobody has talked to
+    /// has heard no `Date` header.
+    let mutable observedServerTimeMs: int64 option = None
+
     let state =
         ref
             { Files =
@@ -77,6 +82,10 @@ type Fake(initial: (string * string) list, ?failWith: StoreError) =
 
     member _.InterfereDuringCommit(action: unit -> unit) = onBeforeCommit <- Some action
 
+    /// Stand in for a `Date` header the real transport would have recorded.
+    member _.ServerSaysItIs(epochMilliseconds: int64) =
+        observedServerTimeMs <- Some epochMilliseconds
+
     member this.Store: GitHubStore =
         let fail () =
             match failWith with
@@ -99,6 +108,7 @@ type Fake(initial: (string * string) list, ?failWith: StoreError) =
                         | Some error -> error
                         | None -> Ok(state.Value.Files |> Map.toList |> List.map fst)
                 }
+          ObservedServerTimeMs = fun () -> observedServerTimeMs
           ReadHead =
             fun () ->
                 async {
