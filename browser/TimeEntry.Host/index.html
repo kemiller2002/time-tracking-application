@@ -41,6 +41,11 @@
       <div class="layout-two">
         <section class="surface surface-pad" aria-labelledby="ledger-title">
           <div class="day-summary"><div><p class="summary-label" id="ledger-title">Recorded work</p><p class="summary-value" id="daily-total">—</p></div><span class="summary-count" id="activity-count">—</span></div>
+          <!-- Removed entries are excluded from totals but never deleted
+               (TE-R-030). The count of them comes from the projection, and
+               ticking this asks the KERNEL for a different view — it is not a
+               filter applied to a list the page already has. -->
+          <p class="field-help"><label for="show-removed"><input type="checkbox" id="show-removed"> Show removed entries<span id="excluded-count"></span></label></p>
           <!-- One `article.record` per projected entry, built by the bridge in
                the shape today.html defines. -->
           <div class="timeline" id="timeline"></div>

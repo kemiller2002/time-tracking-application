@@ -241,7 +241,11 @@ if (ready) {
   // active entries, so two controls.
   check(
     'a remove control appears per entry the kernel says may be voided',
-    (await page.locator('#timeline article.record details').count()) === 2
+    (await page.locator('#timeline article.record details', { hasText: 'Remove' }).count()) === 2
+  )
+  check(
+    'and a correct control likewise',
+    (await page.locator('#timeline article.record details', { hasText: 'Correct' }).count()) === 2
   )
 
   // Rows are addressed by their description rather than by position: the
@@ -251,9 +255,12 @@ if (ready) {
 
   // The reason field is behind a native <details> disclosure, so it has to
   // be opened the way a person would.
+  // Scoped by the disclosure's own label, because each record now carries
+  // more than one.
   const openRemove = async (text) => {
-    await row(text).locator('summary').click()
-    return row(text)
+    const control = row(text).locator('details', { hasText: 'Remove' })
+    await control.locator('summary').click()
+    return control
   }
 
   // The entry created in this session has no persisted version yet, so its
@@ -297,6 +304,107 @@ if (ready) {
     'the page renders the reduced total',
     (await page.textContent('#daily-total'))?.trim() === '30m',
     (await page.textContent('#daily-total'))?.trim()
+  )
+
+  // -------------------------------------------------------------------------
+  // Disclosure, then restore
+  // -------------------------------------------------------------------------
+
+  // The removed entry is gone from the list but its existence is still
+  // reported — never silently dropped (TE-R-030).
+  check(
+    'a removed entry is disclosed even while hidden',
+    (await page.textContent('#excluded-count'))?.trim() === '(1 removed)',
+    (await page.textContent('#excluded-count'))?.trim()
+  )
+  check('and it is not in the list', (await page.locator('#timeline article.record').count()) === 1)
+
+  // Ticking the box asks the KERNEL a different question. If the page were
+  // filtering a list it already had, the removed entry would never have been
+  // in it to show.
+  await page.check('#show-removed')
+  await page.waitForFunction(() => globalThis.__kernel.view.entries.length === 2, { timeout: 15000 })
+  check('showing removed entries brings it back into the list', true)
+  check(
+    'the total does not change when a removed entry is merely shown',
+    (await page.textContent('#daily-total'))?.trim() === '30m',
+    (await page.textContent('#daily-total'))?.trim()
+  )
+  check(
+    'the removed entry is badged as removed',
+    (await page.locator('#timeline .badge', { hasText: 'Removed' }).count()) === 1
+  )
+
+  // Restore is offered only where the kernel said CanRestore — which is the
+  // removed entry, and only it.
+  check(
+    'restore is offered on exactly the removed entry',
+    (await page.locator('#timeline article.record details', { hasText: 'Restore' }).count()) === 1
+  )
+
+  const removed = row('Reviewed composition evidence.')
+  await removed.locator('details', { hasText: 'Restore' }).locator('summary').click()
+  await removed
+    .locator('details', { hasText: 'Restore' })
+    .locator('input[type=text]')
+    .fill('Removed in error')
+  await removed.locator('details', { hasText: 'Restore' }).locator('button[type=submit]').click()
+  await page.waitForFunction(() => globalThis.__kernel.view.totalMilliseconds === 4920000, {
+    timeout: 15000
+  })
+  check('restoring returns its time to the totals', true, '4920000 ms')
+  check(
+    'the restore reports the persistence effect it needs',
+    (await page.textContent('#create-effects'))?.trim() === 'Requested: PersistRestore'
+  )
+
+  // -------------------------------------------------------------------------
+  // Correction
+  // -------------------------------------------------------------------------
+
+  // The loaded entry, not the one created in this session: only the loaded
+  // one has a persisted version, and a correction must name the version it
+  // read (TE-R-070). An entry this page created has nowhere to have got one
+  // from, because effects are not performed yet — see WI-0033.
+  const target = row('Reviewed composition evidence.').locator('details', { hasText: 'Correct' })
+  await target.locator('summary').click()
+
+  // The form is pre-filled from the projection: the entry's current project
+  // is selected, chosen by id rather than by matching a display name.
+  check(
+    'the correction form is pre-filled with the entry\'s current project',
+    (await target.locator('select').first().inputValue()) === 'echelon-foundry',
+    await target.locator('select').first().inputValue()
+  )
+
+  // 52 minutes -> 1 hour, and onto a different project.
+  await target.locator('select').first().selectOption('northline')
+  await target.locator('select').last().selectOption('10')
+  await target.locator('input[type=text]').fill('Logged against the wrong client')
+  await target.locator('button[type=submit]').click()
+  const changed = await page
+    .waitForFunction(() => globalThis.__kernel.view.totalMilliseconds === 5400000, { timeout: 15000 })
+    .then(() => true)
+    .catch(() => false)
+
+  if (!changed) {
+    // Say WHY rather than only that it timed out: a silent timeout here
+    // hides a domain rejection behind a stopwatch.
+    check('a correction is accepted', false, (await page.textContent('#create-message'))?.trim())
+  }
+
+  const corrected = await page.evaluate(() => globalThis.__kernel.view)
+  check('a correction changes the total, exactly', corrected.totalMilliseconds === 5400000, `${corrected.totalMilliseconds} ms`)
+  // Still two entries: a correction is a new revision of the SAME entry, not
+  // a second entry (TE-R-050).
+  check('a correction does not create a second entry', corrected.entries.length === 2)
+  check(
+    'the corrected entry shows its new classification',
+    (await page.locator('#timeline .record-project', { hasText: 'Northline Studio' }).count()) === 1
+  )
+  check(
+    'the correction reports the persistence effect it needs',
+    (await page.textContent('#create-effects'))?.trim() === 'Requested: PersistCorrection'
   )
 }
 

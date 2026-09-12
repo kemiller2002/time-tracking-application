@@ -103,6 +103,11 @@ let private classificationOf (catalogue: Catalogue) (view: EntryView) : string =
 /// Input is the stored form of the entries plus a date; output is the
 /// `ListProjection` the page renders. Filtering, sorting, totals and
 /// capabilities are all decided here, never in the browser (TE-R-080).
+///
+/// `visibility` selects whether entries that do not count toward totals are
+/// shown. The page may ask; it may not decide — and it cannot express
+/// "show these and also sort them yourself", because `EntryQuery` has no
+/// vocabulary for it.
 let viewDay (requestJson: string) : string =
     try
         match JsonNode.Parse requestJson with
@@ -153,6 +158,21 @@ let viewDay (requestJson: string) : string =
                         Mapping.catalogueFromDocument document
                         |> Result.defaultValue Catalogue.empty
 
+            // Named rather than numbered so a request is readable in a
+            // network log, and so an unrecognised value is a refusal rather
+            // than a silent fallback to the safest-looking option: a view
+            // that quietly hides removed entries when the page asked to show
+            // them is how a restore becomes impossible to reach.
+            let visibility =
+                match request.["visibility"] with
+                | null -> Ok CountingOnly
+                | value ->
+                    match value.ToString() with
+                    | "counting" -> Ok CountingOnly
+                    | "includeRemoved" -> Ok IncludeVoided
+                    | "all" -> Ok IncludeAll
+                    | other -> Error(sprintf "unknown visibility '%s'" other)
+
             let date =
                 match request.["date"] with
                 | null -> None
@@ -173,11 +193,15 @@ let viewDay (requestJson: string) : string =
                     else
                         None
 
-            match date with
-            | None -> errorResult "date must be YYYY-MM-DD"
-            | Some day ->
-                let projection =
-                    Projection.project displayPolicy (fun _ -> []) (EntryQuery.forDay day) entries
+            match date, visibility with
+            | None, _ -> errorResult "date must be YYYY-MM-DD"
+            | _, Error detail -> errorResult detail
+            | Some day, Ok shown ->
+                let query =
+                    { EntryQuery.forDay day with
+                        Visibility = shown }
+
+                let projection = Projection.project displayPolicy (fun _ -> []) query entries
 
                 let node = JsonObject()
                 node.Add("ok", JsonValue.Create true)
@@ -226,6 +250,13 @@ let viewDay (requestJson: string) : string =
                         | None -> null
                     )
 
+                    // The ids as well as the composed label: a correction
+                    // form has to pre-select the entry's CURRENT project and
+                    // activity, and it must do that by id rather than by
+                    // matching the display name, which is not unique and not
+                    // stable.
+                    item.Add("projectId", JsonValue.Create(ProjectId.value row.Project))
+                    item.Add("activityTypeId", JsonValue.Create(ActivityTypeId.value row.ActivityType))
                     item.Add("classification", JsonValue.Create(classificationOf catalogue row))
 
                     let badges = JsonArray()
