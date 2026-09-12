@@ -468,7 +468,11 @@ if (ready) {
   const rejection = (await page.textContent('#create-message'))?.trim()
   check(
     'an archived project is refused by the domain, and the refusal is rendered',
-    rejection?.includes('ProjectIsArchived') === true,
+    // The words a person reads, not the F# union `%A` used to dump. The
+    // consequence is stated too, because "my existing entries are fine" is
+    // the first thing anyone wonders on seeing this.
+    rejection ===
+      'retired-client is archived, so it cannot take new time. Entries already recorded against it still count.',
     rejection
   )
   check(

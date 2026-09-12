@@ -32,7 +32,7 @@
 | WI-0027 | TE-027 HTTP implementation of the GitHubStore port: Git Data API trees/commits/refs, auth, rate-limit and retry | blocked |  | medium |
 | WI-0028 | TE-028 Verify the GitHub transport write path against a scratch branch (needs a write-capable token; agent proxy denies API writes) | captured |  | medium |
 | WI-0029 | TE-029 Persist the project/activity catalogue and implement LoadProjects in the interpreter | complete |  | medium |
-| WI-0030 | TE-030 Source-generated JSON serialization so the WASM host can be trimmed (reflection-based System.Text.Json blocks IL trimming) | ready |  | medium |
+| WI-0030 | TE-030 Source-generated JSON serialization so the WASM host can be trimmed (reflection-based System.Text.Json blocks IL trimming) | complete |  | medium |
 | WI-0031 | TE-031 Kernel command dispatch: browser submits commands, F# decides, effects returned as data | complete |  | medium |
 | WI-0032 | TE-032 Kernel dispatch for the remaining transitions: correct, split, merge, restore, attach evidence | complete |  | medium |
 | WI-0033 | TE-033 Perform effects: wire TimeEntry.GitHub's interpreter behind the browser so PersistNewEntry/PersistVoid actually reach the repository, with the version token returned to the page | complete |  | medium |
@@ -49,4 +49,4 @@
 | WI-0044 | TE-044 Month view: period summary in Tier 3, wired on the today screen | complete |  | medium |
 | WI-0045 | TE-045 Daily review screen wired against the domain's obligations | complete |  | medium |
 | WI-0046 | TE-046 Entry history (TE-R-052): what changed, why, when, by whom, from which device | complete |  | medium |
-| WI-0047 | TE-047 Word each rejection explicitly instead of sprintf %A — TE-R-053 requires it, and it is what now blocks trimming | captured |  | medium |
+| WI-0047 | TE-047 Word each rejection explicitly instead of sprintf %A — TE-R-053 requires it, and it is what now blocks trimming | ready |  | medium |

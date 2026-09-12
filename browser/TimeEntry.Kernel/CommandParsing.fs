@@ -27,10 +27,13 @@ open TimeEntry.Semantic.Values
 open TimeEntry.Semantic.EntryState
 open TimeEntry.Transitions.Commands
 
-/// Render a typed domain error as text. The page displays this string; it
-/// never parses it, so the domain's own error type stays off the wire.
+/// Render a typed domain error as the sentence a person reads.
+///
+/// Worded by `Wording`, not by `%A`. A refusal is the one thing a user sees
+/// when something goes wrong, and an F# union literal is the worst possible
+/// moment to show them one (TE-R-053).
 let describe (result: Result<'a, 'e>) =
-    result |> Result.mapError (fun e -> sprintf "%A" e)
+    result |> Result.mapError (fun e -> Wording.ofError (box e))
 
 // ---------------------------------------------------------------------------
 // Reading fields

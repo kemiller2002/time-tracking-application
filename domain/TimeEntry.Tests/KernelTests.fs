@@ -253,10 +253,14 @@ let ``a split whose children lose time is refused by the domain`` () =
 
     Assert.Equal("true", field result "ok")
     Assert.Equal("false", field result "accepted")
-    // The rejection names both quantities — 1_800_000 ms expected against
-    // 1_440_000 ms supplied — so the page can say what was lost rather than
-    // only that something was.
-    Assert.Contains("SplitDoesNotPreserveTotal (1800000L, 1440000L)", field result "rejection")
+    // The refusal says what was lost, in the words a person reads. It used to
+    // assert `SplitDoesNotPreserveTotal (1800000L, 1440000L)` — the F# union
+    // dumped by `%A`, which is exactly the technical vocabulary TE-R-053
+    // forbids in the interface.
+    Assert.Equal(
+        "The parts add up to 24m, which leaves 6m unaccounted for.",
+        field result "rejection"
+    )
 
 [<Fact>]
 let ``a child that will not parse fails the whole split rather than being dropped`` () =
@@ -585,7 +589,12 @@ let ``and the transition is what actually refuses a cross-day merge`` () =
                    { "entryId": "e2", "expectedVersion": "sha-2" } ] }"""
 
     Assert.Equal("false", field result "accepted")
-    Assert.Contains("Day", field result "rejection")
+    // And says WHY, because this refusal surprises people: the ledger is
+    // day-oriented, so merging across days would change two days' totals.
+    Assert.Equal(
+        "These entries fall on 2 different days. Merging them would move time between days and change both days' totals.",
+        field result "rejection"
+    )
 
 [<Fact>]
 let ``one entry is not a merge`` () =
@@ -1027,3 +1036,60 @@ let ``asking for an entry that is not loaded says so`` () =
 
     Assert.Equal("false", field result "ok")
     Assert.Contains("nope", field result "error")
+
+// ---------------------------------------------------------------------------
+// Wording
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``the two exact-time formatters agree`` () =
+    // `Wording` cannot depend on `Kernel`, which depends on it, so each has
+    // three lines of integer arithmetic over the same constants. This is the
+    // test the duplication is only acceptable because of.
+    //
+    // Exercised through a rejection that embeds a duration, which is the only
+    // route `Wording`'s copy is reachable by.
+    let refused =
+        answer
+            [ persistedEntry "e1" (minutes 30) "sha-1" ]
+            """{ "kind": "split", "entryId": "e1", "expectedVersion": "sha-1",
+                 "occurredAtMs": 1789000000,
+                 "children": [
+                   { "entryId": "e1a", "durationUnits": 1, "projectId": "echelon-foundry",
+                     "activityTypeId": "research" },
+                   { "entryId": "e1b", "durationUnits": 1, "projectId": "echelon-foundry",
+                     "activityTypeId": "research" } ] }"""
+
+    // 2 units is 12 minutes against a 30-minute source, leaving 18.
+    Assert.Equal(
+        "The parts add up to 12m, which leaves 18m unaccounted for.",
+        field refused "rejection"
+    )
+
+    // And the kernel's own formatter, on the same quantity, through the
+    // split preview.
+    let previewed =
+        TimeEntry.Kernel.splitPreview
+            """{ "sourceMilliseconds": 1800000, "children": [ { "durationUnits": 1 }, { "durationUnits": 1 } ] }"""
+        |> JsonNode.Parse
+
+    Assert.Equal("18m is still unallocated.", field previewed "summary")
+
+[<Fact>]
+let ``no user-visible outcome is an F# union dump`` () =
+    // TE-R-053. The shape `%A` produces is unmistakable: a capitalised
+    // constructor followed by a parenthesised tuple. If one ever reappears in
+    // a message, this catches it.
+    let refused =
+        answer
+            []
+            """{ "kind": "create", "entryId": "e9", "projectId": "retired-client",
+                 "activityTypeId": "research", "date": "2026-09-10",
+                 "durationUnits": 5, "occurredAtMs": 1789000000 }"""
+
+    let message = field refused "rejection"
+
+    Assert.DoesNotContain("CatalogueRejected", message)
+    Assert.DoesNotContain("ProjectIsArchived", message)
+    Assert.DoesNotContain("ProjectId", message)
+    Assert.StartsWith("retired-client is archived", message)

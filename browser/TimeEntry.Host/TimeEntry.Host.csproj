@@ -24,33 +24,40 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Nullable>enable</Nullable>
     <!--
-      Trimming is off deliberately, not as a convenience, and the reason has
-      changed — it is worth recording accurately rather than leaving the old
-      note in place.
+      Trimming is ON, and the two suppressions below are narrow.
 
-      It WAS reflection-based System.Text.Json in TimeEntry.Persistence
-      (IL2026). That is fixed: `Serialization` is now written by hand against
-      Utf8JsonWriter and JsonDocument, and IL2026 is gone.
+      It was off for two successive reasons, both now resolved:
 
-      What blocks trimming now is FSharp.Core's `%A` formatting.
-      `sformat.fs` calls Type.InvokeMember and `printf.fs` calls
-      MakeGenericMethod, neither of which the trimmer can analyse (IL2080,
-      IL2070, IL2060). Suppressing those and trimming anyway would risk
-      degrading `sprintf "%A"` at run time — which is how every domain
-      rejection currently reaches the user, so it would fail as unreadable
-      error messages in the browser and nowhere else.
+      1. Reflection-based System.Text.Json in TimeEntry.Persistence (IL2026).
+         Fixed by writing `Serialization` by hand against Utf8JsonWriter and
+         JsonDocument. Note that the obvious fix — JsonSerializerContext with
+         [JsonSerializable] — is NOT available: that is a Roslyn source
+         generator, and F# does not run Roslyn generators, the same reason
+         [JSExport] is inert in F#.
 
-      WI-0030's original premise was also wrong and is corrected in
-      Serialization's own header: System.Text.Json's source generator is a
-      Roslyn generator, and F# does not run Roslyn generators.
+      2. FSharp.Core's `%A` formatting, which calls Type.InvokeMember
+         (sformat.fs) and MakeGenericMethod (printf.fs). Fixed by wording every
+         user-visible outcome explicitly in TimeEntry.Browser.Wording — which
+         TE-R-053 required anyway, since `%A` was rendering F# union literals
+         into the interface.
 
-      The real fix is to stop using `%A` for user-visible text and word each
-      rejection explicitly — which TE-R-053 arguably requires anyway, since
-      `CatalogueRejected (ProjectIsArchived ProjectId "retired-client")` is
-      exactly the technical vocabulary that requirement forbids. WI-0047
-      tracks it. Until then this stays false rather than suppressed.
+      What remains is FSharp.Core's own packaging, and neither warning is
+      about reflection this application performs:
+
+        IL2040  FSharp.Core's ILLink.Substitutions.xml names two embedded
+                resources that its netstandard2.1 build does not contain. A
+                failure to REMOVE a resource affects size, not behaviour.
+        IL2104  The blanket "this assembly produced trim warnings".
+
+      Suppressed rather than left to disable trimming for the whole app, and
+      the result is verified rather than assumed: `npm run check:browser`
+      drives the trimmed bundle through 104 checks in Chromium, including
+      every rejection message.
+
+      Bundle: 29 MB untrimmed, 11 MB trimmed.
     -->
-    <PublishTrimmed>false</PublishTrimmed>
+    <PublishTrimmed>true</PublishTrimmed>
+    <NoWarn>$(NoWarn);IL2040;IL2104</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

@@ -36,13 +36,15 @@ let private errorResult (detail: string) =
     node.Add("error", JsonValue.Create detail)
     node.ToJsonString()
 
-/// Render a typed domain error as text for the page.
+/// Render a typed domain error as the sentence a person reads.
 ///
 /// The page displays this string; it never parses it. Keeping the domain's
 /// own error type out of the wire format is what stops the browser growing a
-/// second copy of the rule that produced it (TE-R-092).
+/// second copy of the rule that produced it (TE-R-092) — and wording it here
+/// rather than dumping it with `%A` is what keeps technical vocabulary out of
+/// the interface (TE-R-053).
 let private describe (result: Result<'a, 'e>) =
-    result |> Result.mapError (fun e -> sprintf "%A" e)
+    result |> Result.mapError (fun e -> Wording.ofError (box e))
 
 /// How the design writes a duration: `today.html` shows "52m" under an hour
 /// and "1h 04m" over it, zero-padding the minutes. Composed here rather than
@@ -149,10 +151,10 @@ let viewDay (requestJson: string) : string =
                         | null -> Error "null entry"
                         | node ->
                             match Serialization.read (node.ToJsonString()) with
-                            | Error e -> Error(sprintf "%A" e)
+                            | Error e -> Error(Wording.ofError (box e))
                             | Ok document ->
                                 match Mapping.fromDocument None document with
-                                | Error e -> Error(sprintf "%A" e)
+                                | Error e -> Error(Wording.ofError (box e))
                                 | Ok entry -> Ok entry)
                     |> List.ofSeq
                 | _ -> []
@@ -298,7 +300,9 @@ let viewDay (requestJson: string) : string =
                     let capabilities = JsonArray()
 
                     for capability in row.Capabilities do
-                        capabilities.Add(JsonValue.Create(sprintf "%A" capability))
+                        // The stable wire name, not prose: the page keys on
+                        // these to decide which controls to offer.
+                        capabilities.Add(JsonValue.Create(Wording.capabilityName capability))
 
                     item.Add("capabilities", capabilities)
                     rows.Add item
@@ -689,12 +693,12 @@ let viewMonth (requestJson: string) : string =
                 // than assumed: month lengths differ and February differs by
                 // year, so counting days here would be a second calendar.
                 match EntryDate.ofYearMonthDay year month 1 with
-                | Error e -> errorResult (sprintf "%A" e)
+                | Error e -> errorResult (Wording.ofError (box e))
                 | Ok first ->
                     let lastDay = System.DateTime.DaysInMonth(year, month)
 
                     match EntryDate.ofYearMonthDay year month lastDay with
-                    | Error e -> errorResult (sprintf "%A" e)
+                    | Error e -> errorResult (Wording.ofError (box e))
                     | Ok last ->
                         let query =
                             { EntryQuery.forDay first with
@@ -1078,7 +1082,7 @@ let catalogueChoices (requestJson: string) : string =
                 | null -> Error "missing 'catalogue'"
                 | node ->
                     match Serialization.readCatalogue (node.ToJsonString()) with
-                    | Error e -> Error(sprintf "%A" e)
+                    | Error e -> Error(Wording.ofError (box e))
                     | Ok document -> Mapping.catalogueFromDocument document |> describe
 
             match loaded with
@@ -1194,7 +1198,7 @@ let private prepare (request: JsonNode) : Result<Catalogue * TimeEntry list * Co
         | null -> Ok Catalogue.empty
         | node ->
             match Serialization.readCatalogue (node.ToJsonString()) with
-            | Error e -> Error(sprintf "%A" e)
+            | Error e -> Error(Wording.ofError (box e))
             | Ok document -> Mapping.catalogueFromDocument document |> describe
 
     // Version tokens arrive alongside the documents, never inside them: the
@@ -1244,7 +1248,7 @@ let private rejectedNode (rejection: Rejection) =
     let node = JsonObject()
     node.Add("ok", JsonValue.Create true)
     node.Add("accepted", JsonValue.Create false)
-    node.Add("rejection", JsonValue.Create(sprintf "%A" rejection))
+    node.Add("rejection", JsonValue.Create(Wording.rejection rejection))
     node
 
 /// An acceptance: the whole resulting set in stored form, the ids touched, and
@@ -1421,7 +1425,7 @@ let private outcomeNode (effect: Effect) (outcome: Interpreter.EffectOutcome) =
         )
     | Interpreter.Failed error ->
         node.Add("outcome", JsonValue.Create "failed")
-        node.Add("detail", JsonValue.Create(sprintf "%A" error))
+        node.Add("detail", JsonValue.Create(Wording.storeError error))
     | Interpreter.EntriesLoaded(entries, _) ->
         node.Add("outcome", JsonValue.Create "loaded")
         node.Add("count", JsonValue.Create(List.length entries))
@@ -1593,14 +1597,26 @@ let loadLedgerWith
                             node.Add("catalogueError", JsonValue.Create detail)
                         | Interpreter.Failed error ->
                             node.Add("catalogue", null)
-                            node.Add("catalogueError", JsonValue.Create(sprintf "%A" error))
-                        | other ->
+                            node.Add("catalogueError", JsonValue.Create(Wording.storeError error))
+                        | _ ->
+                            // `LoadProjects` answers with a catalogue, an
+                            // unreadable catalogue, or a failure. Anything
+                            // else is a wiring mistake, and naming the union
+                            // case would tell a user nothing they could act
+                            // on.
                             node.Add("catalogue", null)
-                            node.Add("catalogueError", JsonValue.Create(sprintf "%A" other))
+
+                            node.Add(
+                                "catalogueError",
+                                JsonValue.Create "The repository answered with something other than a catalogue."
+                            )
 
                         return node.ToJsonString(jsonOptions)
-                    | Interpreter.Failed error -> return errorResult (sprintf "%A" error)
-                    | other -> return errorResult (sprintf "%A" other)
+                    | Interpreter.Failed error -> return errorResult (Wording.storeError error)
+                    | _ ->
+                        return
+                            errorResult
+                                "The repository answered with something other than a list of entries."
         with ex ->
             return errorResult (ex.GetType().Name + ": " + ex.Message)
     }
