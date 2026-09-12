@@ -114,8 +114,27 @@ module Projections =
           "activeCanRestore", VBool(has Restore) ]
 
     let private errorFields (errors: Map<string, string>) =
-        [ "create"; "amend"; "void"; "restore"; "split"; "merge"; "evidence"; "timer"; "attest" ]
+        [ "create"; "amend"; "void"; "restore"; "split"; "merge"; "evidence"; "timer"; "attest"; "githubConfig"; "githubSync"; "githubMetadata"; "githubSettings" ]
         |> List.map (fun key -> key + "Error", VString(errors |> Map.tryFind key |> Option.defaultValue ""))
+
+    /// Never echoes `Token` back — a pasted personal access token should
+    /// never round-trip into the rendered view, even though nothing outside
+    /// this browser ever sees it either way.
+    let private gitHubSyncFields (sync: Session.GitHubSyncConfig option) (sha: string option) (status: string) (lastSyncedAt: DateTimeOffset option) =
+        let login = sync |> Option.bind (fun c -> c.Login)
+        [ "gitHubSyncConfigured", VBool sync.IsSome
+          "gitHubSyncOwner", VString(sync |> Option.map (fun c -> c.Owner) |> Option.defaultValue "")
+          "gitHubSyncRepo", VString(sync |> Option.map (fun c -> c.Repo) |> Option.defaultValue "")
+          "gitHubSyncFolder", VString(sync |> Option.map (fun c -> c.Folder) |> Option.defaultValue "")
+          "gitHubSyncLogin", VString(login |> Option.defaultValue "")
+          "gitHubSyncDisplayName", VString(sync |> Option.bind (fun c -> c.DisplayName) |> Option.defaultValue "")
+          "gitHubSyncIdentified", VBool login.IsSome
+          "gitHubSyncAwaitingIdentity", VBool(sync.IsSome && login.IsNone)
+          "gitHubSyncFilePath", VString(match sync, login with Some c, Some l -> GitHubSync.dataFilePath c l | _ -> "")
+          "gitHubSyncBranch", VString(sync |> Option.map (fun c -> c.Branch) |> Option.defaultValue "")
+          "gitHubSyncSha", VString(sha |> Option.defaultValue "")
+          "gitHubSyncStatus", VString status
+          "gitHubLastSyncedLabel", VString(lastSyncedAt |> Option.map (fun dt -> dt.ToString "HH:mm:ss") |> Option.defaultValue "never") ]
 
     let build (state: Session.State) : Map<string, ViewValue> =
         let daySummary = Summary.forDate state.Document state.SelectedDate
@@ -141,6 +160,7 @@ module Projections =
           "activeActivityEvidence", VItems(activeActivity |> Option.map (fun a -> a.Evidence |> List.map (evidenceItem a)) |> Option.defaultValue [])
           "reportFormat", VString state.ReportFormat
           "reportContent", VString(Reports.renderDay state.ReportFormat daySummary)
+          "timezone", VString(state.Timezone |> Option.defaultValue "")
           "persistenceError", VString(state.PersistenceError |> Option.defaultValue "") ]
         @ summaryFields "day" daySummary.TotalExactMs daySummary.TotalBilledMinutes daySummary.DecimalHours daySummary.ManualCount daySummary.CorrectionCount
             daySummary.VoidCount daySummary.EvidenceCoverage daySummary.ByActivityType daySummary.ByProject
@@ -148,5 +168,6 @@ module Projections =
             monthSummary.VoidCount monthSummary.EvidenceCoverage monthSummary.ByActivityType monthSummary.ByProject
         @ timerFields state.Environment state.TimerState
         @ activeCapabilityFlags activeActivity
+        @ gitHubSyncFields state.GitHubSync state.GitHubDocumentSha state.GitHubSyncStatus state.GitHubLastSyncedAt
         @ errorFields state.Errors
         |> Map.ofList

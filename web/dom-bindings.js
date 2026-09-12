@@ -13,8 +13,11 @@
 //
 // It never inspects or decides anything about message contents — it renders
 // whatever `view` the engine returns, dispatches whatever `event` the DOM raises,
-// and fulfils `effects` (Storage only) generically. All business meaning stays in
-// the WASM engine on the other side of `transport.dispatch()`.
+// and fulfils `effects` (Storage via localStorage, Http via fetch()) generically.
+// All business meaning, including what a GitHub sync request/response means,
+// stays in the WASM engine (GitHubSync.fs/Dispatch.fs) on the other side of
+// `transport.dispatch()` — this file never inspects a request's URL or a
+// response's body beyond turning it into text.
 
 const truthy = (value) => {
   if (Array.isArray(value)) return value.length > 0;
@@ -177,28 +180,69 @@ export class DomBindings {
 
   async #runEffects(effects) {
     for (const effect of effects) {
-      if (effect.kind !== "Storage") continue; // Http effects are not fulfilled by this MVP bridge.
-      let outcome;
-      try {
-        if (effect.operation === "get") {
-          const value = window.localStorage.getItem(effect.key);
-          outcome = { kind: "Success", value: value ?? null };
-        } else if (effect.operation === "set") {
-          window.localStorage.setItem(effect.key, effect.value);
-          outcome = { kind: "Success", value: null };
-        } else {
-          window.localStorage.removeItem(effect.key);
-          outcome = { kind: "Success", value: null };
-        }
-      } catch (error) {
+      if (effect.kind === "Storage") await this.#runStorageEffect(effect);
+      else if (effect.kind === "Http") await this.#runHttpEffect(effect);
+    }
+  }
+
+  async #runStorageEffect(effect) {
+    let outcome;
+    try {
+      if (effect.operation === "get") {
+        const value = window.localStorage.getItem(effect.key);
+        outcome = { kind: "Success", value: value ?? null };
+      } else if (effect.operation === "set") {
+        window.localStorage.setItem(effect.key, effect.value);
+        outcome = { kind: "Success", value: null };
+      } else {
+        window.localStorage.removeItem(effect.key);
+        outcome = { kind: "Success", value: null };
+      }
+    } catch (error) {
+      outcome = { kind: "Failure", reason: String(error && error.message ? error.message : error) };
+    }
+
+    const response = await this.#transport.dispatch({
+      kind: "EffectResult",
+      result: { correlationId: effect.correlationId, kind: "StorageResult", outcome },
+    });
+    await this.#apply(response);
+  }
+
+  /**
+   * Fulfils a real HTTP call — today only the GitHub Contents API requests
+   * GitHubSync.fs builds. A timeout is reported as "Unknown", never
+   * "Failure": the request may already have reached GitHub even though no
+   * response arrived in time, and Dispatch.fs's github-push handling must
+   * not treat that as either confirmed success or confirmed loss.
+   */
+  async #runHttpEffect(effect) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), effect.timeoutMs);
+    let outcome;
+    try {
+      const response = await fetch(effect.url, {
+        method: effect.method,
+        headers: effect.headers ?? {},
+        body: effect.body ?? undefined,
+        signal: controller.signal,
+      });
+      const text = await response.text();
+      outcome = { kind: "Success", status: response.status, body: text.length > 0 ? text : null };
+    } catch (error) {
+      if (error && error.name === "AbortError") {
+        outcome = { kind: "Unknown", reason: `timed out after ${effect.timeoutMs}ms` };
+      } else {
         outcome = { kind: "Failure", reason: String(error && error.message ? error.message : error) };
       }
-
-      const response = await this.#transport.dispatch({
-        kind: "EffectResult",
-        result: { correlationId: effect.correlationId, kind: "StorageResult", outcome },
-      });
-      await this.#apply(response);
+    } finally {
+      clearTimeout(timeoutId);
     }
+
+    const response = await this.#transport.dispatch({
+      kind: "EffectResult",
+      result: { correlationId: effect.correlationId, kind: "HttpResult", outcome },
+    });
+    await this.#apply(response);
   }
 }

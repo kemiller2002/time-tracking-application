@@ -20,6 +20,34 @@ module Session =
         let empty =
             { DurationText = None; ActivityTypeId = None; ProjectId = None; Description = None; BusinessPurpose = None; Outcome = None }
 
+    /// Saved GitHub sync settings. `Token` is a fine-grained personal access
+    /// token the user pastes in directly — per the explicit decision to keep
+    /// this a browser-embedded app with no server component, it is sent
+    /// straight from the browser to the GitHub REST API and never echoed
+    /// back into the view (see Projections.fs).
+    ///
+    /// `Folder`, not a free-form file path: the target repository is not
+    /// assumed to belong to this app alone, so the ledger's data is never
+    /// placed at the repo root or at a path the user could point at an
+    /// unrelated existing file. It's also not assumed to belong to this
+    /// *person* alone — the same repository/folder can be shared by
+    /// several people, each getting their own `<Folder>/<Login>/` — so the
+    /// data always lives at `<Folder>/<Login>/ledger.json` (see
+    /// `GitHubSync.dataFilePath`), never at `<Folder>/ledger.json` directly.
+    type GitHubSyncConfig =
+        { Owner: string
+          Repo: string
+          Folder: string
+          Branch: string
+          Token: string
+          /// Resolved once via GitHub's `/user` endpoint right after the
+          /// token is saved — never typed by the user, so it can't collide
+          /// or be mistyped the way a free-text name could. `None` until
+          /// that resolves; Pull/Push are blocked until then, since the
+          /// per-person folder path is built from it.
+          Login: string option
+          DisplayName: string option }
+
     /// Accumulates one field at a time as the browser flushes each changed form
     /// control before the form's own submit event arrives.
     type Draft =
@@ -39,14 +67,22 @@ module Session =
           EvidenceLabel: string option
           SplitParts: Map<int, SplitPartDraft>
           MergeSourceIds: Set<string>
-          AttestationStatement: string option }
+          AttestationStatement: string option
+          GitHubOwner: string option
+          GitHubRepo: string option
+          GitHubFolder: string option
+          GitHubBranch: string option
+          GitHubToken: string option
+          Timezone: string option }
 
     module Draft =
         let empty =
             { ActivityTypeId = None; ProjectId = None; Description = None; BusinessPurpose = None; Outcome = None
               StartedAt = None; EndedAt = None; ReconstructionReason = None; TagIds = Set.empty; Reason = None
               EvidenceType = None; EvidenceUri = None; EvidenceNote = None; EvidenceLabel = None
-              SplitParts = Map.empty; MergeSourceIds = Set.empty; AttestationStatement = None }
+              SplitParts = Map.empty; MergeSourceIds = Set.empty; AttestationStatement = None
+              GitHubOwner = None; GitHubRepo = None; GitHubFolder = None; GitHubBranch = None; GitHubToken = None
+              Timezone = None }
 
     type State =
         { Environment: Environment
@@ -62,9 +98,37 @@ module Session =
           /// decision; see `.sde/architecture/FOUR-TIER-ARCHITECTURE.md`'s
           /// note that presentation-only routing is still Tier 3's to own.
           CurrentScreen: string
-          /// Keyed "create"/"amend"/"void"/"restore"/"split"/"merge"/"evidence"/"timer"/"attest".
+          /// Keyed "create"/"amend"/"void"/"restore"/"split"/"merge"/"evidence"/"timer"/"attest"/"githubConfig"/"githubSync"/"githubMetadata"/"githubSettings".
           Errors: Map<string, string>
-          PersistenceError: string option }
+          PersistenceError: string option
+          /// A user preference — not business data, so it lives here rather
+          /// than in `LedgerDocument`. `None` until `SaveSettings` sets it or
+          /// a GitHub settings pull restores one. Mirrors `Model.Config`'s
+          /// dormant `Timezone` field, which nothing else in the domain
+          /// reads yet; storing and round-tripping the preference is in
+          /// scope now, deeper timezone-aware behavior is not.
+          Timezone: string option
+          /// None until `SaveGitHubConfig` succeeds, or a cached config is
+          /// found on `Initialize` (see `GitHubSync.encodeConfig`/`decodeConfig`
+          /// and the "github-config-load"/"github-config-save" Storage keys
+          /// in `Dispatch.fs`) — a separate localStorage key from the synced
+          /// document, so the token never enters GitHub-tracked content.
+          GitHubSync: GitHubSyncConfig option
+          /// The ledger file's Contents API blob `sha` from the last
+          /// successful pull or push — GitHub's own optimistic-concurrency
+          /// token, reused as the next write's `sha` exactly the way
+          /// `docs/DOMAIN-REQUIREMENTS.md`'s persistence contract asks a
+          /// caller to state the version it last read. `None` means "never
+          /// synced" (the next push creates the file).
+          GitHubDocumentSha: string option
+          /// The same, for `metadata.json` — a separate blob with its own
+          /// independent version history, never conflated with the ledger's.
+          GitHubMetadataSha: string option
+          /// The same, for `settings.json` (`ReportFormat`/`Timezone`).
+          GitHubSettingsSha: string option
+          /// "idle" | "identifying" | "pulling" | "pushing" | "synced" | "conflict" | "unknown" | "error"
+          GitHubSyncStatus: string
+          GitHubLastSyncedAt: DateTimeOffset option }
 
     /// Seed data mirrors `worker/src/handler.js`'s `defaultBindings` fixtures —
     /// real project/activity-type/tag loading is a fast-follow once a real
@@ -114,6 +178,13 @@ module Session =
           ReportFormat = "json"
           CurrentScreen = "today"
           Errors = Map.empty
-          PersistenceError = None }
+          PersistenceError = None
+          Timezone = None
+          GitHubSync = None
+          GitHubDocumentSha = None
+          GitHubMetadataSha = None
+          GitHubSettingsSha = None
+          GitHubSyncStatus = "idle"
+          GitHubLastSyncedAt = None }
 
     let mutable current: State = initial ()

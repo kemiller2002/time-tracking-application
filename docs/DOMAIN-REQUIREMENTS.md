@@ -214,8 +214,9 @@ not satisfy this requirement.
 ## Persistence contract
 
 Independent of the fact that this application's durable store is a
-GitHub-backed ledger reached only through the Cloudflare service
-(execution contract §3):
+GitHub-backed ledger, reached directly from the browser (no Cloudflare
+service or any other server component sits in between — see
+"Implementation" below):
 
 - Loading a day or activity must distinguish four different outcomes:
   found successfully; not found; a known failure (e.g., connectivity); or
@@ -252,14 +253,16 @@ WebAssembly, and runs entirely in the browser — not as a server-side API.
   behind one shared field-validator), and `Services.fs` (the persistence
   port a future real backend will implement).
 - `f-sharp/src/Ledger.Engine/` — the wire protocol, session state, view
-  projection, and report rendering that sit between the domain and the
-  browser bridge (`Dispatch.fs`'s `handle` is the sole function the WASM
-  export calls).
+  projection, GitHub Contents API translation (`GitHubSync.fs`), and report
+  rendering that sit between the domain and the browser bridge (`Dispatch.fs`'s
+  `handle` is the sole function the WASM export calls).
 - `f-sharp/src/Ledger.Wasm/` — the marshalling shim compiled to
   `browser-wasm`.
 - `web/` — a thin JavaScript bridge (`wasm-engine-transport.js`,
-  `dom-bindings.js`) that renders the engine's view and dispatches DOM
-  events back into it; it makes no business decisions of its own.
+  `dom-bindings.js`) that renders the engine's view, dispatches DOM events
+  back into it, and generically fulfils whatever `Storage`/`Http` effects
+  the engine requests (via `localStorage`/`fetch()`); it makes no business
+  decisions of its own and never inspects a GitHub request or response.
 
 All three of this document's rules that were not yet enforced by an
 earlier, since-retired server implementation — the derived six-minute
@@ -267,8 +270,103 @@ billing figure, restore re-validating against current state, and merge
 requiring same-date contiguous sources — are implemented as described
 above and covered by `f-sharp/tests/Ledger.Domain.Specs`.
 
-Persistence currently targets this browser's local storage only, via the
-engine's `Storage` effect (see `Dispatch.fs`); the GitHub-backed ledger
-described in the Persistence contract section above is the intended real
-backend and has an extension point named for it (`Ledger.Domain/Services.fs`'s
-`LedgerStore`), but is not yet built.
+Persistence is a browser-local `localStorage` cache backed by an optional
+GitHub sync, per the Persistence contract section above:
+
+- `localStorage` remains authoritative moment-to-moment and offline: one
+  `Storage.get` right after the engine initializes, one `Storage.set` after
+  any event that actually changes the document, and again after a GitHub
+  pull replaces it — the cache never goes stale relative to whichever
+  source last won.
+- GitHub sync is opt-in, configured from the More screen (owner, repo, an
+  optional folder, branch, a personal access token). Once configured,
+  every mutating command auto-pushes the whole document to the GitHub
+  Contents API in addition to its `localStorage` save; "Pull latest" and
+  "Sync now" trigger the same requests on demand. This is a deliberate,
+  explicitly-chosen architecture decision, not a default: the token is
+  entered by the user and sent straight from the browser to
+  `api.github.com` — **there is no server component**, matching this
+  app's browser-embedded design. The token is kept in its own
+  `localStorage` key, separate from the synced document, and is never
+  echoed back into the rendered view.
+- The configured GitHub repository is never assumed to belong to this app
+  alone — it may hold unrelated content the user already has there. The
+  ledger's data is therefore always confined to one folder inside it,
+  never placed at the repo root or at a user-chosen filename: the file
+  path is always `<folder>/<login>/ledger.json`
+  (`GitHubSync.dataFilePath`), where `<folder>` defaults to
+  `time-tracking-data` when left blank. Neither the folder default nor the
+  fixed filenames (`ledger.json`, `metadata.json`) are user-overridable
+  beyond choosing the folder's name, precisely so this app cannot be
+  pointed at an existing, unrelated file.
+- That same folder is also never assumed to belong to one person alone —
+  several people can point the same repository and folder at this app and
+  each still gets their own `<login>` subfolder they write to, never one
+  shared file several people's browsers race to overwrite. `<login>` is
+  GitHub's own account login, resolved once per saved token via a `GET
+  /user` call right after `SaveGitHubConfig` (never a name the user
+  types), so it can't collide or be mistyped the way a free-text name
+  could. Pull/Push are blocked, with a clear message, until that lookup
+  resolves.
+- Alongside `ledger.json`, this app also writes `metadata.json` into the
+  same per-person folder — `{login, displayName, lastSyncedAt}`
+  (`GitHubSync.buildMetadataJson`), refreshed on every push. It exists so
+  a human (or other tooling) browsing a shared repository's
+  `<folder>/<login>/` entries can tell whose folder is whose; nothing
+  in-app ever reads it back. It is a separate Contents API file with its
+  own independent `sha`/version history — a metadata write failure is
+  reported under its own status, distinct from (and never overwriting) the
+  ledger's own sync status, since it's lower-stakes than the ledger data
+  itself.
+- The Contents API's blob `sha` *is* the version this contract asks a
+  caller to state on every save — GitHub's own optimistic concurrency check
+  (a stale `sha` on a push returns 409, surfaced as this app's `conflict`
+  sync status) needs no separate version scheme layered on top of it.
+- A pull's or push's outcome is always one of found/not-found(404)/known-
+  failure/invalid-document, or confirmed-success/confirmed-failure/
+  conflict/**unknown** exactly as this contract requires — a dropped
+  connection or timed-out request is reported as `unknown`, never
+  collapsed into success or failure (see `Dispatch.fs`'s `"github-push"`
+  handling and `web/dom-bindings.js`'s `AbortController`-based timeout).
+- `Ledger.Domain/Services.fs`'s `LedgerStore` — an `Async`-shaped port
+  imagined for a future in-process backend adapter — stays an unused,
+  documented extension point rather than becoming load-bearing: the actual
+  WASM↔browser boundary is a single synchronous round-trip per message
+  (`Dispatch.handle`), so GitHub sync is built through the same
+  effect-request/effect-result mechanism as `Storage` instead, in
+  `GitHubSync.fs` + `Dispatch.fs`'s `"github-pull"`/`"github-push"` cases.
+  `LedgerStore`'s outcome vocabulary is still honored in spirit: it's
+  mirrored 1:1 by how a GitHub response status maps to a sync outcome.
+- Alongside `ledger.json`/`metadata.json`, this app also writes and reads
+  back `settings.json` — `{reportFormat, timezone}`
+  (`GitHubSync.buildSettingsJson`/`parseSettingsJson`), the user
+  preferences that exist today. Unlike `metadata.json`, this file *is*
+  round-tripped: it's pulled and applied as soon as identity resolves
+  (fresh from `SaveGitHubConfig`, or from a cached config on reload — see
+  below), and pushed again whenever `SelectReportFormat` or `SaveSettings`
+  changes a preference, so a preference set on one device follows the
+  person to another. A 404 here means "nothing saved yet," not a failure,
+  same as for the ledger.
+- The GitHub sync settings themselves (owner/repo/folder/branch/token,
+  plus the resolved login/display name) are cached in their own
+  `localStorage` key (`GitHubSync.encodeConfig`/`decodeConfig`), separate
+  from the ledger's own cache key, so a reload doesn't force re-entering
+  them or re-running the identity lookup: a cached config missing `Login`
+  (an older save, or the lookup never finished) re-triggers `GET /user`;
+  one that already has a `Login` goes straight to pulling `settings.json`.
+  A successful identity lookup re-caches the config (now including
+  `Login`/`DisplayName`) so the next reload skips the lookup too.
+- What this sync does **not** do, as a deliberate scope decision: no
+  background/automatic pull of the *ledger* (only an explicit "Pull
+  latest" — settings are the exception, see above), no merge of
+  concurrent edits (a pull replaces the in-memory document outright, a
+  push conflict must be resolved by pulling first), no reconciliation
+  queue for a request whose outcome came back `unknown` (the user is told
+  to pull and check, not offered an automatic retry-and-confirm flow),
+  and no atomic multi-file commit (`ledger.json`, `metadata.json`, and
+  `settings.json` are independent Contents API writes, not one commit
+  touching all three — one can fail or lag behind another without losing
+  the others' data, but their histories are not guaranteed to move
+  together). Any of these would need real design work, not just wiring,
+  and are a reasonable later increment rather than something this pass
+  needed to build.

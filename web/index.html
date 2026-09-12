@@ -404,10 +404,52 @@
               </div>
               <pre class="report-content" data-text="reportContent"></pre>
             </section>
-            <div class="notice">
-              <p class="notice-title">Local-only persistence</p>
-              <p class="notice-copy">Activities save to this browser's local storage through the engine's Storage effect. They survive a reload of this browser, but are not synced anywhere else yet.</p>
-            </div>
+            <section class="surface surface-pad" aria-labelledby="preferences-title">
+              <h2 class="section-title" id="preferences-title">Preferences</h2>
+              <p class="page-intro">Report format (above) and timezone are saved to GitHub alongside your ledger once sync is configured below, so they follow you to another device.</p>
+              <div class="form-grid">
+                <div class="field">
+                  <label for="timezone">Timezone <span class="field-help">Current: <span data-text="timezone"></span></span></label>
+                  <input id="timezone" type="text" placeholder="America/New_York" data-event="DraftTimezoneChanged" data-on="change" />
+                </div>
+              </div>
+              <div class="form-actions">
+                <button type="button" class="button button-secondary" data-event="SaveSettings" data-on="click">Save preferences</button>
+              </div>
+              <p class="field-error" role="alert" aria-live="assertive" data-if="githubSettingsError" data-text="githubSettingsError" hidden></p>
+            </section>
+            <section class="surface surface-pad" aria-labelledby="github-sync-title">
+              <h2 class="section-title" id="github-sync-title">GitHub sync</h2>
+              <p class="page-intro">Local storage stays the fast, offline-safe cache. Your personal access token is stored only in this browser and sent directly to GitHub's API &mdash; there is no server in between. This app's data stays confined to its own folder in the repository you choose, and inside that folder to one subfolder per person (identified from your token, not typed) &mdash; several people can point the same repository at this app without colliding.</p>
+
+              <div class="notice" data-if="gitHubSyncAwaitingIdentity" hidden>
+                <p class="notice-title">Identifying your GitHub account&hellip;</p>
+                <p class="notice-copy">Resolving who this token belongs to for <span data-text="gitHubSyncOwner"></span>/<span data-text="gitHubSyncRepo"></span>. This only takes a moment.</p>
+              </div>
+              <div class="notice" data-if="gitHubSyncIdentified" hidden>
+                <p class="notice-title">Syncing as <span data-text="gitHubSyncLogin"></span> to <span data-text="gitHubSyncOwner"></span>/<span data-text="gitHubSyncRepo"></span></p>
+                <p class="notice-copy"><span data-text="gitHubSyncFilePath"></span> on branch <span data-text="gitHubSyncBranch"></span>. Status: <span data-text="gitHubSyncStatus"></span>. Last synced: <span data-text="gitHubLastSyncedLabel"></span>.</p>
+              </div>
+
+              <fieldset class="form-section">
+                <legend class="form-legend">Repository settings</legend>
+                <div class="form-grid">
+                  <div class="field"><label for="github-owner">Owner <span class="required">*</span></label><input id="github-owner" type="text" data-event="DraftGitHubOwnerChanged" data-on="change" /></div>
+                  <div class="field"><label for="github-repo">Repository <span class="required">*</span></label><input id="github-repo" type="text" data-event="DraftGitHubRepoChanged" data-on="change" /></div>
+                  <div class="field"><label for="github-folder">Folder <span class="field-help">Data stays inside this folder, never at the repo root</span></label><input id="github-folder" type="text" placeholder="time-tracking-data" data-event="DraftGitHubFolderChanged" data-on="change" /></div>
+                  <div class="field"><label for="github-branch">Branch <span class="field-help">Defaults to main</span></label><input id="github-branch" type="text" placeholder="main" data-event="DraftGitHubBranchChanged" data-on="change" /></div>
+                  <div class="field field-full"><label for="github-token">Personal access token <span class="required">*</span></label><input id="github-token" type="password" autocomplete="off" data-event="DraftGitHubTokenChanged" data-on="change" /></div>
+                </div>
+                <div class="form-actions">
+                  <button type="button" class="button button-primary" data-event="SaveGitHubConfig" data-on="click">Save settings</button>
+                  <button type="button" class="button button-secondary" data-event="PullFromGitHub" data-on="click">Pull latest</button>
+                  <button type="button" class="button button-secondary" data-event="PushToGitHub" data-on="click">Sync now</button>
+                </div>
+                <p class="field-error" role="alert" aria-live="assertive" data-if="githubConfigError" data-text="githubConfigError" hidden></p>
+                <p class="field-error" role="alert" aria-live="assertive" data-if="githubSyncError" data-text="githubSyncError" hidden></p>
+                <p class="field-error" role="alert" aria-live="assertive" data-if="githubMetadataError" data-text="githubMetadataError" hidden></p>
+              </fieldset>
+            </section>
           </aside>
         </div>
         <footer class="page-footer">This ledger preserves original records and records later changes separately.</footer>
