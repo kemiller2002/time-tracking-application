@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "time-tracking-application",
-  "nextSeq": 47,
+  "nextSeq": 48,
   "items": [
     {
       "id": "WI-0001",
@@ -462,10 +462,10 @@
       "description": null,
       "tags": [],
       "priority": "medium",
-      "status": "captured",
+      "status": "ready",
       "attachments": [],
       "createdAt": "2026-09-12T00:29:51.618Z",
-      "updatedAt": "2026-09-12T00:29:51.618Z",
+      "updatedAt": "2026-09-12T02:35:30Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null
@@ -718,6 +718,20 @@
       "attachments": [],
       "createdAt": "2026-09-12T02:29:05Z",
       "updatedAt": "2026-09-12T02:29:05Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0047",
+      "title": "TE-047 Word each rejection explicitly instead of sprintf %A — TE-R-053 requires it, and it is what now blocks trimming",
+      "description": null,
+      "tags": [],
+      "priority": "medium",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-12T02:35:30Z",
+      "updatedAt": "2026-09-12T02:35:30Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null

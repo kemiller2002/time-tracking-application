@@ -24,17 +24,31 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Nullable>enable</Nullable>
     <!--
-      Trimming is off deliberately, not as a convenience.
+      Trimming is off deliberately, not as a convenience, and the reason has
+      changed — it is worth recording accurately rather than leaving the old
+      note in place.
 
-      TimeEntry.Persistence uses reflection-based System.Text.Json, which the
-      trim analyser correctly reports as unsafe (IL2026), and FSharp.Core
-      itself produces trim warnings (IL2104). Trimming with those present
-      risks removing types the serializer needs only at runtime, which would
-      fail in the browser and nowhere else.
+      It WAS reflection-based System.Text.Json in TimeEntry.Persistence
+      (IL2026). That is fixed: `Serialization` is now written by hand against
+      Utf8JsonWriter and JsonDocument, and IL2026 is gone.
 
-      The cost is bundle size. The fix is source-generated serialization
-      (WI-0030); until then this stays false rather than suppressed, so the
-      reason is visible.
+      What blocks trimming now is FSharp.Core's `%A` formatting.
+      `sformat.fs` calls Type.InvokeMember and `printf.fs` calls
+      MakeGenericMethod, neither of which the trimmer can analyse (IL2080,
+      IL2070, IL2060). Suppressing those and trimming anyway would risk
+      degrading `sprintf "%A"` at run time — which is how every domain
+      rejection currently reaches the user, so it would fail as unreadable
+      error messages in the browser and nowhere else.
+
+      WI-0030's original premise was also wrong and is corrected in
+      Serialization's own header: System.Text.Json's source generator is a
+      Roslyn generator, and F# does not run Roslyn generators.
+
+      The real fix is to stop using `%A` for user-visible text and word each
+      rejection explicitly — which TE-R-053 arguably requires anyway, since
+      `CatalogueRejected (ProjectIsArchived ProjectId "retired-client")` is
+      exactly the technical vocabulary that requirement forbids. WI-0047
+      tracks it. Until then this stays false rather than suppressed.
     -->
     <PublishTrimmed>false</PublishTrimmed>
   </PropertyGroup>

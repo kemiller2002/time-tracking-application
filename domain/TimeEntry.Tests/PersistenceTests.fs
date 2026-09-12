@@ -477,3 +477,87 @@ let ``an archived catalogue entry round-trips as archived`` () =
 [<Fact>]
 let ``the catalogue path is not an entry path`` () =
     Assert.False(isEntryPath CataloguePath)
+
+// ---------------------------------------------------------------------------
+// The wire format as a contract
+// ---------------------------------------------------------------------------
+
+[<Fact>]
+let ``the stored field names are written out, not derived from record fields`` () =
+    // `Serialization` is hand-written rather than reflective, so these names
+    // are a decision rather than a consequence of how `Documents` happens to
+    // spell its fields. This test is what makes renaming one a loud change:
+    // under reflection, renaming a record field would silently change the
+    // format of every stored file.
+    //
+    // The names match what `worker/src/store.js` already established, so a
+    // future import is a field-for-field mapping rather than a translation
+    // (DF-TE-0009).
+    let written = TimeEntry.Persistence.Serialization.write (TimeEntry.Persistence.Mapping.toDocument (persistedEntry "e1" (minutes 30) "sha-1"))
+
+    for name in
+        [ "schema_version"
+          "entry_id"
+          "state_kind"
+          "void_reason"
+          "voided_at_ms"
+          "superseded_children"
+          "superseded_target"
+          "effective"
+          "history"
+          "project_id"
+          "activity_type_id"
+          "exact_duration_ms"
+          "origin_kind"
+          "manual_reason"
+          "recorded_at_ms"
+          "recorded_by" ] do
+        Assert.Contains(sprintf "\"%s\":" name, written)
+
+[<Fact>]
+let ``an absent value is written as null rather than omitted`` () =
+    // A stable document shape means a diff shows a value changing rather than
+    // a key appearing. Reviewing these files as GitHub diffs is the whole
+    // reason the output is indented.
+    let entry = persistedEntry "e1" (minutes 30) "sha-1"
+
+    let withoutDescription =
+        { entry with
+            Effective = { entry.Effective with Description = None } }
+
+    let written = TimeEntry.Persistence.Serialization.write (TimeEntry.Persistence.Mapping.toDocument withoutDescription)
+
+    Assert.Contains("\"description\": null", written)
+    Assert.Contains("\"void_reason\": null", written)
+
+[<Fact>]
+let ``a reader accepts a key that was deleted as well as one that was nulled`` () =
+    // These files can be hand-edited in a GitHub diff, where deleting a line
+    // is easier than nulling it. Refusing that would turn a readable file
+    // into an unreadable entry over punctuation — and `Documents` already
+    // validates content separately (TE-R-084).
+    let entry = persistedEntry "e1" (minutes 30) "sha-1"
+    let full = TimeEntry.Persistence.Serialization.write (TimeEntry.Persistence.Mapping.toDocument entry)
+
+    let withKeyRemoved: string =
+        full.Split('\n')
+        |> Array.filter (fun line -> not (line.Contains "\"void_reason\""))
+        |> String.concat "\n"
+
+    match TimeEntry.Persistence.Serialization.read withKeyRemoved with
+    | Ok document -> Assert.Null document.void_reason
+    | Error e -> failwithf "expected the document to read, got %A" e
+
+[<Fact>]
+let ``a document that is not an object is refused rather than half read`` () =
+    match TimeEntry.Persistence.Serialization.read "[1, 2, 3]" with
+    | Error(TimeEntry.Persistence.Serialization.MalformedJson detail) -> Assert.Contains("not a JSON object", detail)
+    | other -> failwithf "expected MalformedJson, got %A" other
+
+[<Fact>]
+let ``a required field that is missing makes one unreadable entry, not a crash`` () =
+    // TE-R-084. The reader fails inside its own try, so a corrupt file is a
+    // typed error rather than an exception escaping into the projection.
+    match TimeEntry.Persistence.Serialization.read """{ "schema_version": "1.0.0" }""" with
+    | Error(TimeEntry.Persistence.Serialization.MalformedJson detail) -> Assert.Contains("entry_id", detail)
+    | other -> failwithf "expected MalformedJson, got %A" other
