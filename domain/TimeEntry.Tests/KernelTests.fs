@@ -509,3 +509,114 @@ let ``a preview agrees with the transition that follows it`` () =
                      "activityTypeId": "research" } ] }"""
 
     Assert.True(isAccepted applied)
+
+// ---------------------------------------------------------------------------
+// Merge preview
+// ---------------------------------------------------------------------------
+//
+// §8.11 asks the merge screen to preview merged time. The preview states
+// facts and does not judge: whether a merge is LEGAL is `mergeEntries`'
+// decision, and re-deciding it here would put the same rules in two places.
+
+let private mergePreviewOf (entries: TimeEntry list) (sourceIds: string list) =
+    let node = JsonObject()
+    let documents = JsonArray()
+
+    for entry in entries do
+        documents.Add(JsonNode.Parse(Serialization.write (Mapping.toDocument entry)))
+
+    node.Add("entries", documents)
+    let ids = JsonArray()
+
+    for id in sourceIds do
+        ids.Add(JsonValue.Create<string> id)
+
+    node.Add("sourceIds", ids)
+    TimeEntry.Kernel.mergePreview (node.ToJsonString()) |> JsonNode.Parse
+
+[<Fact>]
+let ``a merge preview totals the chosen entries exactly`` () =
+    let a = persistedEntry "e1" (minutes 30) "sha-1"
+    let b = persistedEntry "e2" (minutes 12) "sha-2"
+
+    let result = mergePreviewOf [ a; b ] [ "e1"; "e2" ]
+
+    Assert.Equal("2520000", field result "combinedMilliseconds")
+    Assert.Equal("42m", field result "displayCombined")
+    Assert.Equal("2 entries totalling 42m.", field result "summary")
+
+[<Fact>]
+let ``a merge preview counts only the entries that were chosen`` () =
+    let a = persistedEntry "e1" (minutes 30) "sha-1"
+    let b = persistedEntry "e2" (minutes 12) "sha-2"
+    let c = persistedEntry "e3" (minutes 60) "sha-3"
+
+    // e3 is loaded but not selected. A preview that summed everything loaded
+    // would quote a number the merge would never produce.
+    let result = mergePreviewOf [ a; b; c ] [ "e1"; "e2" ]
+
+    Assert.Equal("2", field result "sourceCount")
+    Assert.Equal("2520000", field result "combinedMilliseconds")
+
+[<Fact>]
+let ``a merge preview reports a cross-day selection as a fact, not a verdict`` () =
+    let a = persistedEntry "e1" (minutes 30) "sha-1"
+    let b = persistedEntryOn "e2" (minutes 12) "sha-2" (onDate 2026 9 11)
+
+    let result = mergePreviewOf [ a; b ] [ "e1"; "e2" ]
+
+    // It says what the selection IS. Whether that may be merged is the
+    // transition's to say, and it does say so — see below.
+    Assert.Equal("These entries fall on 2 different days.", field result "summary")
+
+[<Fact>]
+let ``and the transition is what actually refuses a cross-day merge`` () =
+    let a = persistedEntry "e1" (minutes 30) "sha-1"
+    let b = persistedEntryOn "e2" (minutes 12) "sha-2" (onDate 2026 9 11)
+
+    let result =
+        answer
+            [ a; b ]
+            """{ "kind": "merge", "newEntryId": "m1", "projectId": "echelon-foundry",
+                 "activityTypeId": "research", "reason": "Same task.",
+                 "occurredAtMs": 1789000000,
+                 "sources": [
+                   { "entryId": "e1", "expectedVersion": "sha-1" },
+                   { "entryId": "e2", "expectedVersion": "sha-2" } ] }"""
+
+    Assert.Equal("false", field result "accepted")
+    Assert.Contains("Day", field result "rejection")
+
+[<Fact>]
+let ``one entry is not a merge`` () =
+    let a = persistedEntry "e1" (minutes 30) "sha-1"
+
+    let result = mergePreviewOf [ a ] [ "e1" ]
+
+    Assert.Equal("Choose at least two entries to merge.", field result "summary")
+
+[<Fact>]
+let ``a merge preview and the merge it precedes agree on the total`` () =
+    let a = persistedEntry "e1" (minutes 30) "sha-1"
+    let b = persistedEntry "e2" (minutes 12) "sha-2"
+
+    let previewed = mergePreviewOf [ a; b ] [ "e1"; "e2" ]
+
+    let applied =
+        answer
+            [ a; b ]
+            """{ "kind": "merge", "newEntryId": "m1", "projectId": "echelon-foundry",
+                 "activityTypeId": "research", "reason": "Same task, two timers.",
+                 "occurredAtMs": 1789000000,
+                 "sources": [
+                   { "entryId": "e1", "expectedVersion": "sha-1" },
+                   { "entryId": "e2", "expectedVersion": "sha-2" } ] }"""
+
+    let merged =
+        storedEntries applied |> List.filter (fun s -> s.Contains "\"entry_id\":\"m1\"")
+
+    // The number the person was shown is the number that got stored.
+    Assert.Contains(
+        sprintf "\"exact_duration_ms\":%s" (field previewed "combinedMilliseconds"),
+        List.head merged
+    )

@@ -72,6 +72,22 @@
           </form>
         </aside>
       </div>
+      <!-- Merging needs more than one entry, so it cannot live inside a
+           record the way correct, split and remove do. It appears only once
+           the kernel says the selection is worth merging. -->
+      <section class="surface surface-pad" id="merge-panel" hidden aria-labelledby="merge-title">
+        <h2 class="section-title" id="merge-title">Merge selected entries</h2>
+        <p class="field-help" id="merge-summary" role="status" aria-live="polite"></p>
+        <form id="merge-form" novalidate>
+          <div class="form-grid">
+            <div class="field"><label for="merge-project">Project <span class="required">*</span></label><select id="merge-project" required></select></div>
+            <div class="field"><label for="merge-activity">Activity type <span class="required">*</span></label><select id="merge-activity" required></select></div>
+            <div class="field field-full"><label for="merge-description">Combined description</label><textarea id="merge-description"></textarea></div>
+            <div class="field field-full"><label for="merge-reason">Reason <span class="required">*</span></label><input id="merge-reason" type="text" required placeholder="Why are these being merged?"></div>
+          </div>
+          <div class="form-actions"><button class="button button-primary" type="submit">Merge entries</button></div>
+        </form>
+      </section>
       <footer class="page-footer">Effective records lead. Originals, corrections, and evidence remain available from each activity.</footer>
     </main>
   </div>

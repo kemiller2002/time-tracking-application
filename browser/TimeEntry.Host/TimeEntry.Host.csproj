@@ -45,6 +45,8 @@
          copied so the design authority stays in one place. -->
     <WasmExtraFilesToDeploy Include="index.html" />
     <WasmExtraFilesToDeploy Include="sample-entry.json" />
+    <WasmExtraFilesToDeploy Include="sample-entry-2.json" />
+    <WasmExtraFilesToDeploy Include="sample-entry-3.json" />
     <WasmExtraFilesToDeploy Include="sample-catalogue.json" />
     <WasmExtraFilesToDeploy Include="sample-versions.json" />
     <WasmExtraFilesToDeploy Include="../../static-ui-screens/styles.css" />

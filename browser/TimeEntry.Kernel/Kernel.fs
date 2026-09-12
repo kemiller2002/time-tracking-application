@@ -474,6 +474,99 @@ let splitPreview (requestJson: string) : string =
 
 
 // ---------------------------------------------------------------------------
+// Merge preview
+// ---------------------------------------------------------------------------
+
+/// What a merge would come to.
+///
+/// System-prompt §8.11 asks the merge screen to "preview merged time", and
+/// like the split preview that is arithmetic the browser may not do.
+///
+/// This deliberately states FACTS and does not judge. Whether a merge is
+/// legal — at least two sources, all mergeable, all on one day, references
+/// retained — is decided by `mergeEntries`, and re-deciding it here would put
+/// the same rules in two places where they could drift apart. So the preview
+/// reports the combined time and the days the sources fall on; if that is two
+/// days, the submission is refused by the transition in its own words.
+let mergePreview (requestJson: string) : string =
+    try
+        match JsonNode.Parse requestJson with
+        | null -> errorResult "empty request"
+        | request ->
+            let wanted =
+                match request.["sourceIds"] with
+                | :? JsonArray as items ->
+                    items
+                    |> Seq.choose (fun i -> if isNull i then None else Some(i.ToString()))
+                    |> Set.ofSeq
+                | _ -> Set.empty
+
+            let sources =
+                match request.["entries"] with
+                | :? JsonArray as items ->
+                    items
+                    |> Seq.choose (fun item ->
+                        match item with
+                        | null -> None
+                        | node ->
+                            match Serialization.read (node.ToJsonString()) with
+                            | Error _ -> None
+                            | Ok document ->
+                                match Mapping.fromDocument None document with
+                                | Error _ -> None
+                                | Ok entry ->
+                                    if wanted.Contains(EntryId.value entry.Id) then
+                                        Some entry
+                                    else
+                                        None)
+                    |> List.ofSeq
+                | _ -> []
+
+            let combined =
+                sources
+                |> List.sumBy (fun entry -> Duration.milliseconds entry.Effective.Duration)
+
+            let days =
+                sources
+                |> List.map (fun entry ->
+                    let y, m, d = EntryDate.toYearMonthDay entry.Effective.Date
+                    sprintf "%04d-%02d-%02d" y m d)
+                |> List.distinct
+                |> List.sort
+
+            let node = JsonObject()
+            node.Add("ok", JsonValue.Create true)
+            node.Add("sourceCount", JsonValue.Create(List.length sources))
+            node.Add("combinedMilliseconds", JsonValue.Create combined)
+            node.Add("displayCombined", JsonValue.Create(displayExact combined))
+
+            let dayList = JsonArray()
+
+            for day in days do
+                dayList.Add(JsonValue.Create day)
+
+            node.Add("days", dayList)
+
+            node.Add(
+                "summary",
+                JsonValue.Create(
+                    if List.length sources < 2 then
+                        "Choose at least two entries to merge."
+                    elif List.length days > 1 then
+                        // A fact about the selection, not a restatement of the
+                        // rule. The transition is what refuses it.
+                        sprintf "These entries fall on %d different days." (List.length days)
+                    else
+                        sprintf "%d entries totalling %s." (List.length sources) (displayExact combined)
+                )
+            )
+
+            node.ToJsonString(jsonOptions)
+    with ex ->
+        errorResult (ex.GetType().Name + ": " + ex.Message)
+
+
+// ---------------------------------------------------------------------------
 // The catalogue, as choices
 // ---------------------------------------------------------------------------
 

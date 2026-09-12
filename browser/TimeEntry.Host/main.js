@@ -22,8 +22,14 @@ const ask = (fn, request) => JSON.parse(fn(JSON.stringify(request)))
 // Transport: fetch the stored documents. In the deployed app these come from
 // the GitHub API; here local fixtures stand in so the architectural path can
 // be exercised without credentials.
-const [storedEntry, catalogue, versionFixture] = await Promise.all([
+// Three entries because the flows need them: a split consumes the entry it
+// splits, and a merge needs two sources that were each read at a known
+// version. Nothing the page creates has a version until effects are actually
+// performed (WI-0033, OQ-8), so the fixture has to supply them.
+const [storedEntry, secondEntry, thirdEntry, catalogue, versionFixture] = await Promise.all([
   fetch('./sample-entry.json').then((r) => r.json()),
+  fetch('./sample-entry-2.json').then((r) => r.json()),
+  fetch('./sample-entry-3.json').then((r) => r.json()),
   fetch('./sample-catalogue.json').then((r) => r.json()),
   fetch('./sample-versions.json').then((r) => r.json())
 ])
@@ -57,11 +63,17 @@ const send = (command) =>
 
 // `visibility` is a request, not a decision: the kernel is what knows which
 // entries a given visibility admits, and what "counts toward totals" means.
+const loadedEntries = [storedEntry, secondEntry, thirdEntry]
+
 let state = Object.freeze({
-  entries: [storedEntry],
+  entries: loadedEntries,
   visibility: 'counting',
-  view: derive([storedEntry], 'counting'),
+  view: derive(loadedEntries, 'counting'),
   selectedUnits: null,
+  // Which entries are ticked for merging. This is draft UI state and nothing
+  // more: it holds ids, never durations or totals, so it cannot become a
+  // second opinion about the ledger (TE-R-098).
+  selectedForMerge: [],
   message: null,
   effects: []
 })
@@ -271,6 +283,33 @@ const correctionControl = (row) => {
   return details
 }
 
+// The merge checkbox on a record. Selection is the page's to track; what the
+// selection MEANS — how much time it comes to, how many days it spans — is
+// the kernel's.
+const mergeCheckbox = (row) => {
+  const wrapper = el('p', 'field-help')
+  const label = document.createElement('label')
+  const box = document.createElement('input')
+  box.type = 'checkbox'
+  box.checked = state.selectedForMerge.includes(row.id)
+  box.id = `merge-${row.id}`
+  label.htmlFor = box.id
+  box.addEventListener('change', () => {
+    // A Set, not a filtered array. The architecture check bans `.filter` in
+    // this file because filtering a list of entries is the kernel's job, and
+    // the ban is deliberately blunt so it cannot be argued with case by case.
+    // A selection genuinely IS a set of ids, so saying so costs nothing and
+    // keeps the rule absolute.
+    const selected = new Set(state.selectedForMerge)
+    if (box.checked) selected.add(row.id)
+    else selected.delete(row.id)
+    update({ selectedForMerge: [...selected], message: null, effects: [] })
+  })
+  label.append(box, document.createTextNode(' Merge this entry'))
+  wrapper.append(label)
+  return wrapper
+}
+
 // Splitting an entry. `split.html` calls the pieces "Part 1", "Part 2"; this
 // keeps that language and that structure.
 //
@@ -446,6 +485,8 @@ const renderDay = (view) => {
           reasonControl(row.id, 'void', 'Remove', 'Remove entry', 'Why is this being removed?')
         )
 
+      if (row.capabilities.includes('CanMerge')) article.append(mergeCheckbox(row))
+
       if (row.capabilities.includes('CanSplit')) article.append(splitControl(row))
 
       if (row.capabilities.includes('CanRestore'))
@@ -475,8 +516,24 @@ const renderNotice = (id, text) => {
   element.hidden = !text
 }
 
+// The merge panel. Shown only when something is selected, and every word in
+// it — the total, the day count, the whole sentence — comes from the kernel.
+const renderMerge = () => {
+  const panel = document.getElementById('merge-panel')
+  if (!panel) return
+  panel.hidden = state.selectedForMerge.length === 0
+  if (panel.hidden) return
+
+  const preview = ask(kernel.MergePreview, {
+    entries: state.entries,
+    sourceIds: state.selectedForMerge
+  })
+  setText('merge-summary', preview.summary)
+}
+
 const render = () => {
   renderDay(state.view)
+  renderMerge()
   // Disclosure, not decoration: the projection reports how many entries it
   // excluded, so the page can say they exist without showing them.
   setText(
@@ -528,6 +585,9 @@ const absorb = (answer) => {
     entries: answer.entries,
     view: derive(answer.entries, state.visibility),
     selectedUnits: null,
+    // The selection referred to entries that may no longer be mergeable, so
+    // it is dropped rather than carried into a state it was not made in.
+    selectedForMerge: [],
     message: null,
     effects: answer.effects ?? []
   })
@@ -555,6 +615,32 @@ const submit = (event) => {
 }
 
 document.getElementById('create-form')?.addEventListener('submit', submit)
+
+fillSelect('merge-project', choices.projects ?? [])
+fillSelect('merge-activity', choices.activityTypes ?? [])
+
+document.getElementById('merge-form')?.addEventListener('submit', (event) => {
+  event.preventDefault()
+  absorb(
+    send({
+      kind: 'merge',
+      // Identity for the merged entry is minted here for the same reason a
+      // split child's is: Tier 2 is pure and cannot mint it.
+      newEntryId: crypto.randomUUID(),
+      projectId: value('merge-project'),
+      activityTypeId: value('merge-activity'),
+      description: value('merge-description'),
+      reason: value('merge-reason'),
+      occurredAtMs: Date.now(),
+      sources: state.selectedForMerge.map((entryId) => ({
+        // Each source carries the version IT was read at — they were read
+        // independently and any one may be stale (TE-R-070).
+        entryId,
+        expectedVersion: versions[entryId]
+      }))
+    })
+  )
+})
 
 document.getElementById('show-removed')?.addEventListener('change', (event) => {
   // A new question for the kernel, not a filter over the answer it already

@@ -37,6 +37,13 @@ public static partial class Interop
         TimeEntry.Kernel.splitPreview(requestJson);
 
     /// <summary>
+    /// Forwards a merge preview request.
+    /// </summary>
+    [JSExport]
+    internal static string MergePreview(string requestJson) =>
+        TimeEntry.Kernel.mergePreview(requestJson);
+
+    /// <summary>
     /// Forwards a request for the catalogue's selectable choices.
     /// </summary>
     [JSExport]

@@ -81,53 +81,67 @@ if (ready) {
   )
   check('the kernel answers successfully', kernel.view.ok === true)
 
-  // 52 exact minutes = 3_120_000 ms. Under RoundUp that is 9 six-minute
-  // units, which DISPLAYS as 54 minutes. The gap between 52 and 54 is
-  // DF-TE-0002 working: exact time is preserved and billing is a projection.
+  // The fixture is 52 + 18 + 30 exact minutes = 6_000_000 ms.
+  //
+  // The 52-minute entry carries the whole of DF-TE-0002 on its own: exactly
+  // 3_120_000 ms stored, 9 six-minute units billed, 54 minutes displayed. The
+  // gap between 52 and 54 is the rounding being a projection rather than a
+  // store, and it is asserted on the ROW so the day's composition can change
+  // without weakening the claim.
+  const fixtureRow = kernel.view.entries.find(
+    (e) => e.description === 'Reviewed composition evidence.'
+  )
   check(
     'exact duration is preserved to the millisecond',
-    kernel.view.totalMilliseconds === 3120000,
-    `${kernel.view.totalMilliseconds} ms`
+    fixtureRow?.durationMilliseconds === 3120000,
+    `${fixtureRow?.durationMilliseconds} ms`
   )
   check(
     'billable units are projected, not stored',
-    kernel.view.totalBillableUnits === 9,
-    `52 exact minutes bills as 9 units`
+    fixtureRow?.billableUnits === 9,
+    '52 exact minutes bills as 9 units'
   )
   check(
     'display time comes from the projection',
-    kernel.view.displayHours === 0 && kernel.view.displayMinutes === 54,
-    `${kernel.view.displayHours}h ${kernel.view.displayMinutes}m`
+    fixtureRow?.displayTime === '54m',
+    fixtureRow?.displayTime
   )
-  check('capabilities are computed by F#', kernel.view.entries[0].capabilities.length === 5,
-    kernel.view.entries[0].capabilities.join(','))
+  check(
+    'day totals sum exact time, then project once',
+    kernel.view.totalMilliseconds === 6000000 && kernel.view.totalBillableUnits === 17,
+    `${kernel.view.totalMilliseconds} ms, ${kernel.view.totalBillableUnits} units`
+  )
+  check('capabilities are computed by F#', fixtureRow?.capabilities.length === 5,
+    fixtureRow?.capabilities.join(','))
 
   // The DOM must show what the kernel said, not its own arithmetic.
   const total = (await page.textContent('#daily-total'))?.trim()
   const count = (await page.textContent('#activity-count'))?.trim()
   const rows = await page.locator('#timeline article.record').count()
 
-  check('the page renders the kernel total verbatim', total === '54m', total)
-  check('the page renders the kernel count', count === '1 entry', count)
+  check('the page renders the kernel total verbatim', total === '1h 42m', total)
+  check('the page renders the kernel count', count === '3 entries', count)
 
   // The markup is today.html's, so its structure must be present — not a
   // lookalike built here.
   check(
     'records use the adopted record structure',
-    (await page.locator('#timeline article.record .record-body .record-head .duration').count()) === 1
+    (await page.locator('#timeline article.record .record-body .record-head .duration').count()) === 3
   )
   // "Research · Echelon Foundry": the catalogue lookup and the composition
   // are both the kernel's.
   check(
     'the classification line is composed by the kernel from the catalogue',
-    (await page.textContent('#timeline .record-project'))?.trim() === 'Research · Echelon Foundry',
-    (await page.textContent('#timeline .record-project'))?.trim()
+    (await page
+      .locator('#timeline article.record', { hasText: 'Reviewed composition evidence.' })
+      .locator('.record-project')
+      .textContent())?.trim() === 'Research · Echelon Foundry'
   )
   check(
     'badge words and tone come from the kernel',
     (await page.locator('#timeline .meta-row .badge.badge-good').first().textContent()) === 'Timer'
   )
-  check('the page renders one row per projected entry', rows === 1, `${rows} rows`)
+  check('the page renders one row per projected entry', rows === 3, `${rows} rows`)
 
   // -------------------------------------------------------------------------
   // The form's choices are the kernel's, not the markup's
@@ -177,9 +191,9 @@ if (ready) {
     refusal
   )
 
-  // 5 units = 30 exact minutes = 1_800_000 ms. Added to the 3_120_000 ms
-  // already recorded that gives 4_920_000 ms, which is 82 exact minutes and
-  // bills as 14 units — displayed as 1h 24m. Every one of those numbers is
+  // 5 units = 30 exact minutes = 1_800_000 ms. Added to the 6_000_000 ms
+  // already recorded that gives 7_800_000 ms, which is 130 exact minutes and
+  // bills as 22 units — displayed as 2h 12m. Every one of those numbers is
   // the kernel's; the assertions below only read them back out of the DOM.
   await page.click('#duration-grid button:nth-child(5)')
   check(
@@ -189,20 +203,20 @@ if (ready) {
 
   await page.fill('#manual-description', 'Reviewed the ledger schema')
   await page.click('#create-form button[type=submit]')
-  await page.waitForFunction(() => globalThis.__kernel.view.countedEntries === 2, { timeout: 15000 })
+  await page.waitForFunction(() => globalThis.__kernel.view.countedEntries === 4, { timeout: 15000 })
 
   const after = await page.evaluate(() => globalThis.__kernel.view)
   check(
     'an accepted command adds exact time, to the millisecond',
-    after.totalMilliseconds === 4920000,
+    after.totalMilliseconds === 7800000,
     `${after.totalMilliseconds} ms`
   )
-  check('billable units are re-projected, not accumulated', after.totalBillableUnits === 14)
+  check('billable units are re-projected, not accumulated', after.totalBillableUnits === 22)
 
   const newTotal = (await page.textContent('#daily-total'))?.trim()
   const newRows = await page.locator('#timeline article.record').count()
-  check('the page re-renders from the kernel after a command', newTotal === '1h 24m', newTotal)
-  check('the new entry appears in the timeline', newRows === 2, `${newRows} rows`)
+  check('the page re-renders from the kernel after a command', newTotal === '2h 12m', newTotal)
+  check('the new entry appears in the timeline', newRows === 4, `${newRows} rows`)
 
   // TE-R-093: the browser reports the requested effect; it does not perform
   // it. The effect is named, and no request left the page.
@@ -230,7 +244,7 @@ if (ready) {
   )
   check(
     'a rejected command leaves the ledger unchanged',
-    (await page.evaluate(() => globalThis.__kernel.view.totalMilliseconds)) === 4920000
+    (await page.evaluate(() => globalThis.__kernel.view.totalMilliseconds)) === 7800000
   )
 
   // -------------------------------------------------------------------------
@@ -241,11 +255,11 @@ if (ready) {
   // active entries, so two controls.
   check(
     'a remove control appears per entry the kernel says may be voided',
-    (await page.locator('#timeline article.record details', { hasText: 'Remove' }).count()) === 2
+    (await page.locator('#timeline article.record details', { hasText: 'Remove' }).count()) === 4
   )
   check(
     'and a correct control likewise',
-    (await page.locator('#timeline article.record details', { hasText: 'Correct' }).count()) === 2
+    (await page.locator('#timeline article.record details', { hasText: 'Correct' }).count()) === 4
   )
 
   // Rows are addressed by their description rather than by position: the
@@ -281,16 +295,16 @@ if (ready) {
 
   // The loaded entry does have a version, supplied beside the document
   // rather than inside it, so its void is accepted. Its 3_120_000 ms leaves
-  // the totals, so 1_800_000 ms remains — 30 exact minutes, 5 units.
+  // the totals, so 4_680_000 ms remains — 78 exact minutes, 13 units.
   const loaded = await openRemove('Reviewed composition evidence.')
   await loaded.locator('input[type=text]').fill('Recorded twice')
   await loaded.locator('button[type=submit]').click()
-  await page.waitForFunction(() => globalThis.__kernel.view.countedEntries === 1, { timeout: 15000 })
+  await page.waitForFunction(() => globalThis.__kernel.view.countedEntries === 3, { timeout: 15000 })
 
   const voided = await page.evaluate(() => globalThis.__kernel.view)
   check(
     'an accepted void removes its time from the totals',
-    voided.totalMilliseconds === 1800000,
+    voided.totalMilliseconds === 4680000,
     `${voided.totalMilliseconds} ms`
   )
   // The default day view counts only what counts, and still reports that a
@@ -302,7 +316,7 @@ if (ready) {
   )
   check(
     'the page renders the reduced total',
-    (await page.textContent('#daily-total'))?.trim() === '30m',
+    (await page.textContent('#daily-total'))?.trim() === '1h 18m',
     (await page.textContent('#daily-total'))?.trim()
   )
 
@@ -317,17 +331,17 @@ if (ready) {
     (await page.textContent('#excluded-count'))?.trim() === '(1 removed)',
     (await page.textContent('#excluded-count'))?.trim()
   )
-  check('and it is not in the list', (await page.locator('#timeline article.record').count()) === 1)
+  check('and it is not in the list', (await page.locator('#timeline article.record').count()) === 3)
 
   // Ticking the box asks the KERNEL a different question. If the page were
   // filtering a list it already had, the removed entry would never have been
   // in it to show.
   await page.check('#show-removed')
-  await page.waitForFunction(() => globalThis.__kernel.view.entries.length === 2, { timeout: 15000 })
+  await page.waitForFunction(() => globalThis.__kernel.view.entries.length === 4, { timeout: 15000 })
   check('showing removed entries brings it back into the list', true)
   check(
     'the total does not change when a removed entry is merely shown',
-    (await page.textContent('#daily-total'))?.trim() === '30m',
+    (await page.textContent('#daily-total'))?.trim() === '1h 18m',
     (await page.textContent('#daily-total'))?.trim()
   )
   check(
@@ -349,10 +363,10 @@ if (ready) {
     .locator('input[type=text]')
     .fill('Removed in error')
   await removed.locator('details', { hasText: 'Restore' }).locator('button[type=submit]').click()
-  await page.waitForFunction(() => globalThis.__kernel.view.totalMilliseconds === 4920000, {
+  await page.waitForFunction(() => globalThis.__kernel.view.totalMilliseconds === 7800000, {
     timeout: 15000
   })
-  check('restoring returns its time to the totals', true, '4920000 ms')
+  check('restoring returns its time to the totals', true, '7800000 ms')
   check(
     'the restore reports the persistence effect it needs',
     (await page.textContent('#create-effects'))?.trim() === 'Requested: PersistRestore'
@@ -377,13 +391,14 @@ if (ready) {
     await target.locator('select').first().inputValue()
   )
 
-  // 52 minutes -> 1 hour, and onto a different project.
+  // 52 minutes -> 1 hour, and onto a different project. The day gains the
+  // difference: 7_800_000 - 3_120_000 + 3_600_000 = 8_280_000 ms.
   await target.locator('select').first().selectOption('northline')
   await target.locator('select').last().selectOption('10')
   await target.locator('input[type=text]').fill('Logged against the wrong client')
   await target.locator('button[type=submit]').click()
   const changed = await page
-    .waitForFunction(() => globalThis.__kernel.view.totalMilliseconds === 5400000, { timeout: 15000 })
+    .waitForFunction(() => globalThis.__kernel.view.totalMilliseconds === 8280000, { timeout: 15000 })
     .then(() => true)
     .catch(() => false)
 
@@ -394,13 +409,18 @@ if (ready) {
   }
 
   const corrected = await page.evaluate(() => globalThis.__kernel.view)
-  check('a correction changes the total, exactly', corrected.totalMilliseconds === 5400000, `${corrected.totalMilliseconds} ms`)
+  check('a correction changes the total, exactly', corrected.totalMilliseconds === 8280000, `${corrected.totalMilliseconds} ms`)
   // Still two entries: a correction is a new revision of the SAME entry, not
   // a second entry (TE-R-050).
-  check('a correction does not create a second entry', corrected.entries.length === 2)
+  check('a correction does not create a second entry', corrected.entries.length === 4)
+  // Scoped to the corrected entry's own row: two other fixture entries are
+  // already on Northline, so a page-wide count would pass for the wrong
+  // reason.
   check(
     'the corrected entry shows its new classification',
-    (await page.locator('#timeline .record-project', { hasText: 'Northline Studio' }).count()) === 1
+    (await row('Reviewed composition evidence.').locator('.record-project').textContent())?.trim() ===
+      'Research · Northline Studio',
+    (await row('Reviewed composition evidence.').locator('.record-project').textContent())?.trim()
   )
   check(
     'the correction reports the persistence effect it needs',
@@ -457,14 +477,14 @@ if (ready) {
   )
 
   await splitter.locator('button[type=submit]').click()
-  await page.waitForFunction(() => globalThis.__kernel.view.countedEntries === 3, { timeout: 15000 })
+  await page.waitForFunction(() => globalThis.__kernel.view.countedEntries === 5, { timeout: 15000 })
 
   const afterSplit = await page.evaluate(() => globalThis.__kernel.view)
   // The source leaves the totals and its two children replace it, so the
   // day's exact total is unchanged — which is the whole point (TE-R-040).
   check(
     'a split preserves the day total exactly',
-    afterSplit.totalMilliseconds === 5400000,
+    afterSplit.totalMilliseconds === 8280000,
     `${afterSplit.totalMilliseconds} ms`
   )
   check(
@@ -473,8 +493,63 @@ if (ready) {
   )
   check(
     'the source is replaced, not duplicated',
-    (await page.locator('#timeline article.record').count()) === 3,
+    (await page.locator('#timeline article.record').count()) === 5,
     `${await page.locator('#timeline article.record').count()} rows`
+  )
+
+  // -------------------------------------------------------------------------
+  // Merge
+  // -------------------------------------------------------------------------
+
+  // The two client-proposal entries are the only ones left that still carry
+  // versions: a merge needs sources read at a known version, and everything
+  // this session created has none.
+  check('the merge panel is hidden until something is selected', await page.isHidden('#merge-panel'))
+
+  const tick = (text) =>
+    row(text).locator('input[type=checkbox]').check()
+
+  await tick('Client proposal outline')
+  check('selecting one entry opens the panel', await page.isVisible('#merge-panel'))
+  check(
+    'and one entry is reported as not enough, in the kernel\'s words',
+    (await page.textContent('#merge-summary'))?.trim() === 'Choose at least two entries to merge.',
+    (await page.textContent('#merge-summary'))?.trim()
+  )
+
+  // 18 + 30 exact minutes. The page never added them.
+  await tick('Client proposal pricing')
+  check(
+    'two selected entries preview their combined exact time',
+    (await page.textContent('#merge-summary'))?.trim() === '2 entries totalling 48m.',
+    (await page.textContent('#merge-summary'))?.trim()
+  )
+
+  const beforeMerge = await page.evaluate(() => globalThis.__kernel.view.totalMilliseconds)
+
+  await page.fill('#merge-reason', 'Same task, two timers')
+  await page.click('#merge-form button[type=submit]')
+  await page.waitForFunction(() => globalThis.__kernel.view.countedEntries === 4, { timeout: 15000 })
+
+  const afterMerge = await page.evaluate(() => globalThis.__kernel.view)
+  // A merge re-labels time; it neither creates nor destroys any.
+  check(
+    'a merge preserves the day total exactly',
+    afterMerge.totalMilliseconds === beforeMerge,
+    `${afterMerge.totalMilliseconds} ms`
+  )
+  check(
+    'the merge reports the persistence effect it needs',
+    (await page.textContent('#create-effects'))?.trim() === 'Requested: PersistMerge',
+    (await page.textContent('#create-effects'))?.trim()
+  )
+  check('the selection is cleared once the merge lands', await page.isHidden('#merge-panel'))
+  // Superseded, not deleted — and superseded is not the same as removed, so
+  // "show removed" does not bring them back either (DF-TE-0006).
+  check(
+    'the merged sources leave the counted list',
+    afterMerge.excludedEntries >= 3,
+    `${afterMerge.excludedEntries} excluded`
   )
 }
 

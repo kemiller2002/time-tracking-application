@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "time-tracking-application",
-  "nextSeq": 37,
+  "nextSeq": 38,
   "items": [
     {
       "id": "WI-0001",
@@ -578,6 +578,20 @@
       "attachments": [],
       "createdAt": "2026-09-12T01:20:05Z",
       "updatedAt": "2026-09-12T01:20:05Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0037",
+      "title": "TE-037 Merge on the today screen: multi-entry selection and the kernel-computed combined-time preview",
+      "description": null,
+      "tags": [],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T01:27:05Z",
+      "updatedAt": "2026-09-12T01:27:05Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null
