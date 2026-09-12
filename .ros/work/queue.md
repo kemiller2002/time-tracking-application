@@ -42,4 +42,5 @@
 | WI-0037 | TE-037 Merge on the today screen: multi-entry selection and the kernel-computed combined-time preview | complete |  | medium |
 | WI-0038 | TE-038 Evidence attachment on the today screen | complete |  | medium |
 | WI-0039 | TE-039 Credential port: the browser's token is one implementation, so the mechanism can change (DF-TE-0011) | complete |  | medium |
-| WI-0040 | TE-040 Read the ledger and catalogue from the repository on connect | ready |  | medium |
+| WI-0040 | TE-040 Read the ledger and catalogue from the repository on connect | complete |  | medium |
+| WI-0041 | TE-041 Make the GitHub API base URL configurable so the browser check need not reach api.github.com | captured |  | medium |

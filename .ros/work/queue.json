@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "time-tracking-application",
-  "nextSeq": 41,
+  "nextSeq": 42,
   "items": [
     {
       "id": "WI-0001",
@@ -634,6 +634,20 @@
       "attachments": [],
       "createdAt": "2026-09-12T01:51:20Z",
       "updatedAt": "2026-09-12T01:51:20Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0041",
+      "title": "TE-041 Make the GitHub API base URL configurable so the browser check need not reach api.github.com",
+      "description": null,
+      "tags": [],
+      "priority": "medium",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-12T01:53:44Z",
+      "updatedAt": "2026-09-12T01:53:44Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null

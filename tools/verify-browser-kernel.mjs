@@ -619,6 +619,11 @@ if (ready) {
 // persist path — where it fails at the network rather than silently falling
 // back to the in-page one.
 
+// Everything above ran against fixtures and must have been error-free. Fixed
+// here rather than at the end, because everything BELOW deliberately points
+// the page at a repository that does not exist.
+const errorsBeforeConnecting = [...errors]
+
 if (ready) {
   await page.fill('#repo-owner', 'owner')
   await page.fill('#repo-name', 'repo')
@@ -701,10 +706,20 @@ if (ready) {
   )
 }
 
-// Page errors are collected throughout; a failed fetch to a nonexistent
-// repository is expected here and is not one of them.
-const unexpected = errors.filter((e) => !/Failed to fetch|api\.github\.com|net::/i.test(e))
-check('no page errors', unexpected.length === 0, unexpected.slice(0, 2).join(' | '))
+// Scoped to the fixture-backed part of the run, not filtered by message text.
+//
+// The earlier version filtered on strings like "Failed to fetch", which is
+// what THIS sandbox produces when the network is unreachable. CI can reach
+// api.github.com, so the same deliberate request there returns 401 and the
+// filter missed it — a check that encoded one environment's behaviour and
+// failed in another. Counting errors up to the deliberate-failure section
+// says what was actually meant: nothing should go wrong before we point the
+// page at a repository that does not exist.
+check(
+  'no page errors while running against fixtures',
+  errorsBeforeConnecting.length === 0,
+  errorsBeforeConnecting.slice(0, 2).join(' | ')
+)
 
 await browser.close()
 server.kill()
