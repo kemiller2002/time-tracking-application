@@ -62,9 +62,34 @@ module GitHubSync =
     let buildWhoAmIEffect (config: Session.GitHubSyncConfig) : EffectRequest =
         HttpEffect("github-whoami", "GET", $"{apiBase}/user", headers config.Token, None, 15000)
 
-    let buildGetEffect (config: Session.GitHubSyncConfig) (login: string) : EffectRequest =
+    let private ledgerGetEffect (correlationId: string) (config: Session.GitHubSyncConfig) (login: string) : EffectRequest =
         let url = $"{contentsUrl config (dataFilePath config login)}?ref={Uri.EscapeDataString config.Branch}"
-        HttpEffect("github-pull", "GET", url, headers config.Token, None, 15000)
+        HttpEffect(correlationId, "GET", url, headers config.Token, None, 15000)
+
+    let buildGetEffect (config: Session.GitHubSyncConfig) (login: string) : EffectRequest = ledgerGetEffect "github-pull" config login
+
+    /// Fetches the ledger that just won a push conflict (GitHub's own 409 —
+    /// this sync's `sha` was stale) so `Dispatch.fs` can merge it with the
+    /// local document (`LedgerDocument.merge`) and retry the push, instead of
+    /// surfacing the conflict and making the user pull-then-redo their edit.
+    /// A distinct correlation id from `"github-pull"` because the two results
+    /// are handled differently: an explicit pull replaces the document
+    /// outright, this one merges into it.
+    let buildConflictPullEffect (config: Session.GitHubSyncConfig) (login: string) : EffectRequest =
+        ledgerGetEffect "github-push-conflict-pull" config login
+
+    /// Fetches the ledger after a push whose outcome came back `Unknown`
+    /// (the request timed out or the connection dropped after GitHub may
+    /// already have received it) so `Dispatch.fs` can classify what actually
+    /// happened — reusing `Ledger.Domain.Services`'s dormant
+    /// `ReconciliationStatus` vocabulary (Applied/NotApplied/
+    /// ReconciliationConflict/StillUnknown) — instead of leaving the user to
+    /// manually pull and check. A distinct correlation id from both
+    /// `"github-pull"` and `"github-push-conflict-pull"` because the
+    /// classification differs from either: it compares the fetched document
+    /// against what was attempted, not just against the local document.
+    let buildReconciliationPullEffect (config: Session.GitHubSyncConfig) (login: string) : EffectRequest =
+        ledgerGetEffect "github-push-reconcile-pull" config login
 
     let private putBody (sha: string option) (branch: string) (message: string) (content: string) =
         let body = JsonObject()
@@ -76,16 +101,107 @@ module GitHubSync =
         | None -> ()
         body.ToJsonString()
 
-    /// `sha` is the blob version to overwrite — `None` asks GitHub to create
-    /// the file, which fails if one is already there (surfaced like any other
-    /// non-2xx status; see `Dispatch.fs`'s handling of the "github-push" result).
-    let buildPutEffect (config: Session.GitHubSyncConfig) (login: string) (sha: string option) (documentJson: string) : EffectRequest =
-        let body = putBody sha config.Branch "Update the business activity ledger" documentJson
-        HttpEffect("github-push", "PUT", contentsUrl config (dataFilePath config login), headers config.Token, Some body, 15000)
+    // --- Atomic multi-file commit (ledger.json + metadata.json together) via
+    // GitHub's Git Data API — a 5-step chain replacing what used to be two
+    // independent Contents API PUTs (see the removed `buildPutEffect`/
+    // `buildMetadataPutEffect`, and `docs/DOMAIN-REQUIREMENTS.md`'s
+    // previously-documented scope): read the branch's current commit (1),
+    // read that commit's tree (2), build a new tree with just those two
+    // blobs replaced (3), create a new commit on it (4), then move the
+    // branch ref to that commit (5) — a non-fast-forward move (someone/
+    // something else advanced the branch first) fails with 422, GitHub's
+    // equivalent of the Contents API's 409, so `Dispatch.fs` can drive it
+    // through the same auto-merge/reconciliation paths built for that.
+    // `settings.json` is deliberately not part of this chain: it is never
+    // written at the same moment as the ledger, so a single Contents API
+    // PUT (`buildSettingsPutEffect`, below) is already atomic for it. -------
 
-    let buildMetadataPutEffect (config: Session.GitHubSyncConfig) (login: string) (sha: string option) (metadataJson: string) : EffectRequest =
-        let body = putBody sha config.Branch "Update profile metadata" metadataJson
-        HttpEffect("github-metadata-push", "PUT", contentsUrl config (metadataFilePath config login), headers config.Token, Some body, 15000)
+    let private gitDataUrl (config: Session.GitHubSyncConfig) (segment: string) =
+        $"{apiBase}/repos/{Uri.EscapeDataString config.Owner}/{Uri.EscapeDataString config.Repo}/git/{segment}"
+
+    let private refUrl (config: Session.GitHubSyncConfig) = gitDataUrl config $"refs/heads/{Uri.EscapeDataString config.Branch}"
+
+    /// Step 1: the commit the branch currently points at — becomes both the
+    /// new commit's parent (step 4) and the source of the tree it's built on
+    /// top of (step 2).
+    let buildRefGetEffect (config: Session.GitHubSyncConfig) : EffectRequest =
+        HttpEffect("github-commit-ref", "GET", refUrl config, headers config.Token, None, 15000)
+
+    /// Step 2: that commit's tree — its `sha` is the `base_tree` the new
+    /// tree (step 3) is built on, so every file this push doesn't touch
+    /// stays exactly as it was.
+    let buildCommitGetEffect (config: Session.GitHubSyncConfig) (commitSha: string) : EffectRequest =
+        HttpEffect("github-commit-base", "GET", gitDataUrl config $"commits/{commitSha}", headers config.Token, None, 15000)
+
+    let private treeEntry (path: string) (content: string) : JsonNode =
+        let o = JsonObject()
+        o.["path"] <- JsonValue.Create(path: string)
+        o.["mode"] <- JsonValue.Create("100644")
+        o.["type"] <- JsonValue.Create("blob")
+        o.["content"] <- JsonValue.Create(content: string)
+        o
+
+    /// Step 3: a new tree replacing only `ledger.json` and `metadata.json` —
+    /// GitHub accepts a tree entry's content inline, so no separate
+    /// blob-creation call is needed for either file.
+    let buildTreeCreateEffect (config: Session.GitHubSyncConfig) (login: string) (baseTreeSha: string) (ledgerJson: string) (metadataJson: string) : EffectRequest =
+        let tree = JsonArray()
+        tree.Add(treeEntry (dataFilePath config login) ledgerJson)
+        tree.Add(treeEntry (metadataFilePath config login) metadataJson)
+        let body = JsonObject()
+        body.["base_tree"] <- JsonValue.Create(baseTreeSha)
+        body.["tree"] <- tree
+        HttpEffect("github-commit-tree", "POST", gitDataUrl config "trees", headers config.Token, Some(body.ToJsonString()), 15000)
+
+    /// Step 4: the new commit object itself — not yet reachable from any
+    /// branch until step 5 moves the ref onto it.
+    let buildCommitCreateEffect (config: Session.GitHubSyncConfig) (treeSha: string) (parentSha: string) : EffectRequest =
+        let parents = JsonArray()
+        parents.Add(JsonValue.Create(parentSha: string))
+        let body = JsonObject()
+        body.["message"] <- JsonValue.Create("Update the business activity ledger and profile metadata")
+        body.["tree"] <- JsonValue.Create(treeSha)
+        body.["parents"] <- parents
+        HttpEffect("github-commit-create", "POST", gitDataUrl config "commits", headers config.Token, Some(body.ToJsonString()), 15000)
+
+    /// Step 5, the chain's terminal step — correlation id deliberately kept
+    /// as `"github-push"` so `Dispatch.fs`'s existing success/conflict/
+    /// failure/`Unknown` handling for that id (built for the old single-file
+    /// PUT, then reused for merge-on-conflict and reconciliation) keeps
+    /// working unchanged: `force: false` means a non-fast-forward move —
+    /// someone/something else advanced the branch since step 1 read it —
+    /// fails with 422 rather than overwriting it, GitHub's equivalent of the
+    /// Contents API's 409.
+    let buildRefUpdateEffect (config: Session.GitHubSyncConfig) (newCommitSha: string) : EffectRequest =
+        let body = JsonObject()
+        body.["sha"] <- JsonValue.Create(newCommitSha)
+        body.["force"] <- JsonValue.Create(false)
+        HttpEffect("github-push", "PATCH", refUrl config, headers config.Token, Some(body.ToJsonString()), 15000)
+
+    /// The commit sha a `git/refs/heads/{branch}` GET response points at
+    /// (step 1's response) — distinct from `parseGetResponse`'s Contents API
+    /// blob `sha`, a different GitHub API family with a different shape.
+    let parseRefResponse (body: string) : Result<string, string> =
+        try
+            Ok(JsonNode.Parse(body).AsObject().["object"].AsObject().["sha"].GetValue<string>())
+        with ex ->
+            Error $"GitHub's response could not be read: {ex.Message}"
+
+    /// The base tree sha out of a `git/commits/{sha}` GET response (step 2's
+    /// response).
+    let parseCommitBaseTreeResponse (body: string) : Result<string, string> =
+        try
+            Ok(JsonNode.Parse(body).AsObject().["tree"].AsObject().["sha"].GetValue<string>())
+        with ex ->
+            Error $"GitHub's response could not be read: {ex.Message}"
+
+    /// A bare top-level `sha` field — both `git/trees` (step 3) and
+    /// `git/commits` (step 4) POST responses carry the new object's id there.
+    let parseShaResponse (body: string) : Result<string, string> =
+        try
+            Ok(JsonNode.Parse(body).AsObject().["sha"].GetValue<string>())
+        with ex ->
+            Error $"GitHub's response could not be read: {ex.Message}"
 
     /// Round-tripped, unlike `metadata.json`: pulled on identity resolution
     /// (fresh save or a cached config reload) and applied to the session, so
@@ -110,9 +226,18 @@ module GitHubSync =
         with ex ->
             Error $"GitHub's response could not be read: {ex.Message}"
 
+    /// Reads the resulting blob's sha out of a Contents API PUT response
+    /// (`content.sha` — used by `settings.json`'s own PUT) or, when that
+    /// shape isn't there, out of a `git/refs/{ref}` PATCH response instead
+    /// (`object.sha` — the atomic multi-file commit's step 5, still reported
+    /// under the `"github-push"` correlation id both shapes share).
     let parsePutResponse (body: string) : Result<string, string> =
         try
-            Ok(JsonNode.Parse(body).AsObject().["content"].AsObject().["sha"].GetValue<string>())
+            let node = JsonNode.Parse(body).AsObject()
+            match node.["content"], node.["object"] with
+            | null, null -> Error "GitHub's response had neither a content nor an object sha."
+            | null, objectNode -> Ok(objectNode.AsObject().["sha"].GetValue<string>())
+            | contentNode, _ -> Ok(contentNode.AsObject().["sha"].GetValue<string>())
         with ex ->
             Error $"GitHub's response could not be read: {ex.Message}"
 

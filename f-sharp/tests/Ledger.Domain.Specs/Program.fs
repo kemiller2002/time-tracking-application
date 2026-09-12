@@ -528,6 +528,49 @@ let tests : (string * (unit -> unit)) list =
         let diagnostics = Commands.validateDocument strippedEnvironment document
         assertTrue (diagnostics |> List.exists (fun d -> d.Code = DiagnosticCode.ProjectNotFound)) "missing reference was not flagged"
         ignore activity
+
+      // --- LedgerDocument.merge (auto-merge on a GitHub push conflict) --------
+
+      "LedgerDocument.merge keeps the higher-versioned copy of an activity that diverged on both sides", fun () ->
+        let environment = fixture ()
+        let baseDoc, activity = createOk environment LedgerDocument.empty (at "2026-08-15" 9 0) (at "2026-08-15" 10 0)
+        let amended =
+            Commands.amend environment baseDoc
+                { ActivityId = activity.ActivityId; ExpectedVersion = Some activity.Version
+                  Changes = { createCmd (at "2026-08-15" 9 0) (at "2026-08-15" 10 0) with Description = "Updated on the other side" }
+                  Reason = "correction" }
+            |> projection
+        let merged = LedgerDocument.merge baseDoc amended
+        assertTrue (merged.Activities.Length = 1) $"expected one merged activity, got {merged.Activities.Length}"
+        let winner = merged.Activities |> List.find (fun a -> a.ActivityId = activity.ActivityId)
+        assertTrue (winner.Description = "Updated on the other side") "merge did not keep the higher-versioned (amended) copy"
+        assertTrue (winner.Version = 2L) $"expected the amended version to win, got version {winner.Version}"
+
+      "LedgerDocument.merge unions activities that exist on only one side", fun () ->
+        let environment = fixture ()
+        let localDoc, localActivity = createOk environment LedgerDocument.empty (at "2026-08-15" 9 0) (at "2026-08-15" 10 0)
+        let remoteDoc, remoteActivity = createOk environment LedgerDocument.empty (at "2026-08-15" 14 0) (at "2026-08-15" 15 0)
+        let merged = LedgerDocument.merge localDoc remoteDoc
+        let ids = merged.Activities |> List.map (fun a -> a.ActivityId) |> Set.ofList
+        assertTrue (ids = Set.ofList [ localActivity.ActivityId; remoteActivity.ActivityId ]) "merge did not union activities unique to each side"
+
+      "LedgerDocument.merge unions attestations by AttestationId without duplicating a shared one", fun () ->
+        let environment = fixture ()
+        let doc, _ = createOk environment LedgerDocument.empty (at "2026-08-15" 9 0) (at "2026-08-15" 10 0)
+        let attestedDoc = Commands.attestDay environment doc { Date = DateOnly(2026, 8, 15); Statement = "all good"; ExpectedProjectionVersion = None } |> projection
+        let merged = LedgerDocument.merge attestedDoc attestedDoc
+        assertTrue (merged.Attestations.Length = 1) $"expected the shared attestation to appear once, got {merged.Attestations.Length}"
+
+      "LedgerDocument.merge takes the higher EventSequence of the two documents", fun () ->
+        let environment = fixture ()
+        let doc, activity = createOk environment LedgerDocument.empty (at "2026-08-15" 9 0) (at "2026-08-15" 10 0)
+        let amended =
+            Commands.amend environment doc
+                { ActivityId = activity.ActivityId; ExpectedVersion = Some activity.Version; Changes = createCmd (at "2026-08-15" 9 0) (at "2026-08-15" 10 0); Reason = "correction" }
+            |> projection
+        assertTrue (amended.EventSequence > doc.EventSequence) "test setup assumption failed: amend should advance EventSequence"
+        let merged = LedgerDocument.merge doc amended
+        assertTrue (merged.EventSequence = amended.EventSequence) "merge did not take the higher EventSequence"
     ]
 
 [<EntryPoint>]

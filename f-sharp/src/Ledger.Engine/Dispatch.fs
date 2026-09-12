@@ -328,13 +328,12 @@ module Dispatch =
             { state with
                 GitHubSync = Some config
                 GitHubDocumentSha = None
-                GitHubMetadataSha = None
                 GitHubSettingsSha = None
+                GitHubCommitParentSha = None
                 GitHubSyncStatus = "identifying"
                 Draft = Session.Draft.empty }
             |> clearError "githubConfig"
             |> clearError "githubSync"
-            |> clearError "githubMetadata"
             |> clearError "githubSettings"
         | _ -> state |> withError "githubConfig" "Owner, repository, and a token are all required."
 
@@ -467,9 +466,14 @@ module Dispatch =
             | Error message -> { state with GitHubSyncStatus = "error" } |> withError "githubSync" message
         | HttpResult("github-push", OutcomeSuccess(status, None)) when status = 200 || status = 201 ->
             { state with GitHubSyncStatus = "error" } |> withError "githubSync" "GitHub's response had no content."
-        | HttpResult("github-push", OutcomeSuccess(409, _)) ->
-            { state with GitHubSyncStatus = "conflict" }
-            |> withError "githubSync" "GitHub has a newer version of the ledger than the one this sync last saw. Pull latest before syncing again."
+        /// A stale write — GitHub's 409 (the old single-file Contents API
+        /// PUT's own conflict status) or 422 (the atomic commit's ref-update
+        /// step rejecting a non-fast-forward move — someone/something else
+        /// advanced the branch since step 1 read it) — no longer forces a
+        /// manual pull-then-redo: the remote ledger is fetched
+        /// (`"github-push-conflict-pull"`, below) and merged with the local
+        /// document automatically.
+        | HttpResult("github-push", OutcomeSuccess((409 | 422), _)) -> { state with GitHubSyncStatus = "merging" } |> clearError "githubSync"
         | HttpResult("github-push", OutcomeSuccess(status, bodyOpt)) ->
             { state with GitHubSyncStatus = "error" } |> withError "githubSync" $"GitHub returned {status}: {GitHubSync.errorMessage bodyOpt}"
         | HttpResult("github-push", OutcomeFailure reason) ->
@@ -477,10 +481,104 @@ module Dispatch =
         | HttpResult("github-push", OutcomeCancelled) -> { state with GitHubSyncStatus = "idle" } |> clearError "githubSync"
         /// An unknown push outcome must never collapse into success or failure —
         /// the same doctrine `StorageResult("save", StorageUnknown _)` already
-        /// applies above — because the write may or may not have reached GitHub.
-        | HttpResult("github-push", OutcomeUnknown reason) ->
+        /// applies above — because the write may or may not have reached
+        /// GitHub. Rather than leaving that to the user to sort out by hand,
+        /// it is reconciled automatically: the ledger is re-fetched and
+        /// classified (see `"github-push-reconcile-pull"`, below) per
+        /// `Ledger.Domain.Services.ReconciliationStatus`'s dormant vocabulary
+        /// — the first place that type's shape actually gets used, even
+        /// though `Services.LedgerStore` itself stays unwired (see
+        /// manifest.md).
+        | HttpResult("github-push", OutcomeUnknown _) -> { state with GitHubSyncStatus = "reconciling" } |> clearError "githubSync"
+
+        /// The remote ledger fetched after a push conflict. On success this
+        /// merges it with the local document (`LedgerDocument.merge`) and
+        /// hands the merged result back to `handleMessage` (via
+        /// `GitHubSyncStatus = "pushing"`) to retry the push with the fetched
+        /// `sha` — see `handleMessage`'s `conflictEffects`. Any failure here
+        /// falls back to the same manual "pull latest and resolve" guidance
+        /// the conflict used to give unconditionally.
+        | HttpResult("github-push-conflict-pull", OutcomeSuccess(status, Some body)) when status >= 200 && status < 300 ->
+            match GitHubSync.parseGetResponse body with
+            | Error message ->
+                { state with GitHubSyncStatus = "conflict" } |> withError "githubSync" $"Could not automatically merge ({message}). Pull latest and resolve manually."
+            | Ok parsed ->
+                match DocumentCodec.decode parsed.DocumentJson with
+                | Error message ->
+                    { state with GitHubSyncStatus = "conflict" }
+                    |> withError "githubSync" $"Could not automatically merge — GitHub's stored ledger could not be read ({message}). Pull latest and resolve manually."
+                | Ok remoteDocument ->
+                    let merged = LedgerDocument.merge state.Document remoteDocument
+                    match Commands.validateDocument state.Environment merged with
+                    | [] ->
+                        { state with Document = merged; GitHubDocumentSha = Some parsed.Sha; GitHubSyncStatus = "pushing" }
+                        |> clearError "githubSync"
+                    | diagnostics ->
+                        { state with GitHubSyncStatus = "conflict" }
+                        |> withError "githubSync" $"Automatic merge failed validation ({firstMessage diagnostics}). Pull latest and resolve manually."
+        | HttpResult("github-push-conflict-pull", OutcomeSuccess(status, None)) when status >= 200 && status < 300 ->
+            { state with GitHubSyncStatus = "conflict" } |> withError "githubSync" "Could not automatically merge — GitHub's response had no content. Pull latest and resolve manually."
+        | HttpResult("github-push-conflict-pull", OutcomeSuccess(status, bodyOpt)) ->
+            { state with GitHubSyncStatus = "conflict" }
+            |> withError "githubSync" $"Could not automatically merge (GitHub returned {status}: {GitHubSync.errorMessage bodyOpt}). Pull latest and resolve manually."
+        | HttpResult("github-push-conflict-pull", OutcomeFailure reason) ->
+            { state with GitHubSyncStatus = "conflict" }
+            |> withError "githubSync" $"Could not automatically merge — could not reach GitHub ({reason}). Pull latest and resolve manually."
+        | HttpResult("github-push-conflict-pull", OutcomeCancelled) -> { state with GitHubSyncStatus = "conflict" }
+        | HttpResult("github-push-conflict-pull", OutcomeUnknown reason) ->
+            { state with GitHubSyncStatus = "conflict" }
+            |> withError "githubSync" $"Could not confirm whether the automatic merge fetch succeeded ({reason}). Pull latest and resolve manually."
+
+        /// Classifies an `Unknown` push outcome by comparing the ledger this
+        /// fetch actually found against what was attempted (`state.Document`,
+        /// untouched since the push — only a *confirmed* push ever replaces
+        /// it) and against the `sha` the push expected to overwrite
+        /// (`state.GitHubDocumentSha`, likewise untouched until a push
+        /// confirms): the write is `Applied` if the fetched document already
+        /// matches what was sent — nothing left to do — and otherwise is
+        /// `NotApplied`/`ReconciliationConflict` either way resolved the same
+        /// way: merge (`LedgerDocument.merge`, safe even when nothing
+        /// actually changed remotely) and retry, via `GitHubSyncStatus =
+        /// "pushing"` and `handleMessage`'s `reconciliationEffects`.
+        | HttpResult("github-push-reconcile-pull", OutcomeSuccess(status, Some body)) when status >= 200 && status < 300 ->
+            match GitHubSync.parseGetResponse body with
+            | Error message ->
+                { state with GitHubSyncStatus = "unknown" }
+                |> withError "githubSync" $"Could not confirm whether changes reached GitHub ({message}). Pull latest to check before re-entering them."
+            | Ok parsed ->
+                match DocumentCodec.decode parsed.DocumentJson with
+                | Error message ->
+                    { state with GitHubSyncStatus = "unknown" }
+                    |> withError "githubSync" $"Could not confirm whether changes reached GitHub — the response could not be read ({message}). Pull latest to check before re-entering them."
+                | Ok remoteDocument when remoteDocument = state.Document ->
+                    // Applied: the write we couldn't confirm did land after all.
+                    { state with GitHubDocumentSha = Some parsed.Sha; GitHubSyncStatus = "synced"; GitHubLastSyncedAt = Some(state.Environment.Clock()) }
+                    |> clearError "githubSync"
+                | Ok remoteDocument ->
+                    // NotApplied (remote unchanged from the pre-push baseline) or
+                    // ReconciliationConflict (something else landed meanwhile) —
+                    // both resolved the same way: merge and retry the push.
+                    let merged = LedgerDocument.merge state.Document remoteDocument
+                    match Commands.validateDocument state.Environment merged with
+                    | [] ->
+                        { state with Document = merged; GitHubDocumentSha = Some parsed.Sha; GitHubSyncStatus = "pushing" }
+                        |> clearError "githubSync"
+                    | diagnostics ->
+                        { state with GitHubSyncStatus = "unknown" }
+                        |> withError "githubSync" $"Could not reconcile automatically ({firstMessage diagnostics}). Pull latest and resolve manually."
+        | HttpResult("github-push-reconcile-pull", OutcomeSuccess(status, None)) when status >= 200 && status < 300 ->
             { state with GitHubSyncStatus = "unknown" }
-            |> withError "githubSync" $"Changes may not have synced to GitHub ({reason}). Do not assume they were lost — pull latest to check before re-entering them."
+            |> withError "githubSync" "Could not confirm whether changes reached GitHub — the response had no content. Pull latest to check before re-entering them."
+        | HttpResult("github-push-reconcile-pull", OutcomeSuccess(status, bodyOpt)) ->
+            { state with GitHubSyncStatus = "unknown" }
+            |> withError "githubSync" $"Could not confirm whether changes reached GitHub (GitHub returned {status}: {GitHubSync.errorMessage bodyOpt}). Pull latest to check before re-entering them."
+        | HttpResult("github-push-reconcile-pull", OutcomeFailure reason) ->
+            { state with GitHubSyncStatus = "unknown" }
+            |> withError "githubSync" $"Could not confirm whether changes reached GitHub ({reason}). Pull latest to check before re-entering them."
+        | HttpResult("github-push-reconcile-pull", OutcomeCancelled) -> { state with GitHubSyncStatus = "unknown" }
+        | HttpResult("github-push-reconcile-pull", OutcomeUnknown reason) ->
+            { state with GitHubSyncStatus = "unknown" }
+            |> withError "githubSync" $"Still could not confirm whether changes reached GitHub ({reason}). Pull latest to check before re-entering them."
 
         /// Resolves who the saved token belongs to, never trusting a typed
         /// name — see `Session.GitHubSyncConfig.Login`'s doc comment. Every
@@ -506,23 +604,43 @@ module Dispatch =
             { state with GitHubSyncStatus = "unknown" }
             |> withError "githubSync" $"Could not confirm your GitHub identity ({reason}). Save your settings again to retry."
 
-        /// `metadata.json` is a separate, lower-stakes write from the ledger
-        /// itself (see `GitHubSync.buildMetadataJson`) — its own error key,
-        /// `githubMetadata`, keeps a metadata hiccup from overwriting the
-        /// ledger sync status the user actually cares about.
-        | HttpResult("github-metadata-push", OutcomeSuccess(status, Some body)) when status = 200 || status = 201 ->
-            match GitHubSync.parsePutResponse body with
-            | Ok sha -> { state with GitHubMetadataSha = Some sha } |> clearError "githubMetadata"
-            | Error message -> state |> withError "githubMetadata" message
-        | HttpResult("github-metadata-push", OutcomeSuccess(status, None)) when status = 200 || status = 201 ->
-            state |> withError "githubMetadata" "GitHub's response had no content for the profile metadata file."
-        | HttpResult("github-metadata-push", OutcomeSuccess(status, bodyOpt)) ->
-            state |> withError "githubMetadata" $"GitHub returned {status} saving profile metadata: {GitHubSync.errorMessage bodyOpt}"
-        | HttpResult("github-metadata-push", OutcomeFailure reason) ->
-            state |> withError "githubMetadata" $"Could not reach GitHub to save profile metadata ({reason})."
-        | HttpResult("github-metadata-push", OutcomeCancelled) -> state
-        | HttpResult("github-metadata-push", OutcomeUnknown reason) ->
-            state |> withError "githubMetadata" $"Profile metadata may not have synced to GitHub ({reason})."
+        /// Any non-success outcome for one of the atomic commit's four setup
+        /// steps (ref/base/tree/create — everything before the ref-update
+        /// that actually publishes the change) aborts the chain safely:
+        /// nothing on GitHub has changed yet at any of those points (a
+        /// dangling, unreferenced commit or tree object from a lost
+        /// "create" response is harmless — nothing ever points to it), so
+        /// there is no conflict or reconciliation to run, just an error to
+        /// surface and a fresh retry (from step 1) to let the user request.
+        | HttpResult(("github-commit-ref" | "github-commit-base" | "github-commit-tree" | "github-commit-create"), OutcomeCancelled) ->
+            { state with GitHubSyncStatus = "idle" }
+        | HttpResult(("github-commit-ref" | "github-commit-base" | "github-commit-tree" | "github-commit-create"), OutcomeFailure reason) ->
+            { state with GitHubSyncStatus = "error" } |> withError "githubSync" $"Could not commit to GitHub — nothing was written yet ({reason})."
+        | HttpResult(("github-commit-ref" | "github-commit-base" | "github-commit-tree" | "github-commit-create"), OutcomeUnknown reason) ->
+            { state with GitHubSyncStatus = "error" }
+            |> withError "githubSync" $"Could not confirm a commit step reached GitHub — nothing was written yet ({reason}). Try again."
+        | HttpResult(("github-commit-ref" | "github-commit-base" | "github-commit-tree" | "github-commit-create"), OutcomeSuccess(status, bodyOpt)) when
+            status < 200 || status >= 300
+            ->
+            { state with GitHubSyncStatus = "error" }
+            |> withError "githubSync" $"GitHub returned {status} while committing — nothing was written yet: {GitHubSync.errorMessage bodyOpt}"
+        | HttpResult(("github-commit-ref" | "github-commit-base" | "github-commit-tree" | "github-commit-create"), OutcomeSuccess(_, None)) ->
+            { state with GitHubSyncStatus = "error" } |> withError "githubSync" "GitHub's response while committing had no content."
+
+        /// Step 1 of the atomic multi-file commit (`GitHubSync.buildRefGetEffect`):
+        /// the branch's current commit, needed again at step 4 (the new
+        /// commit's `parents`) — a later, separate `handle` call, so it is
+        /// persisted on `state` rather than threaded through one function.
+        | HttpResult("github-commit-ref", OutcomeSuccess(status, Some body)) when status >= 200 && status < 300 ->
+            match GitHubSync.parseRefResponse body with
+            | Ok commitSha -> { state with GitHubCommitParentSha = Some commitSha; GitHubSyncStatus = "pushing" } |> clearError "githubSync"
+            | Error message -> { state with GitHubSyncStatus = "error" } |> withError "githubSync" $"Could not read the branch's current commit ({message})."
+        /// Steps 2-4 need nothing stored on `state` — `handleMessage`'s
+        /// `commitChainEffects` reads each success's own body directly to
+        /// build the next request, since that always happens in this same
+        /// `handle` call, not a later one.
+        | HttpResult(("github-commit-base" | "github-commit-tree" | "github-commit-create"), OutcomeSuccess(status, Some _)) when status >= 200 && status < 300 ->
+            state |> clearError "githubSync"
 
         /// Unlike `metadata.json`, `settings.json` is round-tripped: applying
         /// it here is what makes a preference set on one device follow the
@@ -576,14 +694,22 @@ module Dispatch =
     /// (`"github-config-load"`) also fires on Initialize, caching whatever
     /// GitHub sync settings were last saved (see `GitHubSync.encodeConfig`).
     /// GitHub itself is only ever reached through `SaveGitHubConfig`
-    /// (identity lookup), a cached config resolving on load, explicit
+    /// (identity lookup), an identity resolving — either a cached `Login`
+    /// found on load or a fresh `"github-whoami"` success — which now always
+    /// follows up with both a settings pull and a ledger pull (no more
+    /// explicit "Pull latest" needed right after signing in), explicit
     /// `PullFromGitHub`/`PushToGitHub`/`SaveSettings`/`SelectReportFormat`
-    /// events, or an auto-push immediately following a mutating command,
-    /// never from an effect result, so at most one GitHub request is ever in
-    /// flight at a time. A ledger push always writes both `ledger.json` and
-    /// `metadata.json` — two independent Contents API calls, not one atomic
-    /// commit (see `GitHubSync.buildMetadataPutEffect`'s doc comment and
-    /// `docs/DOMAIN-REQUIREMENTS.md`'s documented scope).
+    /// events, or an auto-push immediately following a mutating command.
+    /// Every effect list `dom-bindings.js` receives is run sequentially,
+    /// awaiting each request's result before starting the next, so at most
+    /// one GitHub request is ever in flight at a time even when a single
+    /// trigger (like identity resolving) queues more than one. A ledger push
+    /// commits `ledger.json` and `metadata.json` together as one atomic
+    /// write via GitHub's Git Data API (`GitHubSync.buildRefGetEffect`
+    /// through `buildRefUpdateEffect`) — a five-step chain kicked off here
+    /// with just its first step and driven the rest of the way by
+    /// `commitChainEffects`, below, each step's request built from the
+    /// previous step's result.
     let private handleMessage (state: Session.State) (message: BrowserToEngineMessage) : Session.State * EffectRequest list =
         match message with
         | Initialize _ ->
@@ -597,11 +723,6 @@ module Dispatch =
                 @ (match event.Name, newState.GitHubSync with
                    | "SaveGitHubConfig", Some config -> [ StorageEffect("github-config-save", StorageSet(GitHubSync.encodeConfig config), githubConfigStorageKey) ]
                    | _ -> [])
-            let pushEffects (config: Session.GitHubSyncConfig) (login: string) =
-                let now = newState.Environment.Clock()
-                let metadataJson = GitHubSync.buildMetadataJson login config.DisplayName now
-                [ GitHubSync.buildPutEffect config login newState.GitHubDocumentSha (DocumentCodec.encode newState.Document)
-                  GitHubSync.buildMetadataPutEffect config login newState.GitHubMetadataSha metadataJson ]
             let settingsPushEffect (config: Session.GitHubSyncConfig) (login: string) =
                 let settingsJson = GitHubSync.buildSettingsJson newState.ReportFormat newState.Timezone
                 [ GitHubSync.buildSettingsPutEffect config login newState.GitHubSettingsSha settingsJson ]
@@ -612,9 +733,9 @@ module Dispatch =
                     match event.Name, config.Login with
                     | "SaveGitHubConfig", _ -> [ GitHubSync.buildWhoAmIEffect config ]
                     | "PullFromGitHub", Some login -> [ GitHubSync.buildGetEffect config login ]
-                    | "PushToGitHub", Some login -> pushEffects config login
+                    | "PushToGitHub", Some _ -> [ GitHubSync.buildRefGetEffect config ]
                     | ("SaveSettings" | "SelectReportFormat"), Some login -> settingsPushEffect config login
-                    | _, Some login when documentChanged -> pushEffects config login
+                    | _, Some _ when documentChanged -> [ GitHubSync.buildRefGetEffect config ]
                     | _ -> []
             newState, cacheEffects @ githubEffects
         | EffectResultMessage result ->
@@ -623,30 +744,118 @@ module Dispatch =
                 match result with
                 | HttpResult("github-pull", OutcomeSuccess(status, Some _)) when status >= 200 && status < 300 ->
                     [ StorageEffect("save", StorageSet(DocumentCodec.encode newState.Document), storageKey) ]
+                /// The merged document is cached the moment a merge succeeds —
+                /// whether from a push conflict or from reconciling an
+                /// `Unknown` push outcome (recognized either way by the
+                /// status transition to "pushing"; see `handleEffectResult`'s
+                /// "github-push-conflict-pull"/"github-push-reconcile-pull"
+                /// cases) — not only once the retried push confirms, so the
+                /// merge survives a reload even if the retry itself never
+                /// completes.
+                | HttpResult(("github-push-conflict-pull" | "github-push-reconcile-pull"), OutcomeSuccess(status, Some _)) when
+                    status >= 200 && status < 300 && newState.GitHubSyncStatus = "pushing"
+                    ->
+                    [ StorageEffect("save", StorageSet(DocumentCodec.encode newState.Document), storageKey) ]
                 | _ -> []
             /// After a config resolves (fresh from `localStorage`, or just
             /// identified), pick up exactly where it's missing something: no
             /// `Login` yet re-runs the identity lookup; a `Login` already in
-            /// hand goes straight to pulling that person's settings, and a
-            /// freshly-resolved `Login` also re-caches the config (now
-            /// including it) so a future reload skips the lookup entirely.
+            /// hand goes straight to pulling that person's settings *and*
+            /// their ledger (this used to be settings-only — the ledger
+            /// needed an explicit "Pull latest" click even right after
+            /// identity resolved, manifest.md's own documented gap, closed
+            /// here), and a freshly-resolved `Login` also re-caches the
+            /// config (now including it) so a future reload skips the lookup
+            /// entirely.
             let identityEffects =
                 match result with
                 | StorageResult("github-config-load", StorageSuccess(Some _)) ->
                     match newState.GitHubSync with
                     | Some config ->
                         match config.Login with
-                        | Some login -> [ GitHubSync.buildSettingsGetEffect config login ]
+                        | Some login -> [ GitHubSync.buildSettingsGetEffect config login; GitHubSync.buildGetEffect config login ]
                         | None -> [ GitHubSync.buildWhoAmIEffect config ]
                     | None -> []
                 | HttpResult("github-whoami", OutcomeSuccess(status, Some _)) when status >= 200 && status < 300 ->
                     match newState.GitHubSync with
                     | Some config ->
                         [ StorageEffect("github-config-save", StorageSet(GitHubSync.encodeConfig config), githubConfigStorageKey) ]
-                        @ (match config.Login with Some login -> [ GitHubSync.buildSettingsGetEffect config login ] | None -> [])
+                        @ (match config.Login with
+                           | Some login -> [ GitHubSync.buildSettingsGetEffect config login; GitHubSync.buildGetEffect config login ]
+                           | None -> [])
                     | None -> []
                 | _ -> []
-            newState, cacheEffects @ identityEffects
+            /// Drives the auto-merge round trip: a push conflict fetches the
+            /// remote ledger (`buildConflictPullEffect`); once that fetch has
+            /// been merged into the local document (status "pushing"), the
+            /// merged result is retried by restarting the atomic commit
+            /// chain from step 1 (`buildRefGetEffect`) — it will build a
+            /// fresh commit on top of whatever the branch now points at,
+            /// which is exactly what just-fetched-and-merged calls for. If
+            /// that retry conflicts again (another writer raced this one),
+            /// the same two steps repeat — self-healing rather than bounded,
+            /// but each round only proceeds on a genuine new conflict, never
+            /// a busy-loop.
+            let conflictEffects =
+                match result, newState.GitHubSync with
+                | HttpResult("github-push", OutcomeSuccess((409 | 422), _)), Some ({ Login = Some login } as config) ->
+                    [ GitHubSync.buildConflictPullEffect config login ]
+                | HttpResult("github-push-conflict-pull", OutcomeSuccess(status, Some _)), Some { Login = Some _ } when
+                    status >= 200 && status < 300 && newState.GitHubSyncStatus = "pushing"
+                    ->
+                    [ GitHubSync.buildRefGetEffect newState.GitHubSync.Value ]
+                | _ -> []
+            /// Drives the same self-healing round trip as `conflictEffects`,
+            /// but for a push whose outcome came back `Unknown` rather than a
+            /// confirmed conflict: fetch the ledger to classify what happened
+            /// (`buildReconciliationPullEffect`), then — unless that
+            /// classified as `Applied` (`GitHubSyncStatus` already "synced",
+            /// nothing left to retry) — retry by restarting the commit chain,
+            /// same as `conflictEffects`.
+            let reconciliationEffects =
+                match result, newState.GitHubSync with
+                | HttpResult("github-push", OutcomeUnknown _), Some ({ Login = Some login } as config) ->
+                    [ GitHubSync.buildReconciliationPullEffect config login ]
+                | HttpResult("github-push-reconcile-pull", OutcomeSuccess(status, Some _)), Some { Login = Some _ } when
+                    status >= 200 && status < 300 && newState.GitHubSyncStatus = "pushing"
+                    ->
+                    [ GitHubSync.buildRefGetEffect newState.GitHubSync.Value ]
+                | _ -> []
+            /// Drives the atomic commit chain itself, one step per `handle`
+            /// call: each case reads the previous step's own response body
+            /// to build the next request (see each builder's doc comment in
+            /// `GitHubSync.fs` for what step it is). Step 4's `parents` needs
+            /// the commit sha step 1 saw — `newState.GitHubCommitParentSha`,
+            /// stored by `handleEffectResult`'s "github-commit-ref" case —
+            /// since that arrived in an earlier, separate `handle` call.
+            let commitChainEffects =
+                match result, newState.GitHubSync with
+                | HttpResult("github-commit-ref", OutcomeSuccess(status, Some _)), Some { Login = Some _ } when status >= 200 && status < 300 ->
+                    match newState.GitHubCommitParentSha with
+                    | Some parentSha -> [ GitHubSync.buildCommitGetEffect newState.GitHubSync.Value parentSha ]
+                    | None -> []
+                | HttpResult("github-commit-base", OutcomeSuccess(status, Some body)), Some ({ Login = Some login } as config) when
+                    status >= 200 && status < 300
+                    ->
+                    match GitHubSync.parseCommitBaseTreeResponse body with
+                    | Ok baseTreeSha ->
+                        let metadataJson = GitHubSync.buildMetadataJson login config.DisplayName (newState.Environment.Clock())
+                        [ GitHubSync.buildTreeCreateEffect config login baseTreeSha (DocumentCodec.encode newState.Document) metadataJson ]
+                    | Error _ -> []
+                | HttpResult("github-commit-tree", OutcomeSuccess(status, Some body)), Some ({ Login = Some _ } as config) when
+                    status >= 200 && status < 300
+                    ->
+                    match GitHubSync.parseShaResponse body, newState.GitHubCommitParentSha with
+                    | Ok newTreeSha, Some parentSha -> [ GitHubSync.buildCommitCreateEffect config newTreeSha parentSha ]
+                    | _ -> []
+                | HttpResult("github-commit-create", OutcomeSuccess(status, Some body)), Some ({ Login = Some _ } as config) when
+                    status >= 200 && status < 300
+                    ->
+                    match GitHubSync.parseShaResponse body with
+                    | Ok newCommitSha -> [ GitHubSync.buildRefUpdateEffect config newCommitSha ]
+                    | Error _ -> []
+                | _ -> []
+            newState, cacheEffects @ identityEffects @ conflictEffects @ reconciliationEffects @ commitChainEffects
 
     /// `messageJson`/return value are JSON strings matching
     /// `BrowserToEngineMessage`/`EngineToBrowserMessage` — see Protocol.fs.

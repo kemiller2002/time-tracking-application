@@ -194,3 +194,72 @@ remembering to run it by hand.
   cost, wall-clock authoring time) — unchanged from §7's original
   reasoning: this session has no harness-telemetry access to its own
   execution history. Evidence class: **NOT OBSERVABLE**.
+
+## Addendum 2: closing GitHub-sync's documented gaps
+
+manifest.md's Known gaps (after PR #17/#18) named six items, each explicitly
+documented as a deliberate scope decision rather than an oversight: no
+architecture/boundary check, no automatic ledger pull, no merge on push
+conflict, no reconciliation for an `Unknown` push outcome, no atomic
+multi-file commit, and no CI job building the WASM bundle. This pass closes
+all six, plus records this addendum itself as the request explicitly asked.
+
+### What changed
+
+| File | Lines changed | What |
+|---|---|---|
+| `tools/check-architecture.mjs` | +102 (new) | Domain purity + `data-event`/`Dispatch.fs` boundary-agreement check |
+| `f-sharp/src/Ledger.Domain/Model.fs` | +25 | `LedgerDocument.merge` — pure, per-activity last-write-wins |
+| `f-sharp/src/Ledger.Engine/GitHubSync.fs` | +149/-24 | Git Data API chain (ref/commit/tree/create), conflict/reconciliation pull builders |
+| `f-sharp/src/Ledger.Engine/Dispatch.fs` | +299/-84 | Auto-pull-on-identity, auto-merge on conflict, reconciliation on `Unknown`, commit-chain orchestration |
+| `f-sharp/src/Ledger.Engine/Session.fs` | +24/-11 | `GitHubCommitParentSha` (replacing `GitHubMetadataSha`, no longer needed once metadata is committed atomically) |
+| `f-sharp/tests/Ledger.Domain.Specs/Program.fs` | +43 | 4 new `LedgerDocument.merge` specs |
+| `f-sharp/tests/Ledger.Engine.Specs/Program.fs` | +236/-97 | New/rewritten specs for auto-pull, merge-on-conflict, reconciliation, and the full commit chain |
+| `.github/workflows/fsharp-specs.yml` | +36/-8 | `check:architecture` folded into `npm test`; new `build-wasm` job (`dotnet workload install wasm-tools`) |
+| `docs/DOMAIN-REQUIREMENTS.md`, `manifest.md` | +159/-105 | Implementation section and Known gaps rewritten to describe, not aspire to, the above |
+
+**Total (this pass, uncommitted at time of writing):** 11 files touched,
++795/-179 lines (`git diff --stat origin/main`), plus the new
+`tools/check-architecture.mjs` file.
+
+### Test growth
+
+| | Before this pass | After | Change |
+|---|---|---|---|
+| `Ledger.Domain.Specs` | 49 | 53 | **+4** |
+| `Ledger.Engine.Specs` | 38 | 44 | **+6** (several existing specs also rewritten in place, not counted as new) |
+| **Total F# specs** | 87 | 97 | **+10** |
+
+Evidence class: **SELF-REPORT** (`npm run test` — architecture check +
+both spec projects — re-run green after each of the six items landed).
+
+### Verification beyond the spec suite
+
+- A clean `dotnet publish -c Release` (via `npm run build:wasm`) from a
+  fully wiped `bin`/`obj` tree, confirming the workload/AOT/trim pipeline
+  still succeeds after the atomic-commit refactor and matching what the
+  new CI job now runs.
+- A real-browser Playwright run (ad hoc, per this repo's established
+  practice — not a committed suite) against the built bundle, with
+  `api.github.com` mocked via request routing rather than fetch
+  monkey-patching: identity resolves, the ledger and settings both
+  auto-pull (404 → "nothing there yet"), a manually-created activity
+  walks the real `fetch()` bridge through all five commit-chain requests
+  (`GET ref` → `GET commit` → `POST trees` → `POST commits` → `PATCH ref`)
+  with correct bodies (`base_tree`, both file paths present, `parents`
+  matching the original commit), and the sync status ends at `synced`
+  with zero page errors. Merge-on-conflict and reconciliation were not
+  separately re-verified in-browser, on the basis that they change only
+  `Dispatch.handle`'s response to a given `EffectResult` — the same JSON
+  contract the engine spec suite already drives directly, and this
+  browser run confirms nothing about the transport (`fetch`, JSON
+  encoding, method support including `PATCH`) is transport-specific to
+  the success path alone.
+
+### Not measured this pass
+
+- **WASM artifact size** — not re-recorded against the §6 baseline; this
+  pass adds no new WASM-side dependencies. Evidence class: **NOT
+  OBSERVABLE**.
+- **Engineering-process metrics** — unchanged from §7's/Addendum 1's
+  reasoning. Evidence class: **NOT OBSERVABLE**.

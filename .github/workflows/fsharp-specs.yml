@@ -1,16 +1,22 @@
 name: F# specs
 
 # Runs this repo's own documented test command (package.json's "test"
-# script) on every push/PR — until now, `Ledger.Domain.Specs`/
-# `Ledger.Engine.Specs` were only ever run by hand in whatever session
-# happened to be making a change (see manifest.md's Known gaps: "no
-# automated architecture/boundary check exists"). This doesn't add either
-# of those checks; it closes the more basic gap of there being no CI at
-# all, so a regression is caught before merge instead of by inspection.
+# script) on every push/PR: the architecture/boundary check
+# (tools/check-architecture.mjs — Tier 1/2 purity + every web/index.html
+# data-event has a matching Dispatch.fs case) followed by
+# `Ledger.Domain.Specs`/`Ledger.Engine.Specs`. Until now neither ran in CI
+# at all, and no automated architecture/boundary check existed independent
+# of the specs' own behavior tests — both gaps manifest.md's Known gaps
+# used to flag; this workflow (plus the check script) closes them.
 #
-# Deliberately scoped to the spec projects only, not a full WASM publish
-# (`npm run build:wasm`) — that needs the Emscripten/wasm-tools workload
-# installed, a heavier job left for a future addition if it's wanted.
+# A second job builds the actual browser-wasm bundle (`npm run build:wasm`)
+# — the spec suite exercises `Dispatch.handle` directly and never runs the
+# real `dotnet publish` pipeline, so a break in the WASM-specific project
+# shape (`Ledger.Wasm.csproj`'s `Microsoft.NET.Sdk.WebAssembly`, its
+# `[JSExport]` shim, or the `wasm-tools` workload's own trimming/AOT step)
+# could pass every spec and still fail to produce a working bundle. That
+# needs the `wasm-tools` workload installed, which is why it is a separate
+# job rather than a step in the one above.
 
 on:
   push:
@@ -25,4 +31,14 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"
-      - run: npm run test:fsharp
+      - run: npm run test
+
+  build-wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - run: dotnet workload install wasm-tools
+      - run: npm run build:wasm

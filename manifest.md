@@ -43,23 +43,38 @@ cannot import Tier 3/4 even by accident).
   `HttpEffect` (the GitHub REST API, live once the user configures sync
   from the More screen; built/parsed by
   `f-sharp/src/Ledger.Engine/GitHubSync.fs`, routed by `Dispatch.fs`'s
-  `"github-whoami"`/`"github-pull"`/`"github-push"`/`"github-metadata-push"`/
-  `"github-settings-pull"`/`"github-settings-push"` cases).
+  `"github-whoami"`/`"github-pull"`/`"github-push"`/`"github-push-conflict-pull"`/
+  `"github-push-reconcile-pull"`/`"github-commit-ref"`/`"github-commit-base"`/
+  `"github-commit-tree"`/`"github-commit-create"`/`"github-settings-pull"`/
+  `"github-settings-push"` cases). `ledger.json`/`metadata.json` are
+  committed together as one atomic write via GitHub's Git Data API
+  (`"github-commit-ref"` through `"github-commit-create"`, terminating in
+  a ref move still reported as `"github-push"`) rather than as two
+  independent Contents API PUTs; `settings.json` alone still goes through
+  a plain Contents API PUT, since it is never written at the same moment
+  as the ledger. A push conflict (409, or the commit chain's 422
+  non-fast-forward) auto-merges (`LedgerDocument.merge`) and retries; an
+  `Unknown` push outcome is reconciled the same way after classifying it
+  (`Ledger.Domain.Services.ReconciliationStatus`'s vocabulary) against
+  what was attempted.
   `GitHubSync.dataFilePath`/`metadataFilePath`/`settingsFilePath` confine
   every sync to `<folder>/<login>/{ledger,metadata,settings}.json` inside
   the configured repo — never the repo root, a user-chosen filename, or a
   file shared by more than one person, since neither the repo nor a folder
   inside it are ever assumed to belong to this app (or one person) alone.
   `<login>` comes only from a `GET /user` call against the saved token
-  (`"github-whoami"`), never a typed name; `settings.json`
-  (`{reportFormat, timezone}`) is the one file this app both writes *and*
-  reads back, applying it to the session on load so a preference follows
-  the person across devices. `f-sharp/src/Ledger.Domain/Services.fs`'s
+  (`"github-whoami"`), never a typed name; the ledger and `settings.json`
+  (`{reportFormat, timezone}`) both pull automatically once identity
+  resolves — `settings.json` applied to the session so a preference
+  follows the person across devices, the ledger replacing the in-memory
+  document the same way an explicit "Pull latest" would.
+  `f-sharp/src/Ledger.Domain/Services.fs`'s
   `LedgerStore` (a named, unimplemented `Async`-shaped port for a future
   in-process backend adapter — not on the live path; GitHub sync is built
   through the effect-request/effect-result mechanism instead, since the
-  WASM↔browser boundary is a single synchronous round-trip per message; see
-  Known gaps).
+  WASM↔browser boundary is a single synchronous round-trip per message).
+  Its `ReconciliationStatus` vocabulary, though, is live: it's what the
+  `Unknown`-push reconciliation path above classifies against.
 - **Presentation state**: `f-sharp/src/Ledger.Engine/Session.fs`'s `Draft` (the
   only presentation-shaped state, and it still lives in Tier 3, not the
   browser — the browser (Tier 4) holds no state of its own beyond what
@@ -92,7 +107,17 @@ cannot import Tier 3/4 even by accident).
   then a real-browser check (this repository's own verification used
   Playwright against `http://localhost:4321/web/index.html` — create,
   reload-persistence, overlap rejection, split, merge, evidence
-  attach/detach, attest + amended-after-review, all three report formats).
+  attach/detach, attest + amended-after-review, all three report formats,
+  and — with `api.github.com` mocked via Playwright's request routing —
+  the full atomic multi-file commit chain end to end: identity resolves,
+  the ledger and settings auto-pull, a created activity walks the real
+  `fetch()` bridge through ref/base/tree/create/ref-update, and the sync
+  status ends at `synced`).
+- **Architecture/boundary check**: `npm run check:architecture`
+  (`tools/check-architecture.mjs`) — Tier 1/2 purity (no JSON/WASM/
+  browser/HTTP references under `Ledger.Domain`) and boundary agreement
+  (every `data-event` in `web/index.html` has a matching `Dispatch.fs`
+  case); runs as part of `npm test` and in CI.
 
 ## Dependencies
 
@@ -137,38 +162,19 @@ cannot import Tier 3/4 even by accident).
   shared repo, not this app becoming multi-tenant within one session).
 - Last checked against implementation: 2026-09-12.
 - Known gaps:
-  - No automated architecture check (an equivalent of
-    `check-semantic-architecture.sh`) enforces the Tier 1→4 dependency
-    direction beyond `ProjectReference` structure; a Tier 1/2 file could
-    still `open System.Text.Json` or similar without any check failing today.
-  - No automated boundary/contract agreement check exists independent of
-    `Ledger.Engine.Specs`'s behavior tests (e.g., nothing mechanically
-    checks that every `data-event` name in `web/index.html` has a matching
-    case in `Dispatch.fs`'s `handleEvent`).
   - `Services.fs`'s `LedgerStore` port stays an unused, documented extension
     point — GitHub sync (built after this manifest's earlier version) went
     through `Protocol.fs`'s effect-request/effect-result mechanism instead
     (`GitHubSync.fs` + `Dispatch.fs`), since `LedgerStore`'s `Async`-shaped
     port doesn't fit the WASM↔browser boundary's single-synchronous-
-    round-trip-per-message shape. `Protocol.fs`'s `StorageOutcome` still has
-    its `StorageUnknown` case unreachable from today's synchronous
-    `localStorage` host — unlike `Http`, `Storage` has no network-backed
-    implementation, so this case stays a satisfied-in-shape, not-yet-
-    producible conformance point.
-  - GitHub sync has no background/automatic pull of the *ledger* (only an
-    explicit "Pull latest" — `settings.json` is the one exception, pulled
-    automatically once identity resolves), no merge of concurrent edits (a
-    pull replaces the document outright; a push conflict — a stale `sha`,
-    surfaced as GitHub's own 409 — must be resolved by pulling first, not
-    auto-merged), no reconciliation queue for a request whose outcome came
-    back `unknown` (the user is told to pull and check, not offered an
-    automatic retry-and-confirm flow), and no atomic multi-file commit
-    (`ledger.json`/`metadata.json`/`settings.json` are three independent
-    Contents API writes, so one can fail or lag another without losing the
-    others' data, but their histories aren't guaranteed to move together).
-    All are documented, deliberate scope decisions in
-    [`docs/DOMAIN-REQUIREMENTS.md`](docs/DOMAIN-REQUIREMENTS.md)'s
-    Implementation section, not gaps discovered after the fact.
+    round-trip-per-message shape. Its `ReconciliationStatus` vocabulary is
+    honored in spirit by the `Unknown`-push reconciliation path (see
+    `docs/DOMAIN-REQUIREMENTS.md`'s Implementation section), even though
+    `LedgerStore` itself is never called. `Protocol.fs`'s `StorageOutcome`
+    still has its `StorageUnknown` case unreachable from today's
+    synchronous `localStorage` host — unlike `Http`, `Storage` has no
+    network-backed implementation, so this case stays a satisfied-in-shape,
+    not-yet-producible conformance point.
   - The GitHub personal access token lives in this browser's `localStorage`
     (its own key, `GitHubSync.encodeConfig`/`decodeConfig`, separate from
     the synced document, never echoed into the rendered view) — by the

@@ -278,3 +278,28 @@ type LedgerDocument =
 
 module LedgerDocument =
     let empty = { SchemaVersion = 1; Activities = []; Attestations = []; EventSequence = 0L }
+
+    /// Combines two documents that diverged from a common ancestor — this
+    /// browser's local edits and whatever GitHub currently holds, on a push
+    /// conflict (a stale `sha`, GitHub's own 409) — into one, so the conflict
+    /// can be resolved automatically instead of forcing the user to pull and
+    /// redo their edit. Per-activity last-write-wins: the higher `Version`
+    /// for a given `ActivityId` wins outright, never a field-by-field mix —
+    /// `Commands.fs`'s optimistic concurrency already treats an Activity as
+    /// one versioned unit, so a merge that keeps that unit intact is the only
+    /// choice that can't silently produce a value neither side ever actually
+    /// held. Attestations union by `AttestationId` (an attestation is never
+    /// amended, so there is no version to compare — a shared id is
+    /// definitionally the same attestation). `EventSequence` becomes the
+    /// higher of the two, since it is a monotonic counter, not a
+    /// per-activity version.
+    let merge (a: LedgerDocument) (b: LedgerDocument) : LedgerDocument =
+        let mergedActivities =
+            (a.Activities @ b.Activities)
+            |> List.groupBy (fun activity -> activity.ActivityId)
+            |> List.map (fun (_, versions) -> versions |> List.maxBy (fun activity -> activity.Version))
+        let mergedAttestations = (a.Attestations @ b.Attestations) |> List.distinctBy (fun attestation -> attestation.AttestationId)
+        { SchemaVersion = max a.SchemaVersion b.SchemaVersion
+          Activities = mergedActivities
+          Attestations = mergedAttestations
+          EventSequence = max a.EventSequence b.EventSequence }
