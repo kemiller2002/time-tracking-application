@@ -3,6 +3,7 @@ import { ServiceError, requireField } from './errors.js';
 const clone = value => structuredClone(value);
 const iso = value => new Date(value).toISOString();
 const version = seq => `v${seq}`;
+const MIN_RECORDABLE_TIMER_MS = 30000;
 
 export class MemoryLedgerStore {
   constructor({ now = () => Date.now() } = {}) { this.now = now; this.events = []; this.timers = new Map(); this.requests = new Map(); this.attestations = []; }
@@ -24,7 +25,8 @@ export class MemoryLedgerStore {
   stopTimer(owner) {
     const timer=this.#timer(owner); const stoppedAt=this.now(); const end=timer.paused_at?Date.parse(timer.paused_at):stoppedAt; const exactMs=Math.max(0,end-Date.parse(timer.started_at)-timer.paused_ms);
     this.timers.delete(owner);
-    return { ...clone(timer), status:'stopped', stopped_at:iso(stoppedAt), exact_duration_ms:exactMs, exact_minutes:Number((exactMs/60000).toFixed(4)) };
+    const discarded=exactMs<MIN_RECORDABLE_TIMER_MS;
+    return { ...clone(timer), status:discarded?'discarded':'stopped', stopped_at:iso(stoppedAt), exact_duration_ms:exactMs, exact_minutes:Number((exactMs/60000).toFixed(4)), discarded };
   }
   #timer(owner){const timer=this.timers.get(owner);if(!timer)throw new ServiceError('timer_not_found','No active timer exists.',{status:404});return timer;}
   createActivity(input, actor='owner') {
