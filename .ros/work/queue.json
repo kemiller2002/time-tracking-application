@@ -542,14 +542,14 @@
     },
     {
       "id": "WI-0034",
-      "title": "TE-034 Resolve OQ-5 (who the actor is on a browser change) — sign-in.html and settings.html exist but no document states where identity comes from; revisions are attributed to the literal 'browser' until it is settled",
+      "title": "TE-034 Resolve OQ-6 (who the actor is on a browser change) — sign-in.html and settings.html exist but no document states where identity comes from; revisions are attributed to the literal 'browser' until it is settled",
       "description": null,
       "tags": [],
       "priority": "medium",
       "status": "captured",
       "attachments": [],
       "createdAt": "2026-09-12T00:56:51Z",
-      "updatedAt": "2026-09-12T00:56:51Z",
+      "updatedAt": "2026-09-12T01:00:24Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null

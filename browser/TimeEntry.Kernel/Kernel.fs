@@ -62,7 +62,7 @@ let private displayTime (hours: int) (minutes: int) =
 ///
 /// Two cases the screens never showed — a removed entry and a superseded one
 /// — are worded here as "Removed" and "Replaced", following `remove.html`
-/// ("Remove from totals"). That is a gap in the design, recorded as OQ-6
+/// ("Remove from totals"). That is a gap in the design, recorded as OQ-7
 /// rather than presented as settled.
 let private badgeView (badge: EntryBadge) : string * string =
     match badge with
@@ -417,7 +417,7 @@ let private optionalText (node: JsonNode) (name: string) =
 ///
 /// Actor and device are the browser session. Identity is genuinely
 /// unresolved in this slice — there is no sign-in — and is recorded as an
-/// open question rather than invented (OQ-5).
+/// open question rather than invented (OQ-6).
 let private attributionOf (command: JsonNode) (revisionId: string) : Result<Attribution, string> =
     let occurredAt =
         match command.["occurredAtMs"] with

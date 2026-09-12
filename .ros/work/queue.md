@@ -36,4 +36,4 @@
 | WI-0031 | TE-031 Kernel command dispatch: browser submits commands, F# decides, effects returned as data | complete |  | medium |
 | WI-0032 | TE-032 Kernel dispatch for the remaining transitions: correct, split, merge, restore, attach evidence | captured |  | medium |
 | WI-0033 | TE-033 Perform effects: wire TimeEntry.GitHub's interpreter behind the browser so PersistNewEntry/PersistVoid actually reach the repository, with the version token returned to the page | captured |  | medium |
-| WI-0034 | TE-034 Resolve OQ-5 (who the actor is on a browser change) — sign-in.html and settings.html exist but no document states where identity comes from; revisions are attributed to the literal 'browser' until it is settled | captured |  | medium |
+| WI-0034 | TE-034 Resolve OQ-6 (who the actor is on a browser change) — sign-in.html and settings.html exist but no document states where identity comes from; revisions are attributed to the literal 'browser' until it is settled | captured |  | medium |
