@@ -23,8 +23,8 @@ and ROS forbids marking work complete merely because code exists, so the
 Evidence column is only `**VERIFIED**` where something actually ran:
 
 ```
-dotnet test TimeEntry.sln    271 passed, 0 failed
-npm run check:browser        108 checks passed in headless Chromium
+dotnet test TimeEntry.sln    276 passed, 0 failed
+npm run check:browser        111 checks passed in headless Chromium
 check-domain-architecture    0 tier-boundary violations
 ```
 
@@ -83,7 +83,7 @@ it, and no row below claims otherwise.
 | TE-R-042 | Negative children refused | Same constructor guard | WI-0013 | `Duration.ofSeconds` | same | **VERIFIED** |
 | TE-R-043 | Auditable lineage | Child records `CreatedBySplitOf` | WI-0013 | `Transitions.splitEntry` | `TransitionTests` "a split child records its lineage to the source" | **VERIFIED** |
 | TE-R-044 | Preview before save | Preview computed in F#, exact not billed, and cannot disagree with the transition | WI-0036 | `Kernel.splitPreview` | `KernelTests` 6 cases incl. "a preview agrees with the transition that follows it"; 6 browser checks | **VERIFIED** |
-| TE-R-045 | Evidence reassignment | `SplitChild.ReassignedEvidence` | WI-0013 | `Commands.SplitChild` | — | **STRUCTURAL ONLY.** The field exists and the transition honours it, but the browser always sends an empty list: choosing which evidence moves to which child is a UI affordance that is not built. WI-0049 |
+| TE-R-045 | Evidence reassignment | `SplitChild.ReassignedEvidence`, offered per part in the page | WI-0013, WI-0049, WI-0051 | `Commands.SplitChild`, `Guards.requireReassignedEvidenceExists`, `main.js` `chosenEvidence` | `SplitTests` 5 cases (moves it, cannot invent it, cannot relabel it, two children may share it, the source keeps it); 3 browser checks | **VERIFIED** |
 | TE-R-046 | Stale source refused | `VersionConflict` | WI-0016 | `requireVersion` | `TransitionTests` "a split against a stale source version is refused" | **VERIFIED** |
 
 ## D–E. Correction, void, restore semantics
@@ -150,14 +150,14 @@ it, and no row below claims otherwise.
 | Category | Count |
 |---|---|
 | Requirements inventoried | 66 |
-| Rows marked **VERIFIED** by an executed test | **63** |
-| Structural only — the field exists, the affordance does not (TE-R-045) | 1 |
+| Rows marked **VERIFIED** by an executed test | **64** |
+| Structural only — the field exists, the affordance does not | 0 |
 | Partially verified — every layer exercised, never against a real repository (TE-R-099) | 1 |
 | **NOT IMPLEMENTED**, and said so rather than left implicit (TE-R-008) | 1 |
 
 ```
-dotnet test TimeEntry.sln    271 passed, 0 failed
-npm run check:browser        108 checks passed in headless Chromium
+dotnet test TimeEntry.sln    276 passed, 0 failed
+npm run check:browser        111 checks passed in headless Chromium
 npm run check                 20 passed
 check-domain-architecture      0 tier-boundary violations, adversarially
                                validated against seven injected violations
@@ -165,7 +165,7 @@ ros validate / registry        pass
 ```
 
 The counts above are produced by classifying each requirement row's Evidence
-cell — 63 + 1 + 1 + 1 = 66, which is the check that matters: every inventoried
+cell — 64 + 0 + 1 + 1 = 66, which is the check that matters: every inventoried
 requirement is in exactly one category, and none has quietly fallen out of the
 table.
 
@@ -188,8 +188,6 @@ be right. Counting rows rather than words is the fix.
 
 - **Requirements whose verification is weaker than it looks, stated here so
   the table is not read as stronger than it is:**
-  - TE-R-045 (evidence reassignment on split) is structural only: the field
-    and the transition exist, but the browser always sends an empty list.
   - TE-R-099 (GitHub backend) exercises every layer — credential, transport,
     interpreter, kernel, page — but never against a real repository.
   - TE-R-112's touch-target check measures the *effective* target, so a

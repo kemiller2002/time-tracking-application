@@ -88,10 +88,13 @@ let private displayExact (milliseconds: int64) =
 /// Adopting it rather than inventing new words keeps one design authority
 /// (DF-TE-0008).
 ///
-/// Two cases the screens never showed — a removed entry and a superseded one
-/// — are worded here as "Removed" and "Replaced", following `remove.html`
-/// ("Remove from totals"). That is a gap in the design, recorded as OQ-7
-/// rather than presented as settled.
+/// Two cases the screens never showed are a removed entry and a superseded
+/// one. The user has settled the first: a removed entry is labelled "Removed"
+/// (DF-TE-0014, resolving OQ-7). The second was not named in that answer, so
+/// "Replaced" remains this kernel's reading of `remove.html`'s "Remove from
+/// totals" vocabulary rather than a stated word — recorded as OQ-12, and kept
+/// distinct from "Removed" because a superseded entry has a successor and a
+/// removed one does not.
 let private badgeView (badge: EntryBadge) : string * string =
     match badge with
     | TimedEntry -> "Timer", "badge-good"
@@ -544,10 +547,13 @@ let entryHistory (requestJson: string) : string =
 /// `Obligation.blocksAttestation` — and this reports it rather than repeating
 /// it.
 ///
-/// One check on that screen is NOT here: "No overlapping time". The domain
-/// models an entry's DURATION, not its interval — there is no start or end on
-/// an entry — so overlap is not computable from what is stored, and a tick
-/// beside it would be an assurance nothing checked. OQ-10 records that.
+/// One check on that screen is NOT here: "No overlapping time". The user has
+/// settled OQ-10 — overlapping recorded time is NOT a defect, because time is
+/// recorded in six-minute units and two units can legitimately cover the same
+/// stretch of clock (DF-TE-0013). There is therefore nothing for the check to
+/// fail, and no row is emitted: a permanent tick would imply a test that runs.
+/// Reconciling genuinely double-counted time is deferred work (WI-0052), not a
+/// daily check.
 let reviewDay (requestJson: string) : string =
     try
         match JsonNode.Parse requestJson with

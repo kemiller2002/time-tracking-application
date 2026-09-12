@@ -236,6 +236,30 @@ let ``a split may not relabel the evidence it moves`` () =
     | other -> failwithf "expected EvidenceNotOnSource, got %A" other
 
 [<Fact>]
+let ``two children may claim the same piece of evidence`` () =
+    // DF-TE-0012, resolving OQ-11: one document can support both halves of a
+    // session, so reassignment copies rather than partitions. Both children
+    // end up holding the item, and neither claim is refused.
+    let source, item = withEvidence "https://example.invalid/brief.pdf" (persistedEntry "e1" (minutes 30) "sha-1")
+
+    let outcome =
+        splitEntry
+            catalogue
+            { EntryId = entryId "e1"
+              ExpectedVersion = version "sha-1"
+              Children =
+                [ { splitChild "e1a" (minutes 12) with ReassignedEvidence = [ item ] }
+                  { splitChild "e1b" (minutes 18) with ReassignedEvidence = [ item ] } ]
+              Attribution = attribution "e1-split" }
+            source
+
+    let entries, _ = accepted outcome
+    let child id = entries |> List.find (fun e -> e.Id = entryId id)
+
+    Assert.Equal<EvidenceRef list>([ item ], (child "e1a").Effective.Evidence)
+    Assert.Equal<EvidenceRef list>([ item ], (child "e1b").Effective.Evidence)
+
+[<Fact>]
 let ``the superseded source keeps the evidence it had`` () =
     // TE-R-030: nothing is removed from a record that is being superseded.
     // The child gains a copy; the source's own history is untouched.

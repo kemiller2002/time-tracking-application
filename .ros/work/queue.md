@@ -52,4 +52,6 @@
 | WI-0047 | TE-047 Word each rejection explicitly instead of sprintf %A — TE-R-053 requires it, and it is what now blocks trimming | complete |  | medium |
 | WI-0048 | TE-048 Warn on device/server clock skew (TE-R-008) — needs a decision on where authoritative time comes from | captured |  | medium |
 | WI-0049 | TE-049 Evidence reassignment affordance on split (TE-R-045 is structural only) | complete |  | medium |
-| WI-0050 | TE-050 Attribute the branch's build and configuration files, and make the local ROS gate match CI's | ready |  | medium |
+| WI-0050 | TE-050 Attribute the branch's build and configuration files, and make the local ROS gate match CI's | complete |  | medium |
+| WI-0051 | TE-051 Record the answers to OQ-7, OQ-10 and OQ-11 and verify the behaviour they settle | active |  | medium |
+| WI-0052 | TE-052 Reconcile genuinely double-counted time (deferred by DF-TE-0013; needs start/end times on an entry) | captured |  | medium |

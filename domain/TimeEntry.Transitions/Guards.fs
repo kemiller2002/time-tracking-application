@@ -53,9 +53,10 @@ let requireVersion (expected: VersionToken) (entry: TimeEntry) : Result<unit, Re
 /// A relabelling is a different intention and should look like one.
 ///
 /// Deliberately NOT checked here: whether two children may claim the same
-/// item. The same document can genuinely support two pieces of work, and no
-/// repository requirement says otherwise, so forbidding it would be inventing
-/// a rule (recorded as OQ-11).
+/// item. The user has settled OQ-11 — two children MAY claim the same piece of
+/// evidence, because one document can genuinely support both halves of a
+/// session (DF-TE-0012). Reassignment therefore copies, it does not partition,
+/// and a test asserts that two children claiming one item is accepted.
 let requireReassignedEvidenceExists
     (source: EntryFacts)
     (children: SplitChild list)

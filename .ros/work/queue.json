@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "repository": "time-tracking-application",
-  "nextSeq": 51,
+  "nextSeq": 53,
   "items": [
     {
       "id": "WI-0001",
@@ -774,6 +774,34 @@
       "attachments": [],
       "createdAt": "2026-09-12T02:57:44Z",
       "updatedAt": "2026-09-12T02:57:44Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0051",
+      "title": "TE-051 Record the answers to OQ-7, OQ-10 and OQ-11 and verify the behaviour they settle",
+      "description": null,
+      "tags": [],
+      "priority": "medium",
+      "status": "ready",
+      "attachments": [],
+      "createdAt": "2026-09-12T16:24:05.420Z",
+      "updatedAt": "2026-09-12T16:24:13Z",
+      "createdBy": "unknown",
+      "source": "manual",
+      "sourceReference": null
+    },
+    {
+      "id": "WI-0052",
+      "title": "TE-052 Reconcile genuinely double-counted time (deferred by DF-TE-0013; needs start/end times on an entry)",
+      "description": null,
+      "tags": [],
+      "priority": "medium",
+      "status": "captured",
+      "attachments": [],
+      "createdAt": "2026-09-12T16:25:55.974Z",
+      "updatedAt": "2026-09-12T16:25:55.974Z",
       "createdBy": "unknown",
       "source": "manual",
       "sourceReference": null

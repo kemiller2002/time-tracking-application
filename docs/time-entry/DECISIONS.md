@@ -592,3 +592,108 @@ because no number of attempts makes a credential appear.
 - A token held in a browser is readable by anyone with the page. That is a
   property of the mechanism chosen, not of this port, and is the reason the
   port exists: the proxy option remains available without a rewrite.
+
+---
+
+## DF-TE-0012
+
+**Title:** Evidence reassignment on split copies; it does not partition
+
+**Status:** accepted · **Resolves:** `OQ-11` · **Source:** explicit user instruction
+
+### Decision
+
+Two split children MAY claim the same piece of evidence.
+
+### Why this was a question
+
+A split reassigns the source's evidence to its children. Two readings were
+both defensible and the repository stated neither: reassignment as a *move*
+(each item lands on exactly one child) or as a *copy* (an item may support
+several). One brief plausibly covers both halves of a session; equally
+plausibly the point of reassignment is to say which half each document
+supports.
+
+`Guards.requireReassignedEvidenceExists` therefore checked only that a
+claimed item exists on the source — the part both readings agree on — and left
+the stricter rule uninvented.
+
+### Consequences
+
+- The guard is unchanged. The permissive reading was already the implemented
+  one *by omission*; it is now the implemented one *by decision*, which is a
+  different thing and is why a test now asserts it: `two children may claim the
+  same piece of evidence` fails if a uniqueness check is ever added without
+  this decision being revisited.
+- The whole-item match stays. Sharing an item is permitted; silently editing it
+  on the way through still is not (`a split may not relabel the evidence it
+  moves`).
+- Evidence coverage counts entries holding evidence, not distinct documents, so
+  a shared item raises coverage on both children. That follows from the
+  decision rather than qualifying it: both children genuinely are supported by
+  that document.
+
+---
+
+## DF-TE-0013
+
+**Title:** Overlapping recorded time is not a defect
+
+**Status:** accepted · **Resolves:** `OQ-10` · **Source:** explicit user instruction
+
+### Decision
+
+Overlapping recorded time is **not** a defect. `review.html`'s "No overlapping
+time" row is not implemented, and no row stands in its place.
+
+The user's reasoning, recorded because it is the substance of the decision:
+time is recorded in six-minute units, so two records can legitimately cover
+the same stretch of clock. Genuine double-counting is to be reconciled later,
+not caught by a daily check.
+
+### Why no row appears
+
+A row reading "No overlapping time · Clear" would report the result of a test
+that never ran. The domain models an entry's **duration**, not its interval —
+entries carry no start or end — so overlap is not computable from what is
+stored even if it were a defect. Emitting a permanent tick is the one outcome
+worse than emitting nothing: it is an assurance with nothing behind it.
+
+### Consequences
+
+- `Kernel.reviewDay` emits three checks, not four, and says why in place.
+- TE-R-083 is satisfied by the checks that exist rather than left partial: the
+  requirement is that the review screen state the day's checks, and "no
+  overlapping time" is no longer one of them.
+- Reconciling double-counted time is deferred work, captured as a backlog item
+  rather than left as an open question. It needs start and end times on an
+  entry, which is a change to Tier 1, and nothing has asked for that yet.
+
+---
+
+## DF-TE-0014
+
+**Title:** A removed entry is labelled "Removed"
+
+**Status:** accepted · **Resolves:** `OQ-7` (partially — see `OQ-12`) · **Source:** explicit user instruction
+
+### Decision
+
+An entry removed from totals is labelled **"Removed"** in a list.
+
+### What is still not stated
+
+OQ-7 asked about a removed **or replaced** entry; the answer named one. The
+superseded case keeps the kernel's existing reading, "Replaced", and the
+narrower question is re-filed as `OQ-12` rather than treated as answered by
+extension. The two are kept distinct because a superseded entry has a
+successor to navigate to and a removed one does not — collapsing them would
+lose that from the list, which is the one place a reader sees both.
+
+### Consequences
+
+- `badgeView` is unchanged: `VoidedBadge -> "Removed", "badge-warn"`. As with
+  DF-TE-0012, what changes is that the word is now stated rather than inferred.
+- `Kernel.changeWording` continues to render the fuller "Removed from totals"
+  on a detail screen, where there is room for it. The badge is the list label
+  this decision fixes.
