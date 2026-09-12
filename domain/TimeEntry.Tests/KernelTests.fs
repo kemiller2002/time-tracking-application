@@ -405,3 +405,107 @@ let ``every command kind the page can send reaches a transition`` () =
     for case in cases do
         let result = answer [ existing ] case
         Assert.Equal("true", field result "ok")
+
+// ---------------------------------------------------------------------------
+// Split preview
+// ---------------------------------------------------------------------------
+//
+// The preview exists because TE-R-044 asks for one before saving, and because
+// the arithmetic it needs is exactly what the browser may not do. These cases
+// pin the arithmetic and, as much, the wording: the page renders `summary`
+// verbatim, so a wrong string there is a wrong statement to a user.
+
+let private preview (request: string) =
+    TimeEntry.Kernel.splitPreview request |> JsonNode.Parse
+
+[<Fact>]
+let ``a split preview reports what is still unallocated`` () =
+    // A 30-minute source with 2 and 1 units allocated: 18 minutes placed,
+    // 12 left.
+    let result =
+        preview
+            """{ "sourceMilliseconds": 1800000,
+                 "children": [ { "durationUnits": 2 }, { "durationUnits": 1 } ] }"""
+
+    Assert.Equal("1080000", field result "allocatedMilliseconds")
+    Assert.Equal("720000", field result "remainingMilliseconds")
+    Assert.Equal("false", field result "balances")
+    Assert.Equal("12m is still unallocated.", field result "summary")
+
+[<Fact>]
+let ``a split preview says so when the parts exceed the entry`` () =
+    let result =
+        preview
+            """{ "sourceMilliseconds": 1800000,
+                 "children": [ { "durationUnits": 4 }, { "durationUnits": 4 } ] }"""
+
+    // Negative, and reported as an overage rather than as a strange negative
+    // remainder the page would have to interpret.
+    Assert.Equal("-1080000", field result "remainingMilliseconds")
+    Assert.Equal("The parts exceed the entry by 18m.", field result "summary")
+    Assert.Equal("false", field result "balances")
+
+[<Fact>]
+let ``a balanced split preview says so, and only when every part is complete`` () =
+    let balanced =
+        preview
+            """{ "sourceMilliseconds": 1800000,
+                 "children": [ { "durationUnits": 2 }, { "durationUnits": 3 } ] }"""
+
+    Assert.Equal("0", field balanced "remainingMilliseconds")
+    Assert.Equal("true", field balanced "balances")
+    Assert.Equal("The parts account for all of the time.", field balanced "summary")
+
+    // The same total, but with an empty third part. The remainder is zero and
+    // the split is still not ready — a zero-duration child is refused by the
+    // domain (TE-R-041), so a preview that called this balanced would be
+    // inviting a rejection.
+    let withEmpty =
+        preview
+            """{ "sourceMilliseconds": 1800000,
+                 "children": [ { "durationUnits": 2 }, { "durationUnits": 3 }, { } ] }"""
+
+    Assert.Equal("0", field withEmpty "remainingMilliseconds")
+    Assert.Equal("false", field withEmpty "balances")
+    Assert.Equal("1 part(s) still need a duration.", field withEmpty "summary")
+
+[<Fact>]
+let ``one part is not a split`` () =
+    let result = preview """{ "sourceMilliseconds": 1800000, "children": [ { "durationUnits": 5 } ] }"""
+
+    Assert.Equal("false", field result "balances")
+    Assert.Equal("A split needs at least two parts.", field result "summary")
+
+[<Fact>]
+let ``a preview shows exact time, not billed time`` () =
+    // 52 exact minutes bills as 54 under RoundUp. A split must be balanced
+    // against the exact figure, so showing 54 here would ask someone to
+    // balance one quantity while displaying another (DF-TE-0002).
+    let result = preview """{ "sourceMilliseconds": 3120000, "children": [] }"""
+
+    Assert.Equal("52m", field result "displaySource")
+
+[<Fact>]
+let ``a preview agrees with the transition that follows it`` () =
+    // The preview and the domain must not be able to disagree: whatever the
+    // preview calls balanced, the transition must accept. 30 minutes split
+    // 2 + 3 units.
+    let balanced =
+        preview
+            """{ "sourceMilliseconds": 1800000,
+                 "children": [ { "durationUnits": 2 }, { "durationUnits": 3 } ] }"""
+
+    Assert.Equal("true", field balanced "balances")
+
+    let applied =
+        answer
+            [ existing ]
+            """{ "kind": "split", "entryId": "e1", "expectedVersion": "sha-1",
+                 "occurredAtMs": 1789000000,
+                 "children": [
+                   { "entryId": "e1a", "durationUnits": 2, "projectId": "echelon-foundry",
+                     "activityTypeId": "research" },
+                   { "entryId": "e1b", "durationUnits": 3, "projectId": "echelon-foundry",
+                     "activityTypeId": "research" } ] }"""
+
+    Assert.True(isAccepted applied)

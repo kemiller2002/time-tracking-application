@@ -52,6 +52,29 @@ let private displayTime (hours: int) (minutes: int) =
     else
         sprintf "%dh %02dm" hours minutes
 
+/// Exact elapsed time, written out.
+///
+/// Distinct from `displayTime`, which shows BILLED time — a 52-minute entry
+/// displays as 54 minutes there, because billing rounds up (DF-TE-0002).
+/// A split preview must show the exact figure instead: the invariant the
+/// person is being asked to satisfy is exact (TE-R-040), so showing them a
+/// rounded remainder would ask them to balance one quantity while displaying
+/// another.
+///
+/// Signed, because a preview's remainder goes negative the moment more time
+/// is allocated than the source holds, and "-6m" is the fact worth showing.
+let private displayExact (milliseconds: int64) =
+    let sign = if milliseconds < 0L then "-" else ""
+    let magnitude = abs milliseconds
+    let totalMinutes = magnitude / (MillisecondsPerSecond * int64 SecondsPerMinute)
+    let hours = totalMinutes / 60L
+    let minutes = totalMinutes % 60L
+
+    if hours = 0L then
+        sprintf "%s%dm" sign minutes
+    else
+        sprintf "%s%dh %02dm" sign hours minutes
+
 /// A badge as the adopted design system states it: the words and the tone
 /// class, both decided here.
 ///
@@ -350,6 +373,102 @@ let durationGrid (requestJson: string) : string =
             node.Add("ok", JsonValue.Create true)
             node.Add("options", options)
             node.ToJsonString(jsonOptions)
+    with ex ->
+        errorResult (ex.GetType().Name + ": " + ex.Message)
+
+
+// ---------------------------------------------------------------------------
+// Split preview
+// ---------------------------------------------------------------------------
+
+/// What a split would come to, before it is committed.
+///
+/// TE-R-044 requires a preview, and a preview is arithmetic over domain
+/// quantities — exactly what the browser must not do (TE-R-085). So the page
+/// sends the child durations it has collected so far and receives the
+/// allocated total, the remainder, and whether the two balance.
+///
+/// Nothing is applied and nothing is validated beyond reading the numbers: an
+/// unbalanced preview is a normal intermediate state, not an error. The
+/// refusal happens at `dispatch`, where the transition owns it.
+let splitPreview (requestJson: string) : string =
+    try
+        match JsonNode.Parse requestJson with
+        | null -> errorResult "empty request"
+        | request ->
+            let source =
+                match request.["sourceMilliseconds"] with
+                | null -> Error "missing 'sourceMilliseconds'"
+                | value ->
+                    match System.Int64.TryParse(value.ToString()) with
+                    | true, ms -> Ok ms
+                    | _ -> Error "sourceMilliseconds must be an integer"
+
+            match source with
+            | Error detail -> errorResult detail
+            | Ok sourceMilliseconds ->
+                // A child still being typed contributes nothing rather than
+                // failing the preview. It is counted as incomplete so the page
+                // can say so, because a remainder of zero across two complete
+                // children and one empty one is NOT a balanced split.
+                let contributions =
+                    match request.["children"] with
+                    | :? JsonArray as items ->
+                        items
+                        |> Seq.map (fun item ->
+                            match item with
+                            | null -> None
+                            | child ->
+                                match child.["durationMs"], child.["durationUnits"] with
+                                | null, null -> None
+                                | value, _ when not (isNull value) ->
+                                    match System.Int64.TryParse(value.ToString()) with
+                                    | true, ms when ms > 0L -> Some ms
+                                    | _ -> None
+                                | _, units ->
+                                    match System.Int64.TryParse(units.ToString()) with
+                                    | true, count when count > 0L -> Some(count * MillisecondsPerBillableUnit)
+                                    | _ -> None)
+                        |> List.ofSeq
+                    | _ -> []
+
+                let allocated = contributions |> List.sumBy (Option.defaultValue 0L)
+                let incomplete = contributions |> List.filter Option.isNone |> List.length
+                let remaining = sourceMilliseconds - allocated
+
+                let node = JsonObject()
+                node.Add("ok", JsonValue.Create true)
+                node.Add("sourceMilliseconds", JsonValue.Create sourceMilliseconds)
+                node.Add("allocatedMilliseconds", JsonValue.Create allocated)
+                node.Add("remainingMilliseconds", JsonValue.Create remaining)
+                node.Add("incompleteChildren", JsonValue.Create incomplete)
+                // Two complete children whose durations sum exactly, and
+                // nothing half-filled. Both halves matter (TE-R-040, TE-R-041).
+                node.Add(
+                    "balances",
+                    JsonValue.Create(remaining = 0L && incomplete = 0 && List.length contributions >= 2)
+                )
+                node.Add("displaySource", JsonValue.Create(displayExact sourceMilliseconds))
+                node.Add("displayAllocated", JsonValue.Create(displayExact allocated))
+                node.Add("displayRemaining", JsonValue.Create(displayExact remaining))
+
+                node.Add(
+                    "summary",
+                    JsonValue.Create(
+                        if List.length contributions < 2 then
+                            "A split needs at least two parts."
+                        elif incomplete > 0 then
+                            sprintf "%d part(s) still need a duration." incomplete
+                        elif remaining = 0L then
+                            "The parts account for all of the time."
+                        elif remaining > 0L then
+                            sprintf "%s is still unallocated." (displayExact remaining)
+                        else
+                            sprintf "The parts exceed the entry by %s." (displayExact (abs remaining))
+                    )
+                )
+
+                node.ToJsonString(jsonOptions)
     with ex ->
         errorResult (ex.GetType().Name + ": " + ex.Message)
 

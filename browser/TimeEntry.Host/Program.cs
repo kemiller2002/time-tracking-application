@@ -30,6 +30,13 @@ public static partial class Interop
         TimeEntry.Kernel.durationGrid(requestJson);
 
     /// <summary>
+    /// Forwards a split preview request.
+    /// </summary>
+    [JSExport]
+    internal static string SplitPreview(string requestJson) =>
+        TimeEntry.Kernel.splitPreview(requestJson);
+
+    /// <summary>
     /// Forwards a request for the catalogue's selectable choices.
     /// </summary>
     [JSExport]

@@ -406,6 +406,76 @@ if (ready) {
     'the correction reports the persistence effect it needs',
     (await page.textContent('#create-effects'))?.trim() === 'Requested: PersistCorrection'
   )
+
+  // -------------------------------------------------------------------------
+  // Split, with the preview TE-R-044 asks for
+  // -------------------------------------------------------------------------
+
+  // The entry is now 1 hour (10 units) after the correction above.
+  const splitter = row('Reviewed composition evidence.').locator('details', { hasText: 'Split' })
+  await splitter.locator('summary').click()
+
+  // Two parts by default: one is not a split.
+  check('a split opens with two parts', (await splitter.locator('.form-grid').count()) === 2)
+  check(
+    'and refuses to submit until they balance',
+    await splitter.locator('button[type=submit]').isDisabled()
+  )
+
+  const durations = splitter.locator('select[id$=duration]')
+  const summary = async () => (await splitter.locator('p.field-help').textContent())?.trim()
+
+  // An empty part is reported as empty, ahead of any remainder: a remainder
+  // is not a meaningful number while a part has no duration at all.
+  await durations.nth(0).selectOption('4')
+  check(
+    'an incomplete part is reported before any remainder',
+    (await summary()) === '1 part(s) still need a duration.',
+    await summary()
+  )
+
+  // 4 + 4 units is 48 minutes against the hour this entry now holds.
+  await durations.nth(1).selectOption('4')
+  check(
+    'the preview reports the unallocated remainder, computed in F#',
+    (await summary()) === '12m is still unallocated.',
+    await summary()
+  )
+
+  await durations.nth(1).selectOption('8')
+  check(
+    'and reports an overage rather than a negative number to interpret',
+    (await summary()) === 'The parts exceed the entry by 12m.',
+    await summary()
+  )
+
+  await durations.nth(1).selectOption('6')
+  check('a balanced split says so', (await summary()) === 'The parts account for all of the time.', await summary())
+  check(
+    'and only then may it be submitted',
+    await splitter.locator('button[type=submit]').isEnabled()
+  )
+
+  await splitter.locator('button[type=submit]').click()
+  await page.waitForFunction(() => globalThis.__kernel.view.countedEntries === 3, { timeout: 15000 })
+
+  const afterSplit = await page.evaluate(() => globalThis.__kernel.view)
+  // The source leaves the totals and its two children replace it, so the
+  // day's exact total is unchanged — which is the whole point (TE-R-040).
+  check(
+    'a split preserves the day total exactly',
+    afterSplit.totalMilliseconds === 5400000,
+    `${afterSplit.totalMilliseconds} ms`
+  )
+  check(
+    'the split reports the persistence effect it needs',
+    (await page.textContent('#create-effects'))?.trim() === 'Requested: PersistSplit'
+  )
+  check(
+    'the source is replaced, not duplicated',
+    (await page.locator('#timeline article.record').count()) === 3,
+    `${await page.locator('#timeline article.record').count()} rows`
+  )
 }
 
 check('no page errors', errors.length === 0, errors.slice(0, 2).join(' | '))

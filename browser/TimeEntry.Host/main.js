@@ -271,6 +271,117 @@ const correctionControl = (row) => {
   return details
 }
 
+// Splitting an entry. `split.html` calls the pieces "Part 1", "Part 2"; this
+// keeps that language and that structure.
+//
+// The preview is the reason this control is more than a form. TE-R-044 asks
+// for one before saving, and a preview is arithmetic over domain quantities —
+// which is precisely what this file may not do. So every keystroke sends the
+// collected child durations to the kernel and renders the three strings it
+// sends back. Nothing here subtracts, sums, or compares a duration.
+const splitControl = (row) => {
+  const details = el('details', 'section')
+  details.append(el('summary', null, 'Split'))
+  const form = el('form')
+  const parts = el('div')
+  const status = el('p', 'field-help')
+  status.setAttribute('role', 'status')
+  status.setAttribute('aria-live', 'polite')
+
+  // Each part's controls are kept as objects rather than read back out of the
+  // DOM, so the preview and the submission are built from the same source.
+  const rows = []
+
+  const refresh = () => {
+    const preview = ask(kernel.SplitPreview, {
+      // The source's EXACT milliseconds, from the projection. Not its
+      // displayed time, which is billed and rounded.
+      sourceMilliseconds: row.durationMilliseconds,
+      children: rows.map((part) => ({ durationUnits: Number(part.duration.value) || null }))
+    })
+    status.textContent = preview.summary
+    // `balances` is the kernel's verdict, read not computed.
+    submitButton.disabled = !preview.balances
+  }
+
+  const addPart = () => {
+    const fields = el('div', 'form-grid')
+    const index = rows.length + 1
+
+    const duration = document.createElement('select')
+    const blank = document.createElement('option')
+    blank.value = ''
+    blank.textContent = 'Choose a duration'
+    duration.replaceChildren(
+      blank,
+      ...(grid.options ?? []).map((option) => {
+        const node = document.createElement('option')
+        node.value = String(option.units)
+        node.textContent = option.label
+        return node
+      })
+    )
+    duration.addEventListener('change', refresh)
+
+    const project = document.createElement('select')
+    fill(project, choices.projects ?? [], row.projectId)
+
+    const activity = document.createElement('select')
+    fill(activity, choices.activityTypes ?? [], row.activityTypeId)
+
+    const description = document.createElement('input')
+    description.type = 'text'
+
+    fields.append(
+      el('p', 'eyebrow', `Part ${index}`),
+      labelled(`split-${row.id}-${index}-duration`, 'Duration', duration),
+      labelled(`split-${row.id}-${index}-project`, 'Project', project),
+      labelled(`split-${row.id}-${index}-activity`, 'Activity type', activity),
+      labelled(`split-${row.id}-${index}-description`, 'What did you do?', description)
+    )
+
+    rows.push({ index, duration, project, activity, description })
+    parts.append(fields)
+    refresh()
+  }
+
+  const addButton = el('button', 'button button-secondary', 'Add another part')
+  addButton.type = 'button'
+  addButton.addEventListener('click', addPart)
+
+  const submitButton = el('button', 'button button-primary', 'Save split')
+  submitButton.type = 'submit'
+
+  form.addEventListener('submit', (event) => {
+    event.preventDefault()
+    absorb(
+      send({
+        kind: 'split',
+        entryId: row.id,
+        expectedVersion: versions[row.id],
+        occurredAtMs: Date.now(),
+        children: rows.map((part) => ({
+          // Child identity is minted here because the domain cannot: Tier 2
+          // is pure. The id is opaque to it.
+          entryId: crypto.randomUUID(),
+          durationUnits: Number(part.duration.value) || null,
+          projectId: part.project.value,
+          activityTypeId: part.activity.value,
+          description: part.description.value
+        }))
+      })
+    )
+  })
+
+  form.append(parts, status, addButton, submitButton)
+  details.append(form)
+  // A split starts at two parts, because one is not a split (TE-R-041 makes
+  // the domain refuse it; starting at two means the page never proposes it).
+  addPart()
+  addPart()
+  return details
+}
+
 const renderDay = (view) => {
   // Display strings come straight from the projection (TE-R-085) — already
   // formatted and already pluralised, so nothing here builds a string out of
@@ -334,6 +445,8 @@ const renderDay = (view) => {
         article.append(
           reasonControl(row.id, 'void', 'Remove', 'Remove entry', 'Why is this being removed?')
         )
+
+      if (row.capabilities.includes('CanSplit')) article.append(splitControl(row))
 
       if (row.capabilities.includes('CanRestore'))
         article.append(
