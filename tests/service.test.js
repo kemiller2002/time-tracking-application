@@ -123,11 +123,40 @@ test('tag exemption: only a newly-assigned tag must be active',async()=>{
   assert.equal(addInactive.status,400);assert.equal(addInactive.body.error.code,'tag_inactive');
 });
 
+test('a manual entry on a past date requires reconstruction_reason',async()=>{
+  const b=bindings();
+  const base={activity_type_id:'research',project_id:'general',description:'x',business_purpose:'y',started_at:'2026-08-01T09:00:00Z',ended_at:'2026-08-01T09:30:00Z'};
+  const missing=await call(b,'/activities',{method:'POST',payload:base});
+  assert.equal(missing.status,400);assert.equal(missing.body.error.code,'validation_failed');assert.equal(missing.body.error.details.field,'reconstruction_reason');
+  const withReason=await call(b,'/activities',{method:'POST',payload:{...base,reconstruction_reason:'Recorded the next day'}});
+  assert.equal(withReason.status,201);
+  const sameDay=await call(b,'/activities',{method:'POST',payload:{...base,started_at:'2026-08-02T09:00:00Z',ended_at:'2026-08-02T09:30:00Z'}});
+  assert.equal(sameDay.status,201);
+});
+
+test('evidence type must be one of the documented values',async()=>{
+  const b=bindings();
+  const activity=(await call(b,'/activities',{method:'POST',payload:{activity_type_id:'research',project_id:'general',description:'x',business_purpose:'y',started_at:'2026-08-02T09:00:00Z',ended_at:'2026-08-02T09:30:00Z'}})).body.data;
+  const invalid=await call(b,`/activities/${activity.activity_id}/evidence`,{method:'POST',payload:{base_version:activity.version,type:'sticky-note'}});
+  assert.equal(invalid.status,400);assert.equal(invalid.body.error.code,'invalid_evidence_type');
+  const valid=await call(b,`/activities/${activity.activity_id}/evidence`,{method:'POST',payload:{base_version:activity.version,type:'document',label:'Spec'}});
+  assert.equal(valid.status,201);
+});
+
+test('idempotent replay preserves the original success status code',async()=>{
+  const b=bindings();const id='create-1';
+  const payload={activity_type_id:'research',project_id:'general',description:'x',business_purpose:'y',started_at:'2026-08-02T09:00:00Z',ended_at:'2026-08-02T09:30:00Z'};
+  const first=await call(b,'/activities',{method:'POST',requestId:id,payload});
+  assert.equal(first.status,201);
+  const replay=await call(b,'/activities',{method:'POST',requestId:id,payload});
+  assert.equal(replay.status,201);assert.equal(replay.body.data.idempotent_replay,true);assert.equal(replay.body.data.activity_id,first.body.data.activity_id);
+});
+
 test('void, restore, evidence, day and month projections reconcile',async()=>{
   const b=bindings();const activity=(await call(b,'/activities',{method:'POST',payload:{activity_type_id:'software-development',project_id:'helixnote',description:'Build service',business_purpose:'Deliver product',started_at:'2026-08-02T10:00:00Z',ended_at:'2026-08-02T11:00:00Z'}})).body.data;
   const evidence=(await call(b,`/activities/${activity.activity_id}/evidence`,{method:'POST',payload:{base_version:activity.version,type:'url',uri:'https://example.test/evidence',label:'Work reference'}})).body.data;assert.equal(evidence.activity.evidence.length,1);
   const voided=(await call(b,`/activities/${activity.activity_id}/void`,{method:'POST',payload:{base_version:evidence.activity.version,reason:'Duplicate'}})).body.data;assert.equal(voided.voided,true);assert.equal((await call(b,'/days/2026-08-02')).body.data.total_exact_ms,0);
-  const evidenceOnVoided=await call(b,`/activities/${activity.activity_id}/evidence`,{method:'POST',payload:{base_version:voided.version,type:'note',note:'Still linkable while voided'}});assert.equal(evidenceOnVoided.status,201);
+  const evidenceOnVoided=await call(b,`/activities/${activity.activity_id}/evidence`,{method:'POST',payload:{base_version:voided.version,type:'other',note:'Still linkable while voided'}});assert.equal(evidenceOnVoided.status,201);
   const detachOnVoided=await call(b,`/activities/${activity.activity_id}/evidence/${evidence.evidence.evidence_link_id}`,{method:'DELETE',payload:{base_version:evidenceOnVoided.body.data.activity.version,reason:'try to unlink while voided'}});assert.equal(detachOnVoided.status,409);assert.equal(detachOnVoided.body.error.code,'activity_not_recorded');
   const amendOnVoided=await call(b,`/activities/${activity.activity_id}/amendments`,{method:'POST',payload:{base_version:evidenceOnVoided.body.data.activity.version,changes:{description:'try to amend while voided'},reason:'try'}});assert.equal(amendOnVoided.status,409);assert.equal(amendOnVoided.body.error.code,'activity_not_recorded');
   const restored=(await call(b,`/activities/${activity.activity_id}/restore`,{method:'POST',payload:{base_version:evidenceOnVoided.body.data.activity.version,reason:'Not a duplicate'}})).body.data;assert.equal(restored.voided,false);
