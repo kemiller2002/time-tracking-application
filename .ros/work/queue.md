@@ -43,4 +43,6 @@
 | WI-0038 | TE-038 Evidence attachment on the today screen | complete |  | medium |
 | WI-0039 | TE-039 Credential port: the browser's token is one implementation, so the mechanism can change (DF-TE-0011) | complete |  | medium |
 | WI-0040 | TE-040 Read the ledger and catalogue from the repository on connect | complete |  | medium |
-| WI-0041 | TE-041 Make the GitHub API base URL configurable so the browser check need not reach api.github.com | ready |  | medium |
+| WI-0041 | TE-041 Make the GitHub API base URL configurable so the browser check need not reach api.github.com | complete |  | medium |
+| WI-0042 | TE-042 Conflict review: show the saved entry's values beside the proposed ones (TE-R-071's review step) | captured |  | medium |
+| WI-0043 | TE-043 Conflict reconciliation on the today screen, and a stale-bundle guard for the browser harness | ready |  | medium |

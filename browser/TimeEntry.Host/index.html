@@ -86,6 +86,17 @@
           </form>
         </aside>
       </div>
+      <!-- A stale write. TE-R-070/072: the entry moved under us, nothing was
+           saved, and the person decides what happens next — never an
+           automatic re-read-and-overwrite. -->
+      <section class="notice notice-warning" id="conflict-panel" hidden role="alert">
+        <p class="notice-title">This entry changed somewhere else</p>
+        <p class="notice-copy" id="conflict-detail"></p>
+        <div class="form-actions">
+          <button class="button button-primary" type="button" id="conflict-retry">Reload and apply my change again</button>
+          <button class="button" type="button" id="conflict-discard">Reload and discard my change</button>
+        </div>
+      </section>
       <!-- Merging needs more than one entry, so it cannot live inside a
            record the way correct, split and remove do. It appears only once
            the kernel says the selection is worth merging. -->

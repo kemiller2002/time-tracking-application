@@ -24,8 +24,9 @@
     "check:all": "npm run check && npm run check:fsharp",
     "verify:transport": "dotnet fsi tools/verify-github-transport.fsx",
     "wasm:workloads": "dotnet workload install wasm-tools wasm-experimental",
-    "wasm:publish": "dotnet publish browser/TimeEntry.Host/TimeEntry.Host.csproj -c Release",
-    "check:browser": "npm run wasm:publish && node tools/verify-browser-kernel.mjs"
+    "wasm:publish": "dotnet publish browser/TimeEntry.Host/TimeEntry.Host.csproj -c Release && npm run wasm:stage",
+    "check:browser": "npm run wasm:publish && node tools/verify-browser-kernel.mjs",
+    "wasm:stage": "node tools/stage-wasm-assets.mjs"
   },
   "dependencies": {
     "@echelon-foundry/typescript-wasm-kernel": "^0.4.1"

@@ -133,6 +133,8 @@ let state = Object.freeze({
   // second opinion about the ledger (TE-R-098).
   selectedForMerge: [],
   message: null,
+  // A stale write, kept until the person decides what to do about it.
+  conflict: null,
   effects: [],
   performed: [],
   // Bumped on every state change. An asynchronous read that resolves after
@@ -636,9 +638,34 @@ const renderMerge = () => {
   setText('merge-summary', preview.summary)
 }
 
+// A conflict, and the two things that can be done about it.
+//
+// Never resolved automatically. TE-R-072 is explicit that a stale write is an
+// outcome the domain reconciles rather than something the transport silently
+// re-attempts — re-reading and overwriting would be exactly the behaviour the
+// requirement forbids, and would discard whoever else's change arrived first.
+const renderConflict = () => {
+  const panel = document.getElementById('conflict-panel')
+  if (!panel) return
+  panel.hidden = !state.conflict
+  if (!state.conflict) return
+
+  // The versions are shown rather than a field-level diff. A diff would need
+  // the saved entry's values beside the proposed ones, which the page does not
+  // have until it reloads; showing the tokens is what can be said truthfully
+  // now. TE-R-071's "review" step is not built, and WI-0042 records that.
+  setText(
+    'conflict-detail',
+    `Your change was made against version ${state.conflict.expectedVersion ?? 'unknown'}, ` +
+      `but the repository now holds ${state.conflict.actualVersion ?? 'a different version'}. ` +
+      `Nothing was saved.`
+  )
+}
+
 const render = () => {
   renderDay(state.view)
   renderMerge()
+  renderConflict()
   // Disclosure, not decoration: the projection reports how many entries it
   // excluded, so the page can say they exist without showing them.
   setText(
@@ -675,14 +702,14 @@ const submitCommand = (command) => {
   }
 
   sendAndPersist(command)
-    .then(absorb)
+    .then((answer) => absorb(answer, command))
     .catch((error) => update({ message: String(error), effects: [] }))
 }
 
 // The one place a kernel answer becomes new page state. Three outcomes, and
 // the page treats a refusal as ordinary: an error is a malformed request, a
 // rejection is the domain declining, and acceptance replaces the loaded set.
-const absorb = (answer) => {
+const absorb = (answer, command) => {
   if (answer.ok !== true) {
     update({ message: answer.error, effects: [] })
     return
@@ -691,6 +718,35 @@ const absorb = (answer) => {
   if (answer.accepted !== true) {
     // A rejection is a normal answer, rendered verbatim.
     update({ message: answer.rejection, effects: [] })
+    return
+  }
+
+  // A persist reports what each effect DID. If any of them did not write, the
+  // repository does not hold this change — and adopting the new entries would
+  // show it as saved when it is not. That is exactly the UI-state-as-domain-
+  // authority failure TE-R-098 forbids, and it is the difference between a
+  // draft and a lie.
+  //
+  // `performed` is absent on the no-credential path, where applying locally is
+  // the intended behaviour and the page says "Requested:" rather than "Saved:".
+  const performed = answer.performed
+  const wroteEverything = !performed || performed.every((p) => p.outcome === 'persisted')
+
+  if (!wroteEverything) {
+    const conflict = performed.find((p) => p.outcome === 'conflicted')
+
+    update({
+      // Deliberately NOT adopting answer.entries or answer.versions.
+      message: conflict
+        ? null
+        : `Not saved: ${performed.map((p) => `${p.effect} — ${p.detail ?? p.outcome}`).join(', ')}`,
+      effects: [],
+      performed: [],
+      // The command is kept so it can be applied again against whatever the
+      // repository now holds, without the person retyping it (TE-R-071).
+      conflict: conflict ? { ...conflict, command } : null
+    })
+
     return
   }
 
@@ -717,6 +773,7 @@ const absorb = (answer) => {
     // it is dropped rather than carried into a state it was not made in.
     selectedForMerge: [],
     message: null,
+    conflict: null,
     effects: answer.effects ?? [],
     // What was REQUESTED versus what was DONE are different facts, and the
     // page reports whichever it has. A conflict is not an error: it means the
@@ -856,6 +913,42 @@ document.getElementById('repo-form')?.addEventListener('submit', (event) => {
     update({ message: String(error), effects: [], performed: [] })
   )
 })
+
+// Reload first, always. Both answers to a conflict begin by finding out what
+// the repository actually holds — the difference is only whether the person's
+// change is then applied on top of it.
+const reconcile = async (applyAgain) => {
+  const conflict = state.conflict
+  const connection = readConnection()
+  if (!conflict || !connection) return
+
+  update({ conflict: null, message: 'Reloading…' })
+  await loadFromRepository(connection)
+
+  if (!applyAgain) return
+
+  // Re-applied against the version the reload just observed, not the one the
+  // command was built with. Reusing the stale token would conflict again, for
+  // the same reason, forever.
+  const entryId = conflict.command.entryId ?? conflict.entryId
+  submitCommand({
+    ...conflict.command,
+    expectedVersion: versions[entryId],
+    occurredAtMs: Date.now()
+  })
+}
+
+document
+  .getElementById('conflict-retry')
+  ?.addEventListener('click', () =>
+    reconcile(true).catch((error) => update({ message: String(error) }))
+  )
+
+document
+  .getElementById('conflict-discard')
+  ?.addEventListener('click', () =>
+    reconcile(false).catch((error) => update({ message: String(error) }))
+  )
 
 document.getElementById('repo-forget')?.addEventListener('click', () => {
   writeConnection(null)

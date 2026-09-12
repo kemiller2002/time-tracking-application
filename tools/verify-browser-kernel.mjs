@@ -13,7 +13,7 @@
 // dotnet publish of browser/TimeEntry.Host.
 
 import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { chromium } from 'playwright'
 
@@ -24,6 +24,31 @@ const STUB_PORT = 8098
 if (!existsSync(`${BUNDLE}/index.html`)) {
   console.error(`no app bundle at ${BUNDLE} — run: dotnet publish browser/TimeEntry.Host -c Release`)
   process.exit(1)
+}
+
+// Refuse to run against a stale bundle.
+//
+// Everything below drives the PUBLISHED copy, so if it differs from the
+// source the checks describe code that is not in the repository — passing or
+// failing for reasons no one can see in a diff. `dotnet publish` does not
+// reliably refresh these files (see tools/stage-wasm-assets.mjs), and this
+// harness has already been misled by exactly that once.
+//
+// Checked here as well as staged there, because a harness that can only be
+// trusted when another script ran first is not a harness.
+const SOURCE = 'browser/TimeEntry.Host'
+
+for (const file of ['index.html', 'main.js']) {
+  const source = readFileSync(`${SOURCE}/${file}`, 'utf8')
+  const published = existsSync(`${BUNDLE}/${file}`) ? readFileSync(`${BUNDLE}/${file}`, 'utf8') : null
+
+  if (source !== published) {
+    console.error(
+      `the published ${file} is stale or missing — these checks would describe ` +
+        `code that is not in the repository. Run: npm run wasm:publish`
+    )
+    process.exit(1)
+  }
 }
 
 // In the agent sandbox the preinstalled browser is pinned and Playwright's
@@ -46,6 +71,13 @@ const server = spawn('python3', ['-m', 'http.server', String(PORT)], {
 // stub can stand in — and it can be asked what the page actually sent, which
 // the real API could never be.
 const apiRequests = []
+
+// The stub answers 404 to everything by default. Switched to 'conflict' it
+// answers the two endpoints a write's precondition check needs — the branch
+// ref, and the file being written — with a blob SHA that is NOT the one the
+// command claims to have read. That is exactly a stale write, and it is the
+// only way to exercise the conflict path in a real browser.
+let stubMode = 'notFound'
 
 const cors = {
   'access-control-allow-origin': '*',
@@ -73,11 +105,53 @@ const stub = createServer((request, response) => {
       url: request.url,
       authorization: request.headers.authorization ?? null
     })
-    // Everything 404s. The page must report that honestly rather than appear
-    // to have saved; what it does with a success is covered by the F# tests,
-    // which can assert on the store.
-    response.writeHead(404, { 'content-type': 'application/json', ...cors })
-    response.end('{"message":"Not Found"}')
+    const reply = (status, payload) => {
+      response.writeHead(status, { 'content-type': 'application/json', ...cors })
+      response.end(JSON.stringify(payload))
+    }
+
+    if (stubMode === 'conflict' && request.url.includes('/git/ref/heads/')) {
+      reply(200, { object: { sha: 'stub-head-sha' } })
+      return
+    }
+
+    // A write reads the tree before anything else, and checks each file's
+    // blob SHA against what the command expected. Three endpoints get it
+    // there: the branch ref, the commit it points at, and that commit's tree.
+    if (stubMode === 'conflict' && request.url.includes('/git/commits/')) {
+      reply(200, { tree: { sha: 'stub-tree-sha' } })
+      return
+    }
+
+    if (stubMode === 'conflict' && request.url.includes('/git/trees/')) {
+      reply(200, {
+        tree: [
+          {
+            path: 'ledger/entries/e1/e1.json',
+            type: 'blob',
+            // Not the token the page read. That is the whole point.
+            sha: 'a-version-written-by-someone-else'
+          }
+        ]
+      })
+      return
+    }
+
+    if (stubMode === 'conflict' && request.url.includes('/contents/')) {
+      // Someone else's version. The command will name the fixture's token,
+      // which is not this, so the precondition fails and nothing is written.
+      reply(200, {
+        sha: 'a-version-written-by-someone-else',
+        encoding: 'base64',
+        content: Buffer.from('{}').toString('base64')
+      })
+      return
+    }
+
+    // Otherwise everything 404s. The page must report that honestly rather
+    // than appear to have saved; what it does with a SUCCESS is covered by
+    // the F# tests, which can assert on the store.
+    reply(404, { message: 'Not Found' })
   })
 })
 
@@ -765,12 +839,88 @@ if (ready) {
   // wording, which would mean it had quietly used the no-effect path.
   // The whole point: an accepted command with a connection must report what
   // the WRITE did, not what was requested. Against a repository that does not
-  // exist that is a failure — which is the correct, audible answer.
+  // exist that is a failure, and the page says so in those words — never
+  // "Requested:", which would mean it had quietly used the no-effect path.
   check(
-    'and reports what the write did, not what was requested',
-    effects.startsWith('Saved:') && effects.includes('failed'),
-    effects || message
+    'and reports that nothing was saved, in those words',
+    message.startsWith('Not saved:') && !effects.startsWith('Requested:'),
+    message || effects
   )
+
+  // The defect this section exists for: a write that did not land must not
+  // leave the page showing the change as though it had. Before this was
+  // fixed, the entry appeared in the timeline and the total moved — a draft
+  // presented as a saved record (TE-R-098).
+  const strandedRows = await page
+    .locator('#timeline article.record', { hasText: 'Persist path smoke test' })
+    .count()
+
+  check(
+    'a write that failed does not leave the change on the page',
+    strandedRows === 0,
+    strandedRows === 0 ? '' : `${strandedRows} unsaved row(s) still displayed`
+  )
+
+  // -------------------------------------------------------------------------
+  // A stale write, and what can be done about it
+  // -------------------------------------------------------------------------
+
+  stubMode = 'conflict'
+
+  // A fresh page. By this point every entry that carries a version has been
+  // consumed — the split superseded one, the merge superseded the other two —
+  // and a conflict needs an entry the page believes it read at a known
+  // version. Reloading restores the fixtures; the connection survives in
+  // sessionStorage, which is itself worth knowing.
+  await page.reload({ waitUntil: 'load' })
+  await page.waitForFunction(() => globalThis.__kernel !== undefined, { timeout: 90000 })
+
+  check(
+    'the connection survives a reload',
+    (await page.textContent('#sync-status'))?.trim() === 'owner/repo',
+    (await page.textContent('#sync-status'))?.trim()
+  )
+
+  // `row` is scoped to the earlier block; this section is its own.
+  const record = (text) => page.locator('#timeline article.record', { hasText: text })
+  const conflicted = record('Reviewed composition evidence.').locator('details', { hasText: 'Remove' })
+  await conflicted.locator('summary').click()
+  await conflicted.locator('input[type=text]').fill('Removing while someone else edits')
+  await conflicted.locator('button[type=submit]').click()
+
+  const conflictShown = await page
+    .waitForFunction(() => {
+      const panel = document.getElementById('conflict-panel')
+      return panel && !panel.hidden
+    }, { timeout: 30000 })
+    .then(() => true)
+    .catch(() => false)
+
+  check('a stale write surfaces as a conflict, not a failure', conflictShown,
+    (await page.textContent('#create-message'))?.trim())
+
+  if (!conflictShown) {
+    // Which endpoint the write stopped at is the only useful thing to say
+    // here; without it a failure is just a timeout.
+    console.log('    stub saw:', JSON.stringify(apiRequests.slice(-4).map((r) => r.url)))
+  }
+
+  if (conflictShown) {
+    const detail = (await page.textContent('#conflict-detail'))?.trim() ?? ''
+    check(
+      'and names both versions, and says nothing was saved',
+      detail.includes('a-version-written-by-someone-else') && detail.includes('Nothing was saved'),
+      detail
+    )
+    // TE-R-072: never resolved automatically. The panel offers the choice and
+    // waits; an automatic re-read-and-overwrite would discard whoever else's
+    // change arrived first.
+    check(
+      'and offers both ways out rather than choosing one',
+      (await page.locator('#conflict-retry').isVisible()) &&
+        (await page.locator('#conflict-discard').isVisible())
+    )
+  }
 }
 
 // Scoped to the fixture-backed part of the run, not filtered by message text.
