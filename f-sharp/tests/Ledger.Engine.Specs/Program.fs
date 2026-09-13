@@ -1337,6 +1337,28 @@ let tests : (string * (unit -> unit)) list =
         configureGitHub "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" "kemiller2002" (Some "Kevin Miller") |> ignore
         let response = sendJson (httpResult "github-reference-pull" "Failure" None None (Some "network error"))
         assertTrue ((effectsOf response).Count = 0) "a failed reference.json pull should not start reconciliation"
+
+      // --- CHR-INT-016: minimal integration processing status view fields ---
+
+      "integrationReconciliationActive is false and the status label is empty before any reconciliation has started", fun () ->
+        reset ()
+        let response = sendJson initializeMessage
+        assertTrue (boolView response "integrationReconciliationActive" = false) "a fresh session should not report reconciliation as active"
+        assertTrue (stringView response "integrationReconciliationStatusLabel" = "") "a fresh session should have no status label"
+
+      "the status label names the current project while reconciliation is checking its inbox", fun () ->
+        reset ()
+        let response = beginReconciliationWithProjects [ "acme" ]
+        assertTrue (boolView response "integrationReconciliationActive") "reconciliation just started but was not reported as active"
+        let label = stringView response "integrationReconciliationStatusLabel"
+        assertTrue (label.Contains "acme") $"the status label did not name the project being checked: {label}"
+
+      "integrationReconciliationActive returns to false once reconciliation has processed its only observation", fun () ->
+        reset ()
+        beginReconciliationWithProjects [ "acme" ] |> ignore
+        let response = sendJson (httpResult "github-observations-list" "Success" (Some 404) (Some """{"message":"Not Found"}""") None)
+        assertTrue (boolView response "integrationReconciliationActive" = false) "reconciliation should report inactive once its only project's empty inbox ends the pass"
+        assertTrue (stringView response "integrationReconciliationStatusLabel" = "") "the status label should clear once reconciliation ends"
     ]
 
 [<EntryPoint>]

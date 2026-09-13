@@ -168,6 +168,30 @@ module Projections =
           "gitHubSyncStatus", VString status
           "gitHubLastSyncedLabel", VString(lastSyncedAt |> Option.map (fun dt -> dt.ToString "HH:mm:ss") |> Option.defaultValue "never") ]
 
+    /// CHR-INT-016's minimal first version of integration processing
+    /// status: a single human-readable line naming what startup
+    /// reconciliation (CHR-INT-015) is doing right now, derived purely
+    /// from `Session.IntegrationReconciliation` — no new state, no new
+    /// effects, nothing persisted. Disappears the moment reconciliation
+    /// finishes (`IntegrationReconciliation = None`); there is
+    /// deliberately no history of what happened on a *previous* startup
+    /// (see docs/integration/STARTUP-RECONCILIATION.md — a future PR, not
+    /// this one, is where a durable log would need to live).
+    let private integrationReconciliationFields (reconciliation: Session.IntegrationReconciliation option) =
+        let label =
+            match reconciliation with
+            | None -> ""
+            | Some r ->
+                match r.Step with
+                | Session.AwaitingInboxListing -> $"Checking \"{r.CurrentProjectId}\" for newly submitted time observations…"
+                | Session.AwaitingObservationBody _ -> $"Reading a submitted time observation for \"{r.CurrentProjectId}\"…"
+                | Session.AwaitingReceiptCheck _
+                | Session.AwaitingCandidateCheck _ -> $"Checking whether a submitted observation for \"{r.CurrentProjectId}\" was already processed…"
+                | Session.AwaitingCandidateWrite _ -> $"Recording a new time candidate for \"{r.CurrentProjectId}\"…"
+                | Session.AwaitingReceiptWrite _ -> $"Finishing processing an observation for \"{r.CurrentProjectId}\"…"
+        [ "integrationReconciliationActive", VBool reconciliation.IsSome
+          "integrationReconciliationStatusLabel", VString label ]
+
     let build (state: Session.State) : Map<string, ViewValue> =
         let daySummary = Summary.forDate state.Document state.SelectedDate
         let monthSummary = Summary.forMonth state.Document state.SelectedMonth
@@ -207,5 +231,6 @@ module Projections =
         @ timerFields state.Environment state.TimerState
         @ activeCapabilityFlags activeActivity
         @ gitHubSyncFields state.GitHubSync state.GitHubDocumentSha state.GitHubSyncStatus state.GitHubLastSyncedAt
+        @ integrationReconciliationFields state.IntegrationReconciliation
         @ errorFields state.Errors
         |> Map.ofList
