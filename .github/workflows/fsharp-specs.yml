@@ -1,4 +1,4 @@
-name: F# specs
+name: CI and Pages deploy
 
 # Runs this repo's own documented test command (package.json's "test"
 # script) on every push/PR: the architecture/boundary check
@@ -17,6 +17,22 @@ name: F# specs
 # could pass every spec and still fail to produce a working bundle. That
 # needs the `wasm-tools` workload installed, which is why it is a separate
 # job rather than a step in the one above.
+#
+# A third job deploys to GitHub Pages, gated on the first two passing, and
+# only on a push to `main` (never on a pull_request — a PR gets tested and
+# built, not published). It stages a minimal site (`web/` plus the built
+# `_framework/` output, laid out exactly as `npm run build:wasm && npm run
+# serve` already expects locally — see `web/wasm-engine-transport.js`'s
+# `WASM_FRAMEWORK_BASE`, a relative path so it resolves correctly at
+# whatever subpath GitHub Pages serves this repo under) and a tiny
+# redirect `index.html` at the site root, so the plain Pages URL lands
+# straight on the app instead of requiring `/web/index.html` in the
+# address bar.
+#
+# One-time manual setup this workflow cannot do for itself: this
+# repository's Settings -> Pages -> "Build and deployment" source must be
+# set to "GitHub Actions" (not "Deploy from a branch") before the deploy
+# job's first run can succeed.
 
 on:
   push:
@@ -42,3 +58,53 @@ jobs:
           dotnet-version: "10.0.x"
       - run: dotnet workload install wasm-tools
       - run: npm run build:wasm
+
+  deploy:
+    needs: [test, build-wasm]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - run: dotnet workload install wasm-tools
+      - run: npm run build:wasm
+      - name: Assemble the Pages site
+        run: |
+          set -euo pipefail
+          rm -rf _site
+          mkdir -p _site
+          cp -r web _site/web
+          mkdir -p "_site/f-sharp/src/Ledger.Wasm/bin/Release/net10.0/publish/wwwroot"
+          cp -r "f-sharp/src/Ledger.Wasm/bin/Release/net10.0/publish/wwwroot/_framework" \
+                "_site/f-sharp/src/Ledger.Wasm/bin/Release/net10.0/publish/wwwroot/_framework"
+          cat > _site/index.html <<'HTML'
+          <!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8" />
+            <meta http-equiv="refresh" content="0; url=./web/index.html" />
+            <title>Business Activity Ledger</title>
+          </head>
+          <body>
+            <p>Redirecting to <a href="./web/index.html">the app</a>&hellip;</p>
+          </body>
+          </html>
+          HTML
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -83,11 +83,18 @@ module Projections =
           prefix + "ByActivityType", VItems(breakdownItems byActivityType)
           prefix + "ByProject", VItems(breakdownItems byProject) ]
 
+    /// `timerActivityTypeLabel`/`timerProjectLabel` exist alongside the raw
+    /// `timerActivityTypeId`/`timerProjectId` fields so the Track screen's
+    /// heading (bound to the label, not the raw id) is never empty when idle
+    /// — an empty `<h2>` fails an accessibility audit (axe's `empty-heading`
+    /// rule), and a resolved name ("Research") reads better than a raw id
+    /// ("research") regardless.
     let private timerFields (environment: Environment) (timerState: TimerState) =
         match timerState with
         | NoTimer ->
             [ "timerPhase", VString "none"; "timerElapsedLabel", VString ""
-              "timerActivityTypeId", VString ""; "timerProjectId", VString ""; "timerDescription", VString "" ]
+              "timerActivityTypeId", VString ""; "timerProjectId", VString ""; "timerDescription", VString ""
+              "timerActivityTypeLabel", VString "No timer running"; "timerProjectLabel", VString "" ]
         | ActiveTimerState timer ->
             let now = environment.Clock()
             let effectiveEnd = match timer.Phase with TimerPaused -> (List.last timer.Segments).End.Value | TimerRunning -> now
@@ -97,7 +104,9 @@ module Projections =
               "timerElapsedLabel", VString(formatMinutes (elapsedMs / 60000.0))
               "timerActivityTypeId", VString timer.ActivityTypeId
               "timerProjectId", VString timer.ProjectId
-              "timerDescription", VString timer.Description ]
+              "timerDescription", VString timer.Description
+              "timerActivityTypeLabel", VString(lookupName environment.ActivityTypes timer.ActivityTypeId)
+              "timerProjectLabel", VString(lookupName environment.Projects timer.ProjectId) ]
 
     /// Same capability set as `capabilityFlags`, but for the single activity
     /// the detail panel (More screen) has open — that panel sits outside any
