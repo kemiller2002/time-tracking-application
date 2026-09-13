@@ -181,11 +181,16 @@ completely unchanged before merging. As of this writing:
   building blocks for listing/reading observations and for checking-for/
   creating candidates and receipts. See `STARTUP-RECONCILIATION.md`'s
   "building blocks now available" section.
+- CHR-INT-014 — `Ledger.Engine.Specs`' test-only `FakeStore`/
+  `runReconciliationPass` (a create-only in-memory simulation of the real
+  GitHub semantics) proves `ObservationReconciliation.decide` converges
+  to exactly one candidate and one receipt per observation across
+  repeated reconciliation passes, retried delivery, and injected write
+  failures at both the candidate and the receipt step — specification
+  §34's Tests A/B/C and the "candidate succeeds, receipt fails" recovery
+  case. No production code changed; this is proof, not new behavior.
 
 **Not yet done (deferred to follow-up PRs):**
-- CHR-INT-014 — partial-failure recovery proven against real (or
-  simulated) GitHub persistence, not just the pure decision function's
-  own unit tests.
 - CHR-INT-015 — actually wiring the CHR-INT-011/012/013 building blocks
   and the CHR-INT-010 decision function into `Dispatch.fs`'s
   `handleMessage`/`handleEffectResult` and WASM startup. Nothing built so

@@ -185,6 +185,82 @@ let seedDocument () : LedgerDocument =
     | Success(document, _) -> document
     | result -> failwith $"seed failed: {result}"
 
+// --- A test-only in-memory simulation of the create-only GitHub -----------
+// --- semantics buildCandidatePutEffect/buildReceiptPutEffect rely on -------
+// --- (specification §14/§34's partial-failure-recovery proofs; CHR-INT-014).
+//
+// This is deliberately test-only, not production code: CHR-INT-015 (WASM
+// startup wiring, still deferred) has to model this as an explicit
+// multi-step effect chain — like GitHubSync.fs's existing atomic-commit
+// chain — because the real WASM boundary allows only one HTTP effect in
+// flight at a time per `Dispatch.handle` call, not an arbitrary in-process
+// loop like the one below. What this harness proves is that
+// `ObservationReconciliation.decide`'s pure decision, driven through a
+// realistic multi-run read/write sequence with injected write failures,
+// converges to exactly one candidate and one receipt per observation no
+// matter how many times it runs or in what order failures land.
+type private FakeStore() =
+    let files = System.Collections.Generic.Dictionary<string, string>()
+    let mutable failNextWriteTo: string option = None
+
+    member _.ArmFailure(path: string) = failNextWriteTo <- Some path
+    member _.TryRead(path: string) = match files.TryGetValue path with true, v -> Some v | false, _ -> None
+    member _.Contains(path: string) = files.ContainsKey path
+
+    /// Mirrors `buildCandidatePutEffect`/`buildReceiptPutEffect`'s create-
+    /// only semantics: succeeds only if nothing exists there yet, unless a
+    /// deliberately-armed failure consumes this exact write instead
+    /// (simulating a network failure or a lost response — never a
+    /// silent overwrite of someone else's write).
+    member _.TryCreate(path: string, content: string) =
+        if failNextWriteTo = Some path then
+            failNextWriteTo <- None
+            false
+        elif files.ContainsKey path then
+            false
+        else
+            files.[path] <- content
+            true
+
+let private candidateKey (observationId: string) = $"candidate:{observationId}"
+let private receiptKey (observationId: string) = $"receipt:{observationId}"
+
+/// One simulated reconciliation pass over a batch of raw observation
+/// payloads — read what's already there, decide, write candidate-then-
+/// receipt in that order (specification §22's critical write ordering:
+/// never write a receipt before its candidate exists). Returns nothing;
+/// callers assert against `store`'s resulting contents.
+let private runReconciliationPass (store: FakeStore) (environment: Environment) (rawObservations: string list) =
+    for rawJson in rawObservations do
+        match TimeObservation.deserialize rawJson with
+        | Error _ -> ()
+        | Ok observation ->
+            let cKey = candidateKey observation.ObservationId
+            let rKey = receiptKey observation.ObservationId
+            let existingReceipt = store.Contains rKey
+            let existingCandidate =
+                store.TryRead cKey |> Option.bind (fun j -> match TimeCandidate.deserialize j with Ok c -> Some c | Error _ -> None)
+            let writeReceipt (candidateId: string) =
+                let receipt: ProcessingReceipt =
+                    { ReceiptVersion = ProcessingReceipt.CurrentReceiptVersion; ObservationId = observation.ObservationId
+                      ProcessedAt = DateTimeOffset.UtcNow; Result = CandidateCreated candidateId }
+                store.TryCreate(rKey, ProcessingReceipt.serialize receipt) |> ignore
+            match ObservationReconciliation.decide environment existingReceipt existingCandidate observation with
+            | ObservationReconciliation.AlreadyProcessed -> ()
+            | ObservationReconciliation.ReceiptRepairNeeded candidate -> writeReceipt candidate.CandidateId
+            | ObservationReconciliation.CandidateCreated candidate ->
+                // Critical ordering (§22): the receipt is only ever attempted
+                // once the candidate write itself has actually succeeded.
+                if store.TryCreate(cKey, TimeCandidate.serialize candidate) then writeReceipt candidate.CandidateId
+            | ObservationReconciliation.Rejected reason ->
+                let receipt: ProcessingReceipt =
+                    { ReceiptVersion = ProcessingReceipt.CurrentReceiptVersion; ObservationId = observation.ObservationId
+                      ProcessedAt = DateTimeOffset.UtcNow; Result = Rejected reason }
+                store.TryCreate(rKey, ProcessingReceipt.serialize receipt) |> ignore
+
+let private rawObservation (observationId: string) (projectId: string) =
+    $"""{{"contractVersion":"1","observationId":"{observationId}","sourceSystem":"ros","organizationId":"echelon-foundry","projectId":"{projectId}","durationMinutes":30,"observedAt":"2026-09-13T14:03:00-04:00","evidence":[]}}"""
+
 let tests : (string * (unit -> unit)) list =
     [
       "Initialize requests a Storage load for the ledger and one for cached GitHub sync settings", fun () ->
@@ -1000,6 +1076,67 @@ let tests : (string * (unit -> unit)) list =
             let bodyObject = JsonNode.Parse(body).AsObject()
             assertTrue (isNull (bodyObject.["sha"] :> obj)) "a receipt create must never carry a sha — two clients racing must fail safely, not overwrite"
         | other -> failwith $"expected a github-receipt-push PUT with a body, got {other}"
+
+      // --- CHR-INT-014: partial-failure recovery, proven via simulated -------
+      // --- persistence (specification §14/§34's acceptance tests) -----------
+
+      "Test A: one valid observation produces one candidate and one receipt", fun () ->
+        let environment = (Session.initial ()).Environment
+        let store = FakeStore()
+        runReconciliationPass store environment [ rawObservation "ros:activity:A" "not-defined" ]
+        assertTrue (store.Contains(candidateKey "ros:activity:A")) "no candidate was created"
+        assertTrue (store.Contains(receiptKey "ros:activity:A")) "no receipt was created"
+
+      "Test B: reconciling the same observation five times (Chrona loading five times) still yields one candidate and one receipt", fun () ->
+        let environment = (Session.initial ()).Environment
+        let store = FakeStore()
+        let observations = [ rawObservation "ros:activity:B" "not-defined" ]
+        for _ in 1..5 do
+            runReconciliationPass store environment observations
+        let candidateJson = store.TryRead(candidateKey "ros:activity:B") |> Option.get
+        assertTrue (store.Contains(receiptKey "ros:activity:B")) "the receipt disappeared across repeated reconciliation"
+        // Re-reconciling never touches an already-processed observation's
+        // candidate content — it must still deserialize to the same value.
+        match TimeCandidate.deserialize candidateJson with
+        | Ok candidate -> assertTrue (candidate.SourceObservationId = "ros:activity:B") "the surviving candidate belongs to the wrong observation"
+        | Error message -> failwith $"the candidate became unreadable after repeated reconciliation: {message}"
+
+      "Test C: ROS retrying delivery of the same observation five times within one pass still yields one candidate", fun () ->
+        let environment = (Session.initial ()).Environment
+        let store = FakeStore()
+        let sameObservationFiveTimes = List.replicate 5 (rawObservation "ros:activity:C" "not-defined")
+        runReconciliationPass store environment sameObservationFiveTimes
+        assertTrue (store.Contains(candidateKey "ros:activity:C")) "no candidate was created"
+        assertTrue (store.Contains(receiptKey "ros:activity:C")) "no receipt was created"
+
+      "candidate persistence fails -> no receipt is ever written", fun () ->
+        let environment = (Session.initial ()).Environment
+        let store = FakeStore()
+        store.ArmFailure(candidateKey "ros:activity:candidate-fails")
+        runReconciliationPass store environment [ rawObservation "ros:activity:candidate-fails" "not-defined" ]
+        assertTrue (not (store.Contains(candidateKey "ros:activity:candidate-fails"))) "the armed candidate write failure did not take effect"
+        assertTrue (not (store.Contains(receiptKey "ros:activity:candidate-fails"))) "a receipt was written even though its candidate write failed — this would permanently mark the observation processed with nothing to show for it"
+
+      "Test D: candidate succeeds but its receipt write fails -> the next reconciliation pass repairs only the missing receipt, minting no second candidate", fun () ->
+        let environment = (Session.initial ()).Environment
+        let store = FakeStore()
+        let observationId = "ros:activity:receipt-fails"
+        store.ArmFailure(receiptKey observationId)
+        runReconciliationPass store environment [ rawObservation observationId "not-defined" ]
+        assertTrue (store.Contains(candidateKey observationId)) "the candidate write should have succeeded"
+        assertTrue (not (store.Contains(receiptKey observationId))) "the armed receipt write failure did not take effect"
+        let candidateAfterFirstPass = store.TryRead(candidateKey observationId) |> Option.get
+        runReconciliationPass store environment [ rawObservation observationId "not-defined" ]
+        assertTrue (store.Contains(receiptKey observationId)) "the second pass did not repair the missing receipt"
+        let candidateAfterSecondPass = store.TryRead(candidateKey observationId) |> Option.get
+        assertTrue (candidateAfterFirstPass = candidateAfterSecondPass) "repairing the receipt must never mint (or alter) a second candidate"
+
+      "two observations with different ids are always treated as two independent observations, never merged", fun () ->
+        let environment = (Session.initial ()).Environment
+        let store = FakeStore()
+        runReconciliationPass store environment [ rawObservation "ros:activity:x" "not-defined"; rawObservation "ros:activity:y" "not-defined" ]
+        assertTrue (store.Contains(candidateKey "ros:activity:x") && store.Contains(candidateKey "ros:activity:y")) "both observations should have produced their own candidate"
+        assertTrue (candidateKey "ros:activity:x" <> candidateKey "ros:activity:y") "two different observation ids collided on the same candidate key"
     ]
 
 [<EntryPoint>]
