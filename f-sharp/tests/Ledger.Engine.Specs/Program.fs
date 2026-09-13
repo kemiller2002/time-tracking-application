@@ -294,6 +294,26 @@ let private beginReconciliationWithProjects (projectIds: string list) : JsonObje
     |> ignore
     sendJson (httpResult "github-reference-pull" "Success" (Some 200) (Some(contentsGetBody "reference-sha" (referenceJsonWithProjects projectIds))) None)
 
+/// Advances a fresh, independently-seeded session up to (but not
+/// through) writing the candidate for one observation — the exact point
+/// two racing clients (CHR-INT-017) would both reach independently,
+/// having each read the same observation and each found no receipt and
+/// no candidate yet.
+let private advanceToCandidateWrite (observationId: string) : unit =
+    beginReconciliationWithProjects [ "acme" ] |> ignore
+    sendJson
+        (httpResult
+            "github-observations-list"
+            "Success"
+            (Some 200)
+            (Some(observationsListingBody [ $"{observationId}.json", $"chrona-data/integration/projects/acme/observations/inbox/{observationId}.json" ]))
+            None)
+    |> ignore
+    sendJson (httpResult "github-observation-pull" "Success" (Some 200) (Some(contentsGetBody "obs-sha" (rawObservation observationId "acme"))) None)
+    |> ignore
+    sendJson (httpResult "github-receipt-pull" "Success" (Some 404) None None) |> ignore
+    sendJson (httpResult "github-candidate-pull" "Success" (Some 404) None None) |> ignore
+
 let tests : (string * (unit -> unit)) list =
     [
       "Initialize requests a Storage load for the ledger and one for cached GitHub sync settings", fun () ->
@@ -1359,6 +1379,65 @@ let tests : (string * (unit -> unit)) list =
         let response = sendJson (httpResult "github-observations-list" "Success" (Some 404) (Some """{"message":"Not Found"}""") None)
         assertTrue (boolView response "integrationReconciliationActive" = false) "reconciliation should report inactive once its only project's empty inbox ends the pass"
         assertTrue (stringView response "integrationReconciliationStatusLabel" = "") "the status label should clear once reconciliation ends"
+
+      // --- CHR-INT-017: concurrent processing, simulated via racing sessions ---
+      //
+      // Two independent `Session.State` values stand in for two racing
+      // clients (two browser tabs, or two overlapping WASM startups) —
+      // `Session.current` is swapped between them to simulate each one's
+      // own local `Dispatch.handle` call, rather than needing real
+      // concurrent GitHub access. This drives the *actual* production
+      // wiring built in CHR-INT-015 (unlike CHR-INT-014's FakeStore
+      // harness, which predates that wiring and could only prove the pure
+      // decision function converges, not that Dispatch.fs itself does).
+
+      "two racing clients reconciling the same observation both converge safely when GitHub's create-only semantics reject the second candidate write (409)", fun () ->
+        reset ()
+        advanceToCandidateWrite "ros:activity:race-409"
+        let clientAState = Session.current
+
+        reset ()
+        advanceToCandidateWrite "ros:activity:race-409"
+        let clientBState = Session.current
+
+        // Client A's write reaches GitHub first and succeeds.
+        Session.current <- clientAState
+        let clientAAfterWrite = sendJson (httpResult "github-candidate-push" "Success" (Some 201) None None)
+        let clientAReceiptWrite = onlyHttpEffect clientAAfterWrite
+        assertTrue (clientAReceiptWrite.["correlationId"].GetValue<string>() = "github-receipt-push") "client A did not proceed to write its receipt after its candidate write succeeded"
+
+        // Client B's write for the exact same (deterministic) candidate id
+        // now races in and is rejected create-only (409) — GitHub's own
+        // fail-safe, not something Dispatch.fs has to detect itself.
+        Session.current <- clientBState
+        let clientBAfterConflict = sendJson (httpResult "github-candidate-push" "Success" (Some 409) None None)
+        let clientBNext = onlyHttpEffect clientBAfterConflict
+        assertTrue
+            (clientBNext.["correlationId"].GetValue<string>() = "github-receipt-push" && clientBNext.["method"].GetValue<string>() = "PUT")
+            "client B should treat a 409 candidate write as success-equivalent (its deterministic candidate id already exists) and proceed to write its own receipt — never error, and never retry the candidate write"
+        match ProcessingReceipt.deserialize (decodedPutContent clientBNext) with
+        | Error message -> failwith $"client B's receipt body could not be read back: {message}"
+        | Ok receipt ->
+            match receipt.Result with
+            | CandidateCreated candidateId ->
+                assertTrue (candidateId = TimeCandidate.candidateId "ros:activity:race-409") "client B's receipt referenced the wrong candidate id after the 409"
+            | _ -> failwith "client B's receipt after a 409 candidate write must still record CandidateCreated, referencing the shared deterministic candidate id"
+
+        // Client B's own receipt write now also races in after client A's
+        // already landed — another 409, just as safe to treat as done.
+        let clientBFinal = sendJson (httpResult "github-receipt-push" "Success" (Some 409) None None)
+        assertTrue
+            ((effectsOf clientBFinal).Count = 0)
+            "client B should end its pass cleanly once its own receipt write also raced (409) against client A's — no further requests, no error, and critically no second candidate ever attempted"
+
+      "the same convergence holds for a 422 candidate-write conflict, not just 409", fun () ->
+        reset ()
+        advanceToCandidateWrite "ros:activity:race-422"
+        let response = sendJson (httpResult "github-candidate-push" "Success" (Some 422) None None)
+        let next = onlyHttpEffect response
+        assertTrue
+            (next.["correlationId"].GetValue<string>() = "github-receipt-push")
+            "a 422 candidate-write conflict should be treated the same as a 409 — success-equivalent, proceeding straight to the receipt write"
     ]
 
 [<EntryPoint>]

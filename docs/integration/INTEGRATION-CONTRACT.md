@@ -210,10 +210,21 @@ completely unchanged before merging. As of this writing:
   state, no new effects, nothing persisted, and nothing shown once
   reconciliation finishes. Rendered in the More screen's GitHub sync
   section. Verified by 3 new `Ledger.Engine.Specs` and live in a browser.
+- CHR-INT-017 — concurrent-processing proof against the *actual*
+  production wiring (unlike CHR-INT-014's `FakeStore`, which predates
+  CHR-INT-015 and could only prove the pure decision function
+  converges): two independent `Session.State` values stand in for two
+  racing clients, with `Session.current` swapped between them to
+  simulate each one's own `Dispatch.handle` call. Proves that when
+  GitHub's create-only semantics reject the second client's candidate
+  write (409 or 422 — someone else already created the exact
+  deterministic candidate id), that client treats it as success-
+  equivalent and proceeds straight to its own receipt write (itself
+  safe to race, for the same reason) rather than erroring, retrying the
+  candidate write, or ever producing a second candidate. Test-only; no
+  production code changed.
 
 **Not yet done (deferred to follow-up PRs):**
-- CHR-INT-017 — concurrent-processing tests against simulated Git
-  conflicts.
 - CHR-INT-018 through -021 — publishing the package, and anything on the
   ROS side (a separate repository, out of this session's access scope).
 
