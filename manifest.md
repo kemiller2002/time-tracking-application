@@ -46,7 +46,8 @@ cannot import Tier 3/4 even by accident).
   `"github-whoami"`/`"github-pull"`/`"github-push"`/`"github-push-conflict-pull"`/
   `"github-push-reconcile-pull"`/`"github-commit-ref"`/`"github-commit-base"`/
   `"github-commit-tree"`/`"github-commit-create"`/`"github-settings-pull"`/
-  `"github-settings-push"`/`"github-reference-pull"` cases). `ledger.json`/`metadata.json` are
+  `"github-settings-push"`/`"github-reference-pull"`/`"github-reference-push"`
+  cases). `ledger.json`/`metadata.json` are
   committed together as one atomic write via GitHub's Git Data API
   (`"github-commit-ref"` through `"github-commit-create"`, terminating in
   a ref move still reported as `"github-push"`) rather than as two
@@ -67,14 +68,22 @@ cannot import Tier 3/4 even by accident).
   (`{reportFormat, timezone}`) both pull automatically once identity
   resolves — `settings.json` applied to the session so a preference
   follows the person across devices, the ledger replacing the in-memory
-  document the same way an explicit "Pull latest" would. A shared,
-  read-only `reference.json` (`GitHubSync.referenceFilePath`) also pulls
-  on the same identity-resolve trigger, but lives at `<folder>/reference.json`
-  — the folder root, not any one person's subfolder — since the
+  document the same way an explicit "Pull latest" would. A shared
+  `reference.json` (`GitHubSync.referenceFilePath`) also pulls on the same
+  identity-resolve trigger, but lives at `<folder>/reference.json` — the
+  folder root, not any one person's subfolder — since the
   project/activity-type/tag catalog it carries is meant to be shared by
-  everyone pointing their config at that repo/folder; a successful pull
-  replaces `Environment.Projects`/`ActivityTypes`/`Tags` wholesale, a 404
-  keeps the hardcoded fixture defaults.
+  everyone pointing their config at that repo/folder, and any identified
+  person's admin-page edit writes the same file back
+  (`buildReferencePutEffect`); a successful pull replaces
+  `Environment.Projects`/`ActivityTypes`/`Tags` wholesale, a 404 keeps the
+  built-in fixture defaults (a single neutral "Not defined" placeholder per
+  category — `Session.fs`'s `fixtureEnvironment` assumes no particular
+  organization). The More screen's "Manage projects, activity types &
+  tags" section (`Model.fs`'s `ReferenceCatalog.add`/`setActive`,
+  `Dispatch.fs`'s `AddProject`/`AddActivityType`/`AddTag`/
+  `SetProjectActive`/`SetActivityTypeActive`/`SetTagActive` cases) is the
+  admin surface for editing that catalog.
   `f-sharp/src/Ledger.Domain/Services.fs`'s
   `LedgerStore` (a named, unimplemented `Async`-shaped port for a future
   in-process backend adapter — not on the live path; GitHub sync is built

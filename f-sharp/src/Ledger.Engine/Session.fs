@@ -73,7 +73,13 @@ module Session =
           GitHubFolder: string option
           GitHubBranch: string option
           GitHubToken: string option
-          Timezone: string option }
+          Timezone: string option
+          /// The admin page's three "add a new ___" text inputs — one Draft
+          /// field per category, not one shared field, since the three
+          /// forms live side by side and each keeps its own in-progress text.
+          NewProjectName: string option
+          NewActivityTypeName: string option
+          NewTagName: string option }
 
     module Draft =
         let empty =
@@ -82,7 +88,8 @@ module Session =
               EvidenceType = None; EvidenceUri = None; EvidenceNote = None; EvidenceLabel = None
               SplitParts = Map.empty; MergeSourceIds = Set.empty; AttestationStatement = None
               GitHubOwner = None; GitHubRepo = None; GitHubFolder = None; GitHubBranch = None; GitHubToken = None
-              Timezone = None }
+              Timezone = None
+              NewProjectName = None; NewActivityTypeName = None; NewTagName = None }
 
     type State =
         { Environment: Environment
@@ -125,6 +132,11 @@ module Session =
           /// one file still written through a plain Contents API PUT, since
           /// it is never committed together with anything else.
           GitHubSettingsSha: string option
+          /// The same, for the shared `reference.json` — set from the last
+          /// successful pull (`"github-reference-pull"`) or push
+          /// (`"github-reference-push"`, fired after an admin-page edit).
+          /// `None` means "never synced" (the next push creates the file).
+          GitHubReferenceSha: string option
           /// The commit `ledger.json`/`metadata.json` are currently being
           /// committed on top of — the parent of the new commit the atomic
           /// multi-file push (`GitHubSync.buildRefGetEffect` through
@@ -140,39 +152,24 @@ module Session =
           GitHubSyncStatus: string
           GitHubLastSyncedAt: DateTimeOffset option }
 
-    /// Seed data mirrors `worker/src/handler.js`'s `defaultBindings` fixtures —
-    /// real project/activity-type/tag loading is a fast-follow once a real
-    /// persistence adapter exists (see `Ledger.Domain/Services.fs`).
+    /// Not any particular organization's project/activity-type list — this app
+    /// makes no assumption about who is using it. A single neutral "not
+    /// defined" placeholder per category (rather than an empty list) keeps
+    /// the app usable — CreateActivity requires a non-blank
+    /// `ActivityTypeId`/`ProjectId` — before anyone has entered real data
+    /// via the admin page (More screen) or published a `reference.json`.
+    /// Tags are genuinely optional on an activity, so they start empty
+    /// instead. Whichever comes first — an admin-page edit or a successful
+    /// `reference.json` pull — replaces these placeholders wholesale.
     let private fixtureEnvironment () : Environment =
         let refItem id name active = { Id = id; Name = name; Active = active; Version = "v1" }
         let counter = ref 0
         let newId () =
             counter.Value <- counter.Value + 1
             Guid.NewGuid().ToString "N"
-        { Projects =
-            [ refItem "echelon-foundry" "Echelon Foundry" true
-              refItem "visual-engineering" "Visual Engineering" true
-              refItem "helixnote" "HelixNote" true
-              refItem "general" "General" true
-              refItem "archived-initiative" "Archived Initiative" false ]
-            |> List.map (fun p -> p.Id, p)
-            |> Map.ofList
-          ActivityTypes =
-            [ refItem "research" "Research" true
-              refItem "linkedin-marketing" "LinkedIn marketing" true
-              refItem "software-development" "Software development" true
-              refItem "administration" "Administration" true
-              refItem "meeting" "Meeting" true
-              refItem "retired-type" "Retired type" false ]
-            |> List.map (fun t -> t.Id, t)
-            |> Map.ofList
-          Tags =
-            [ refItem "billable" "Billable" true
-              refItem "client-facing" "Client-facing" true
-              refItem "internal-only" "Internal only" true
-              refItem "legacy" "Legacy" false ]
-            |> List.map (fun t -> t.Id, t)
-            |> Map.ofList
+        { Projects = [ refItem "not-defined" "Not defined" true ] |> List.map (fun p -> p.Id, p) |> Map.ofList
+          ActivityTypes = [ refItem "not-defined" "Not defined" true ] |> List.map (fun t -> t.Id, t) |> Map.ofList
+          Tags = Map.empty
           NewId = newId
           Clock = fun () -> DateTimeOffset.UtcNow }
 
@@ -193,6 +190,7 @@ module Session =
           GitHubSync = None
           GitHubDocumentSha = None
           GitHubSettingsSha = None
+          GitHubReferenceSha = None
           GitHubCommitParentSha = None
           GitHubSyncStatus = "idle"
           GitHubLastSyncedAt = None }

@@ -374,6 +374,62 @@
               </div>
               <p class="field-error" role="alert" aria-live="assertive" data-if="attestError" data-text="attestError" hidden></p>
             </section>
+
+            <!-- Reference data admin: Projects / Activity Types / Tags -->
+            <section class="surface surface-pad" aria-labelledby="admin-title">
+              <h2 class="section-title" id="admin-title">Manage projects, activity types &amp; tags</h2>
+              <p class="page-intro">Shared by everyone pointing GitHub sync (below) at this repository and folder. Uncheck an item to stop offering it for new work &mdash; it stays on past records either way. Changes save to GitHub automatically once sync is configured; without it, they apply to this browser session only.</p>
+
+              <fieldset class="form-section">
+                <legend class="form-legend">Projects</legend>
+                <div class="review-list">
+                  <template data-each="adminProjects" data-key="id">
+                    <label class="review-row"><input type="checkbox" data-event="SetProjectActive" data-on="change" data-checked="active" /><span class="review-title" data-text="name"></span></label>
+                  </template>
+                </div>
+                <div class="field field-full">
+                  <label for="new-project-name">New project name</label>
+                  <input id="new-project-name" type="text" data-event="DraftNewProjectNameChanged" data-on="change" />
+                </div>
+                <div class="form-actions">
+                  <button type="button" class="button button-secondary" data-event="AddProject" data-on="click">Add project</button>
+                </div>
+              </fieldset>
+
+              <fieldset class="form-section">
+                <legend class="form-legend">Activity types</legend>
+                <div class="review-list">
+                  <template data-each="adminActivityTypes" data-key="id">
+                    <label class="review-row"><input type="checkbox" data-event="SetActivityTypeActive" data-on="change" data-checked="active" /><span class="review-title" data-text="name"></span></label>
+                  </template>
+                </div>
+                <div class="field field-full">
+                  <label for="new-activity-type-name">New activity type name</label>
+                  <input id="new-activity-type-name" type="text" data-event="DraftNewActivityTypeNameChanged" data-on="change" />
+                </div>
+                <div class="form-actions">
+                  <button type="button" class="button button-secondary" data-event="AddActivityType" data-on="click">Add activity type</button>
+                </div>
+              </fieldset>
+
+              <fieldset class="form-section">
+                <legend class="form-legend">Tags</legend>
+                <div class="review-list">
+                  <template data-each="adminTags" data-key="id">
+                    <label class="review-row"><input type="checkbox" data-event="SetTagActive" data-on="change" data-checked="active" /><span class="review-title" data-text="name"></span></label>
+                  </template>
+                </div>
+                <div class="field field-full">
+                  <label for="new-tag-name">New tag name</label>
+                  <input id="new-tag-name" type="text" data-event="DraftNewTagNameChanged" data-on="change" />
+                </div>
+                <div class="form-actions">
+                  <button type="button" class="button button-secondary" data-event="AddTag" data-on="click">Add tag</button>
+                </div>
+              </fieldset>
+
+              <p class="field-error" role="alert" aria-live="assertive" data-if="adminError" data-text="adminError" hidden></p>
+            </section>
           </div>
 
           <aside class="stack">

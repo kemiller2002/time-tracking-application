@@ -571,6 +571,63 @@ let tests : (string * (unit -> unit)) list =
         assertTrue (amended.EventSequence > doc.EventSequence) "test setup assumption failed: amend should advance EventSequence"
         let merged = LedgerDocument.merge doc amended
         assertTrue (merged.EventSequence = amended.EventSequence) "merge did not take the higher EventSequence"
+
+      // --- ReferenceCatalog (admin-managed Projects/Activity Types/Tags) ------
+
+      "ReferenceCatalog.add slugifies the name into an id and defaults the item to active", fun () ->
+        match ReferenceCatalog.add Map.empty "LinkedIn Marketing!" with
+        | Ok(directory, item) ->
+            assertTrue (item.Id = "linkedin-marketing") $"unexpected slugified id: {item.Id}"
+            assertTrue (item.Name = "LinkedIn Marketing!") "the original (unslugified) name was not preserved"
+            assertTrue item.Active "a newly-added item was not active by default"
+            assertTrue (directory.ContainsKey "linkedin-marketing") "the new item was not added to the directory"
+        | Error d -> failwith $"expected success, got {d.Message}"
+
+      "ReferenceCatalog.add rejects a blank or whitespace-only name", fun () ->
+        match ReferenceCatalog.add Map.empty "   " with
+        | Error d -> assertTrue (d.Code = DiagnosticCode.ReferenceItemNameRequired) $"unexpected diagnostic code: {d.Code}"
+        | Ok _ -> failwith "expected a blank name to be rejected"
+
+      "ReferenceCatalog.add disambiguates a name that slugifies to an id already in the directory", fun () ->
+        let directory = Map.ofList [ "research", refItem "research" true ]
+        match ReferenceCatalog.add directory "Research" with
+        | Ok(updated, item) ->
+            assertTrue (item.Id = "research-2") $"expected the id to be disambiguated, got {item.Id}"
+            assertTrue (updated.ContainsKey "research") "the original item was dropped"
+            assertTrue (updated.ContainsKey "research-2") "the disambiguated item was not added"
+        | Error d -> failwith $"expected success, got {d.Message}"
+
+      "ReferenceCatalog.setActive toggles an existing item off, and back on", fun () ->
+        let directory = Map.ofList [ "research", refItem "research" true ]
+        match ReferenceCatalog.setActive directory "research" false with
+        | Ok updated ->
+            assertTrue (not updated.["research"].Active) "setActive false did not deactivate the item"
+            match ReferenceCatalog.setActive updated "research" true with
+            | Ok reactivated -> assertTrue reactivated.["research"].Active "setActive true did not reactivate the item"
+            | Error d -> failwith $"expected success, got {d.Message}"
+        | Error d -> failwith $"expected success, got {d.Message}"
+
+      "ReferenceCatalog.setActive rejects an id that does not exist", fun () ->
+        match ReferenceCatalog.setActive Map.empty "missing" false with
+        | Error d -> assertTrue (d.Code = DiagnosticCode.ReferenceItemNotFound) $"unexpected diagnostic code: {d.Code}"
+        | Ok _ -> failwith "expected an unknown id to be rejected"
+
+      "ReferenceCatalog.rename changes an existing item's name while keeping its id", fun () ->
+        let directory = Map.ofList [ "research", refItem "research" true ]
+        match ReferenceCatalog.rename directory "research" "Deep Research" with
+        | Ok updated ->
+            assertTrue (updated.["research"].Name = "Deep Research") "rename did not change the name"
+            assertTrue (updated.ContainsKey "research") "rename changed the item's id, which it must never do"
+        | Error d -> failwith $"expected success, got {d.Message}"
+
+      "ReferenceCatalog.rename rejects a blank name and an unknown id", fun () ->
+        let directory = Map.ofList [ "research", refItem "research" true ]
+        match ReferenceCatalog.rename directory "research" "" with
+        | Error d -> assertTrue (d.Code = DiagnosticCode.ReferenceItemNameRequired) $"unexpected diagnostic code for a blank rename: {d.Code}"
+        | Ok _ -> failwith "expected a blank rename to be rejected"
+        match ReferenceCatalog.rename directory "missing" "New name" with
+        | Error d -> assertTrue (d.Code = DiagnosticCode.ReferenceItemNotFound) $"unexpected diagnostic code for an unknown id: {d.Code}"
+        | Ok _ -> failwith "expected renaming an unknown id to be rejected"
     ]
 
 [<EntryPoint>]

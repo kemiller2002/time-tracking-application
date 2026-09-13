@@ -80,6 +80,17 @@ module Projections =
         |> List.sortBy (fun item -> item.Name)
         |> List.map (fun item -> Map.ofList [ "id", VString item.Id; "name", VString item.Name ])
 
+    /// Every item, active and inactive alike — unlike `referenceOptions`
+    /// above (which feeds the create/timer/merge `<select>`s and must never
+    /// offer an archived choice), the admin page (More screen) needs to see
+    /// and toggle inactive items too, not just the ones currently choosable.
+    let private adminReferenceItems (directory: Map<string, ReferenceItem>) =
+        directory
+        |> Map.toList
+        |> List.map snd
+        |> List.sortBy (fun item -> item.Name)
+        |> List.map (fun item -> Map.ofList [ "id", VString item.Id; "name", VString item.Name; "active", VBool item.Active ])
+
     /// Common day/month summary figures, flattened under `prefix` — `ViewValue`
     /// has no object variant, so a summary's fields live at the top level
     /// rather than as a one-row `VItems` (which would misrepresent a single
@@ -135,7 +146,7 @@ module Projections =
           "activeCanRestore", VBool(has Restore) ]
 
     let private errorFields (errors: Map<string, string>) =
-        [ "create"; "amend"; "void"; "restore"; "split"; "merge"; "evidence"; "timer"; "attest"; "githubConfig"; "githubSync"; "githubSettings"; "githubReference" ]
+        [ "create"; "amend"; "void"; "restore"; "split"; "merge"; "evidence"; "timer"; "attest"; "githubConfig"; "githubSync"; "githubSettings"; "githubReference"; "admin" ]
         |> List.map (fun key -> key + "Error", VString(errors |> Map.tryFind key |> Option.defaultValue ""))
 
     /// Never echoes `Token` back — a pasted personal access token should
@@ -185,7 +196,10 @@ module Projections =
           "persistenceError", VString(state.PersistenceError |> Option.defaultValue "")
           "projectOptions", VItems(referenceOptions state.Environment.Projects)
           "activityTypeOptions", VItems(referenceOptions state.Environment.ActivityTypes)
-          "tagOptions", VItems(referenceOptions state.Environment.Tags) ]
+          "tagOptions", VItems(referenceOptions state.Environment.Tags)
+          "adminProjects", VItems(adminReferenceItems state.Environment.Projects)
+          "adminActivityTypes", VItems(adminReferenceItems state.Environment.ActivityTypes)
+          "adminTags", VItems(adminReferenceItems state.Environment.Tags) ]
         @ summaryFields "day" daySummary.TotalExactMs daySummary.TotalBilledMinutes daySummary.DecimalHours daySummary.ManualCount daySummary.CorrectionCount
             daySummary.VoidCount daySummary.EvidenceCoverage daySummary.ByActivityType daySummary.ByProject
         @ summaryFields "month" monthSummary.TotalExactMs monthSummary.TotalBilledMinutes monthSummary.DecimalHours monthSummary.ManualCount monthSummary.CorrectionCount
