@@ -6,9 +6,9 @@
   <ItemGroup>
     <Compile Include="Protocol.fs" />
     <Compile Include="DocumentCodec.fs" />
+    <Compile Include="Integration.fs" />
     <Compile Include="Session.fs" />
     <Compile Include="GitHubSync.fs" />
-    <Compile Include="Integration.fs" />
     <Compile Include="Reports.fs" />
     <Compile Include="Projections.fs" />
     <Compile Include="Dispatch.fs" />

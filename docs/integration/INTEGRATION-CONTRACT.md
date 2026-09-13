@@ -189,12 +189,22 @@ completely unchanged before merging. As of this writing:
   failures at both the candidate and the receipt step — specification
   §34's Tests A/B/C and the "candidate succeeds, receipt fails" recovery
   case. No production code changed; this is proof, not new behavior.
+- CHR-INT-015 — the CHR-INT-011/012/013 building blocks and the
+  CHR-INT-010 decision function are now actually wired into
+  `Dispatch.fs`'s `handleMessage`/`handleEffectResult`, chained off the
+  existing identity-resolve flow's `reference.json` pull (see
+  `STARTUP-RECONCILIATION.md`'s "wired" section for the exact sequencing
+  and `Session.IntegrationReconciliation`'s doc comment for the state
+  machine). Verified by 9 new `Ledger.Engine.Specs` driving `Dispatch.
+  handle` directly (not the CHR-INT-014 test harness) through a full
+  list -> read -> check-receipt -> check-candidate -> write-candidate ->
+  write-receipt pass, plus live in a browser via Playwright with GitHub's
+  API mocked at the network layer: the golden path (creating an activity
+  with no GitHub sync configured) is unaffected, and with sync configured
+  the full chain fires in the correct order with the candidate write
+  strictly before the receipt write.
 
 **Not yet done (deferred to follow-up PRs):**
-- CHR-INT-015 — actually wiring the CHR-INT-011/012/013 building blocks
-  and the CHR-INT-010 decision function into `Dispatch.fs`'s
-  `handleMessage`/`handleEffectResult` and WASM startup. Nothing built so
-  far is called from anywhere; the running app's behavior is unchanged.
 - CHR-INT-016/017 — the integration status UI, and concurrent-processing
   tests against simulated Git conflicts.
 - CHR-INT-018 through -021 — publishing the package, and anything on the

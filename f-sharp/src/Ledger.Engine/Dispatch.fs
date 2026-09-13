@@ -3,6 +3,7 @@ namespace Ledger.Engine
 open System
 open Ledger.Domain
 open Ledger.Engine.Protocol
+open EchelonFoundry.Chrona.Integration
 
 /// SDE Tier 3 (Application / Projection / Orchestration): coordinates
 /// commands, projections, and requested effects; must never become a second
@@ -465,6 +466,70 @@ module Dispatch =
         | "Tick" -> state
         | _ -> { state with Draft = applyDraftField state.Draft event }
 
+    // --- CHR-INT-015: startup observation reconciliation --------------------
+    //
+    // See docs/integration/STARTUP-RECONCILIATION.md and
+    // Session.IntegrationReconciliation's doc comment. Every step below
+    // follows the same shape: on a usable success, advance `Step` to
+    // whatever comes next; on anything else (a 404 that means "nothing
+    // here", a genuine error, a cancellation, an unreadable body), give up
+    // on just the one observation (or, at the listing step, the one
+    // project) currently in progress and move on — nothing here is
+    // surfaced as a user-visible error, matching the specification's own
+    // "never block the first render" concern applying just as much to a
+    // background reconciliation pass. A skipped observation is simply
+    // retried, from scratch, on the next startup — always safe, since
+    // nothing is ever written except by the create-only candidate/receipt
+    // writes below, which are themselves idempotent across retries.
+
+    /// Moves to the next unit of work: the next observation already
+    /// queued for the current project, or (once that queue is empty) the
+    /// next project's inbox listing, or `None` once both are exhausted —
+    /// reconciliation is then simply not running again until the next
+    /// `reference.json` pull re-seeds it (`beginObservationReconciliation`,
+    /// below).
+    let private advanceReconciliation (reconciliation: Session.IntegrationReconciliation) : Session.IntegrationReconciliation option =
+        match reconciliation.RemainingObservations with
+        | next :: rest -> Some { reconciliation with RemainingObservations = rest; Step = Session.AwaitingObservationBody next }
+        | [] ->
+            match reconciliation.RemainingProjectIds with
+            | nextProjectId :: restProjectIds ->
+                Some
+                    { CurrentProjectId = nextProjectId
+                      RemainingProjectIds = restProjectIds
+                      RemainingObservations = []
+                      Step = Session.AwaitingInboxListing }
+            | [] -> None
+
+    /// Seeds reconciliation for every currently-known project, always
+    /// built from the environment as it exists right after `reference.json`
+    /// resolves (see the "github-reference-pull" cases below) — never from
+    /// whatever was captured in an effect built before that pull ran. A
+    /// no-op if reconciliation is already mid-flight (defensive: nothing
+    /// in this codebase re-pulls `reference.json` mid-session today, but
+    /// restarting over an in-progress pass would abandon it silently).
+    let private beginObservationReconciliation (state: Session.State) : Session.State =
+        match state.IntegrationReconciliation with
+        | Some _ -> state
+        | None ->
+            match state.Environment.Projects |> Map.toList |> List.map fst with
+            | [] -> state
+            | firstProjectId :: restProjectIds ->
+                { state with
+                    IntegrationReconciliation =
+                        Some
+                            { CurrentProjectId = firstProjectId
+                              RemainingProjectIds = restProjectIds
+                              RemainingObservations = []
+                              Step = Session.AwaitingInboxListing } }
+
+    /// A freshly-decided processing receipt for `observationId`, timestamped now.
+    let private receiptFor (state: Session.State) (observationId: string) (result: Integration.ObservationResult) : Integration.ProcessingReceipt =
+        { ReceiptVersion = Integration.ProcessingReceipt.CurrentReceiptVersion
+          ObservationId = observationId
+          ProcessedAt = state.Environment.Clock()
+          Result = result }
+
     /// Never trusts a Storage outcome as silent success or silent failure —
     /// every branch either loads a validated document or leaves a
     /// PersistenceError for the UI to show.
@@ -766,6 +831,13 @@ module Dispatch =
         /// shared catalog into this repo/folder yet (whether by hand or via
         /// the admin page), so the fixture defaults (`Session.fs`'s
         /// `fixtureEnvironment`) keep serving as the active/inactive lists.
+        ///
+        /// Both the success and 404 branches also seed CHR-INT-015's
+        /// startup observation reconciliation (`beginObservationReconciliation`)
+        /// — always from `Environment.Projects` exactly as it stands right
+        /// here, once and only once per identity resolve, so the very
+        /// first inbox listing it builds is never based on a stale project
+        /// list captured before this pull ran.
         | HttpResult("github-reference-pull", OutcomeSuccess(status, Some body)) when status >= 200 && status < 300 ->
             match GitHubSync.parseGetResponse body with
             | Error message -> state |> withError "githubReference" message
@@ -782,9 +854,11 @@ module Dispatch =
                                 Tags = toMap reference.Tags }
                         GitHubReferenceSha = Some parsed.Sha }
                     |> clearError "githubReference"
+                    |> beginObservationReconciliation
         | HttpResult("github-reference-pull", OutcomeSuccess(status, None)) when status >= 200 && status < 300 ->
             state |> withError "githubReference" "GitHub's response had no content."
-        | HttpResult("github-reference-pull", OutcomeSuccess(404, _)) -> state |> clearError "githubReference" // no shared catalog published yet — not an error
+        | HttpResult("github-reference-pull", OutcomeSuccess(404, _)) ->
+            state |> clearError "githubReference" |> beginObservationReconciliation // no shared catalog published yet — not an error
         | HttpResult("github-reference-pull", OutcomeSuccess(status, bodyOpt)) ->
             state |> withError "githubReference" $"GitHub returned {status} loading reference data: {GitHubSync.errorMessage bodyOpt}"
         | HttpResult("github-reference-pull", OutcomeFailure reason) -> state |> withError "githubReference" $"Could not load reference data from GitHub ({reason})."
@@ -813,6 +887,160 @@ module Dispatch =
         | HttpResult("github-reference-push", OutcomeCancelled) -> state
         | HttpResult("github-reference-push", OutcomeUnknown reason) ->
             state |> withError "githubReference" $"The reference catalog may not have saved to GitHub ({reason})."
+
+        /// One project's observation inbox listing. A parseable success
+        /// populates the queue (possibly empty, if nothing has ever been
+        /// submitted there); anything else — including a 404, which just
+        /// means the inbox directory itself doesn't exist yet — is
+        /// treated the same as an empty inbox. Either way `advanceReconciliation`
+        /// immediately pops the first entry (or, if there is none, moves
+        /// on to the next project).
+        | HttpResult("github-observations-list", OutcomeSuccess(status, Some body)) when status >= 200 && status < 300 ->
+            match state.IntegrationReconciliation with
+            | None -> state
+            | Some reconciliation ->
+                let entries =
+                    GitHubSync.parseObservationListing body
+                    |> Result.defaultValue []
+                    |> List.map (fun entry -> { Session.Name = entry.Name; Session.Path = entry.Path })
+                { state with IntegrationReconciliation = advanceReconciliation { reconciliation with RemainingObservations = entries } }
+        | HttpResult("github-observations-list", _) ->
+            match state.IntegrationReconciliation with
+            | None -> state
+            | Some reconciliation -> { state with IntegrationReconciliation = advanceReconciliation { reconciliation with RemainingObservations = [] } }
+
+        /// One observation file's raw content. `peekObservationId` reads
+        /// just enough of it to key the receipt/candidate existence
+        /// checks that come next — full structural validation is deferred
+        /// until (and unless) this turns out to be a genuinely new
+        /// observation (see the "github-candidate-pull" 404 case, below).
+        /// A payload with no readable id at all can never be safely
+        /// checked or receipted, so it is skipped outright.
+        | HttpResult("github-observation-pull", OutcomeSuccess(status, Some body)) when status >= 200 && status < 300 ->
+            match state.IntegrationReconciliation with
+            | None -> state
+            | Some reconciliation ->
+                match GitHubSync.parseGetResponse body with
+                | Error _ -> { state with IntegrationReconciliation = advanceReconciliation reconciliation }
+                | Ok parsed ->
+                    match TimeObservation.peekObservationId parsed.DocumentJson with
+                    | None -> { state with IntegrationReconciliation = advanceReconciliation reconciliation }
+                    | Some observationId ->
+                        { state with
+                            IntegrationReconciliation =
+                                Some { reconciliation with Step = Session.AwaitingReceiptCheck(observationId, parsed.DocumentJson) } }
+        | HttpResult("github-observation-pull", _) ->
+            match state.IntegrationReconciliation with
+            | None -> state
+            | Some reconciliation -> { state with IntegrationReconciliation = advanceReconciliation reconciliation }
+
+        /// specification §23's idempotency check, part 1: does a receipt
+        /// already exist for this observation id? A 2xx means yes — this
+        /// observation was already fully processed (in an earlier
+        /// session, or by another client), so there is nothing left to
+        /// do. A 404 means no — move on to checking for a candidate
+        /// (§22/23's "candidate written, receipt failed" repair case)
+        /// before ever deciding anything new. Anything else is treated
+        /// conservatively as "could not confirm": skip this observation
+        /// rather than risk minting a second candidate for one that may
+        /// already be fully processed.
+        | HttpResult("github-receipt-pull", OutcomeSuccess(status, _)) when status >= 200 && status < 300 ->
+            match state.IntegrationReconciliation with
+            | None -> state
+            | Some reconciliation -> { state with IntegrationReconciliation = advanceReconciliation reconciliation }
+        | HttpResult("github-receipt-pull", OutcomeSuccess(404, _)) ->
+            match state.IntegrationReconciliation with
+            | Some({ Step = Session.AwaitingReceiptCheck(observationId, rawJson) } as reconciliation) ->
+                { state with IntegrationReconciliation = Some { reconciliation with Step = Session.AwaitingCandidateCheck(observationId, rawJson) } }
+            | Some reconciliation -> { state with IntegrationReconciliation = advanceReconciliation reconciliation }
+            | None -> state
+        | HttpResult("github-receipt-pull", _) ->
+            match state.IntegrationReconciliation with
+            | None -> state
+            | Some reconciliation -> { state with IntegrationReconciliation = advanceReconciliation reconciliation }
+
+        /// specification §23's idempotency check, part 2 (only reached
+        /// once part 1 confirmed no receipt exists). A 2xx means a
+        /// candidate already exists with no receipt — repair *only* the
+        /// missing receipt, for this exact candidate, never mint a second
+        /// one (§22's core recovery case, proved by CHR-INT-014's "Test
+        /// D"). A 404 means this is a genuinely new observation: only now
+        /// — with both checks confirmed empty — is it worth fully
+        /// validating and applying Chrona's domain policy, via the same
+        /// pure `ObservationReconciliation.reconcileRaw` CHR-INT-010
+        /// proved and CHR-INT-014 exercised.
+        | HttpResult("github-candidate-pull", OutcomeSuccess(status, Some body)) when status >= 200 && status < 300 ->
+            match state.IntegrationReconciliation with
+            | None -> state
+            | Some reconciliation ->
+                match GitHubSync.parseGetResponse body with
+                | Error _ -> { state with IntegrationReconciliation = advanceReconciliation reconciliation }
+                | Ok parsed ->
+                    match Integration.TimeCandidate.deserialize parsed.DocumentJson with
+                    | Error _ -> { state with IntegrationReconciliation = advanceReconciliation reconciliation }
+                    | Ok candidate ->
+                        let receipt = receiptFor state candidate.SourceObservationId (Integration.CandidateCreated candidate.CandidateId)
+                        { state with IntegrationReconciliation = Some { reconciliation with Step = Session.AwaitingReceiptWrite receipt } }
+        | HttpResult("github-candidate-pull", OutcomeSuccess(404, _)) ->
+            match state.IntegrationReconciliation with
+            | Some({ Step = Session.AwaitingCandidateCheck(observationId, rawJson) } as reconciliation) ->
+                match Integration.ObservationReconciliation.reconcileRaw state.Environment false None rawJson with
+                | Integration.ObservationReconciliation.CandidateCreated candidate ->
+                    { state with IntegrationReconciliation = Some { reconciliation with Step = Session.AwaitingCandidateWrite candidate } }
+                | Integration.ObservationReconciliation.Rejected reason ->
+                    let receipt = receiptFor state observationId (Integration.ObservationResult.Rejected reason)
+                    { state with IntegrationReconciliation = Some { reconciliation with Step = Session.AwaitingReceiptWrite receipt } }
+                | Integration.ObservationReconciliation.AlreadyProcessed
+                | Integration.ObservationReconciliation.ReceiptRepairNeeded _ ->
+                    // Unreachable with existingReceipt=false/existingCandidate=None,
+                    // both hardcoded just above — handled defensively rather
+                    // than assumed away.
+                    { state with IntegrationReconciliation = advanceReconciliation reconciliation }
+            | Some reconciliation -> { state with IntegrationReconciliation = advanceReconciliation reconciliation }
+            | None -> state
+        | HttpResult("github-candidate-pull", _) ->
+            match state.IntegrationReconciliation with
+            | None -> state
+            | Some reconciliation -> { state with IntegrationReconciliation = advanceReconciliation reconciliation }
+
+        /// The candidate write. A 409/422 means another client already
+        /// created it first — safe to treat as equivalent to success here
+        /// (unlike a ledger push's 409/422, which means a real conflict to
+        /// merge): `CandidateId` is a pure deterministic function of the
+        /// observation id (`Integration.TimeCandidate.candidateId`), so
+        /// whichever client won the race, the id this receipt references
+        /// is exactly the one that now exists. Anything else — a genuine
+        /// failure, or an unconfirmed outcome — must NOT be followed by a
+        /// receipt write (specification §22's critical ordering: writing
+        /// a receipt after a failed/unknown candidate write would
+        /// permanently mark an unprocessed observation "done" with
+        /// nothing to show for it); this observation is simply retried,
+        /// from scratch, on the next startup.
+        | HttpResult("github-candidate-push", OutcomeSuccess((200 | 201 | 409 | 422), _)) ->
+            match state.IntegrationReconciliation with
+            | Some({ Step = Session.AwaitingCandidateWrite candidate } as reconciliation) ->
+                let receipt = receiptFor state candidate.SourceObservationId (Integration.CandidateCreated candidate.CandidateId)
+                { state with IntegrationReconciliation = Some { reconciliation with Step = Session.AwaitingReceiptWrite receipt } }
+            | Some reconciliation -> { state with IntegrationReconciliation = advanceReconciliation reconciliation }
+            | None -> state
+        | HttpResult("github-candidate-push", _) ->
+            match state.IntegrationReconciliation with
+            | None -> state
+            | Some reconciliation -> { state with IntegrationReconciliation = advanceReconciliation reconciliation }
+
+        /// The receipt write — the last step for one observation,
+        /// regardless of its outcome. A 409/422 (someone else already
+        /// wrote the same deterministic receipt) is just as final as a
+        /// confirmed success; a genuine failure or unconfirmed outcome
+        /// leaves the observation exactly where it was (receipt still
+        /// missing, candidate already in place), which the next
+        /// startup's receipt-then-candidate check safely repairs
+        /// (CHR-INT-014's proved recovery path) — never a reason to hold
+        /// up this session's pass over the rest of the queue.
+        | HttpResult("github-receipt-push", _) ->
+            match state.IntegrationReconciliation with
+            | None -> state
+            | Some reconciliation -> { state with IntegrationReconciliation = advanceReconciliation reconciliation }
 
         | HttpResult(_, _) -> state
 
@@ -999,7 +1227,50 @@ module Dispatch =
                     | Ok newCommitSha -> [ GitHubSync.buildRefUpdateEffect config newCommitSha ]
                     | Error _ -> []
                 | _ -> []
-            newState, cacheEffects @ identityEffects @ conflictEffects @ reconciliationEffects @ commitChainEffects
+            /// Drives CHR-INT-015's startup observation reconciliation one
+            /// HTTP effect at a time — the counterpart to `commitChainEffects`
+            /// above, but for the chain `handleEffectResult`'s "github-
+            /// reference-pull"/"github-observations-list"/"github-observation-
+            /// pull"/"github-receipt-pull"/"github-candidate-pull"/"github-
+            /// candidate-push"/"github-receipt-push" cases advance. Every
+            /// state decision already happened there; this only reads the
+            /// (already-advanced) `Step` to build the one next request —
+            /// `Some config, Some reconciliation` only holds once a
+            /// relevant result has actually advanced it (the very first
+            /// time, via `beginObservationReconciliation` on "github-
+            /// reference-pull"), so this never fires on an unrelated event.
+            let observationReconciliationEffects =
+                match newState.GitHubSync, newState.IntegrationReconciliation with
+                | Some config, Some reconciliation ->
+                    match result with
+                    | HttpResult(
+                        ("github-reference-pull"
+                        | "github-observations-list"
+                        | "github-observation-pull"
+                        | "github-receipt-pull"
+                        | "github-candidate-pull"
+                        | "github-candidate-push"
+                        | "github-receipt-push"),
+                        _) ->
+                        [ match reconciliation.Step with
+                          | Session.AwaitingInboxListing -> GitHubSync.buildObservationsListEffect config reconciliation.CurrentProjectId
+                          | Session.AwaitingObservationBody observationRef -> GitHubSync.buildObservationGetEffect config observationRef.Path
+                          | Session.AwaitingReceiptCheck(observationId, _) -> GitHubSync.buildReceiptGetEffect config observationId
+                          | Session.AwaitingCandidateCheck(observationId, _) ->
+                              GitHubSync.buildCandidateGetEffect config (Integration.TimeCandidate.candidateId observationId)
+                          | Session.AwaitingCandidateWrite candidate ->
+                              GitHubSync.buildCandidatePutEffect config candidate.CandidateId (Integration.TimeCandidate.serialize candidate)
+                          | Session.AwaitingReceiptWrite receipt ->
+                              GitHubSync.buildReceiptPutEffect config receipt.ObservationId (Integration.ProcessingReceipt.serialize receipt) ]
+                    | _ -> []
+                | _ -> []
+            newState,
+            cacheEffects
+            @ identityEffects
+            @ conflictEffects
+            @ reconciliationEffects
+            @ commitChainEffects
+            @ observationReconciliationEffects
 
     /// `messageJson`/return value are JSON strings matching
     /// `BrowserToEngineMessage`/`EngineToBrowserMessage` — see Protocol.fs.
