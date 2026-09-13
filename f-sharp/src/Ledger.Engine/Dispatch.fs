@@ -454,8 +454,8 @@ module Dispatch =
             match event.Key, event.Value with
             | Some id, Some v -> handleSetTagActive state id (v = "on")
             | _ -> state
-        /// A deliberate no-op: `web/dom-bindings.js` dispatches this once a
-        /// second while a timer is running purely to force a fresh
+        /// A deliberate no-op: `web/dom-bindings.js` dispatches this every
+        /// six seconds while a timer is running purely to force a fresh
         /// `Projections.build` — `timerFields`'s elapsed-time calculation
         /// reads `environment.Clock()` fresh on every call, but nothing
         /// re-renders between real events, so without this the elapsed
