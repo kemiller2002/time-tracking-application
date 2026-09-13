@@ -1,4 +1,4 @@
-# CHR-INT-001 — Current Startup Behavior, and Where Reconciliation Will Slot In
+# CHR-INT-001/015 — Current Startup Behavior, and Where Reconciliation Slots In
 
 ## Current startup flow (as of the baseline commit)
 
@@ -36,34 +36,57 @@ code — `Storage` is always tried first and is synchronous, and every
 subsequent GitHub effect is asynchronous, sequential, and re-renders
 incrementally rather than gating the first render.
 
-## Where observation reconciliation will slot in (building blocks done, orchestration not yet wired)
+## Where observation reconciliation slots in (CHR-INT-015 — wired)
 
-This document records the **intended integration point**. As of
-CHR-INT-011/012/013, `GitHubSync.fs` has every effect-request/response
-building block reconciliation needs (listing the inbox, reading one
-observation, checking for and creating a candidate/receipt — see below)
-and `Integration.fs` has the pure decision (`ObservationReconciliation.
-decide`/`reconcileRaw`, CHR-INT-008/009/010). **None of it is called from
-anywhere yet** — `Dispatch.fs`'s `handleMessage` still only ever builds
-the settings/ledger/reference pull effects it already did before this
-work started. Wiring these pieces together into the actual startup
-sequence, including the write-ordering and idempotent-retry behavior
-sections 21-26 require, is CHR-INT-015, deferred to its own PR.
-
-Reconciliation is proposed to run as one more step in the same
-identity-resolve chain `handleMessage`'s `identityEffects` already builds
-— i.e., once GitHub sync is configured and identified, alongside (not
-instead of) the existing settings/ledger/reference pulls:
+As of CHR-INT-015, reconciliation actually runs. It is seeded the moment
+`reference.json` resolves — not as a sibling effect requested alongside
+it, but chained off its own result (`Dispatch.fs`'s
+`beginObservationReconciliation`, called from `handleEffectResult`'s
+"github-reference-pull" success/404 cases) — precisely so the very first
+inbox listing it builds is always based on the just-pulled project list,
+never a stale one an effect built earlier in the same `handle` call would
+have captured:
 
 ```
 identity resolves
     ├── pull settings.json      (existing)
     ├── pull ledger.json        (existing)
-    ├── pull reference.json     (existing)
-    └── list + reconcile observations/receipts   (CHR-INT-015, not yet wired)
+    └── pull reference.json     (existing)
+            └── seed reconciliation over every known project, then:
+                list inbox -> for each observation:
+                    read it -> check receipt -> check candidate ->
+                    (write candidate ->) write receipt -> next observation
+                (then advance to the next project once one's queue is empty)
 ```
 
-### The building blocks now available (`GitHubSync.fs`)
+Every step is exactly one `HttpEffect` in flight at a time, one step per
+`Dispatch.handle` call — mirroring the existing atomic-commit chain
+(`buildRefGetEffect` through `buildRefUpdateEffect`) rather than an
+in-process loop, since that is the WASM boundary's actual constraint.
+`Session.IntegrationReconciliationStep` names exactly which response is
+outstanding at each point; `handleEffectResult` decides state transitions
+(deserializing responses, calling `ObservationReconciliation.decide`/
+`reconcileRaw`, advancing the step or the observation/project queue), and
+`handleMessage`'s `observationReconciliationEffects` closure reads the
+already-advanced step to build the one next `GitHubSync.build*Effect`
+request — see `Dispatch.fs`'s "CHR-INT-015: startup observation
+reconciliation" section for the full case-by-case reasoning (in
+particular why a candidate write's 409/422 is treated as success-
+equivalent, unlike a ledger push's, and why any other non-success at any
+step just skips the one observation or project in progress rather than
+surfacing a user-visible error — everything is safely retried, from
+scratch, on the next startup).
+
+A project with nothing to reconcile (an empty or 404 inbox) advances
+straight to the next project; once every known project's inbox has been
+exhausted, `Session.State.IntegrationReconciliation` reverts to `None`
+until the next `reference.json` pull re-seeds it. Verified by 9
+`Ledger.Engine.Specs` driving `Dispatch.handle` directly through a full
+pass (including the receipt-repair and unrecognized-project-rejection
+cases) and, live, in a browser via Playwright with GitHub's API mocked at
+the network layer.
+
+### The building blocks `Dispatch.fs` now drives (`GitHubSync.fs`)
 
 - `buildObservationsListEffect config projectId` — lists a project's
   observation inbox. The GitHub Contents API returns a JSON *array*
@@ -91,9 +114,8 @@ identity resolves
 None of these functions call each other or decide *when* to call which —
 that sequencing (list → for each unreceipted observation, check for an
 existing candidate, decide via `ObservationReconciliation`, write
-candidate-then-receipt in that order per §22) is exactly what CHR-INT-015
-adds, together with the actual `EffectResult` handling in `Dispatch.fs`
-that today only exists for settings/ledger/reference/whoami/push.
+candidate-then-receipt in that order per §22) lives entirely in
+`Dispatch.fs`, per the "CHR-INT-015 — wired" section above.
 
 Per section 20/72, reconciliation must never block the first render, and
 per the accepted V1 tradeoff (section 72), it only runs when Chrona's

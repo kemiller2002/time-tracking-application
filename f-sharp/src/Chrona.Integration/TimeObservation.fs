@@ -268,3 +268,19 @@ module TimeObservation =
                         observedAt
         with ex ->
             Error [ MalformedPayload ex.Message ]
+
+    /// Reads just the `observationId` field, independent of full
+    /// structural validation — an orchestration concern (not domain
+    /// policy) that needs an observation's identity before it can even
+    /// check whether it has already been processed, without first paying
+    /// for (or being blocked by) full validation of a payload that turns
+    /// out to be otherwise malformed. Returns `None` for unparseable JSON
+    /// or a blank/missing id — exactly the payloads `deserialize` itself
+    /// would also reject, just without requiring the whole document to be
+    /// well-formed first.
+    let peekObservationId (json: string) : string option =
+        try
+            let node = JsonNode.Parse(json).AsObject()
+            stringField node "observationId" |> Option.filter (isBlank >> not)
+        with _ ->
+            None

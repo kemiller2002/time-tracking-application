@@ -261,6 +261,39 @@ let private runReconciliationPass (store: FakeStore) (environment: Environment) 
 let private rawObservation (observationId: string) (projectId: string) =
     $"""{{"contractVersion":"1","observationId":"{observationId}","sourceSystem":"ros","organizationId":"echelon-foundry","projectId":"{projectId}","durationMinutes":30,"observedAt":"2026-09-13T14:03:00-04:00","evidence":[]}}"""
 
+/// Shaped like GitHub's real Contents API directory listing (a bare JSON
+/// array, unlike every single-file GET this file already builds via
+/// `contentsGetBody`) — see `GitHubSync.parseObservationListing`.
+let private observationsListingBody (entries: (string * string) list) =
+    let arr = JsonArray()
+    entries
+    |> List.iter (fun (name, path) ->
+        let o = JsonObject()
+        o.["name"] <- JsonValue.Create(name: string)
+        o.["path"] <- JsonValue.Create(path: string)
+        o.["type"] <- JsonValue.Create("file")
+        arr.Add(o))
+    arr.ToJsonString()
+
+let private decodedPutContent (effect: JsonObject) : string =
+    Text.Encoding.UTF8.GetString(Convert.FromBase64String((JsonNode.Parse(effect.["body"].GetValue<string>()).AsObject().["content"]).GetValue<string>()))
+
+let private onlyHttpEffect (response: JsonObject) : JsonObject =
+    effectsOf response |> Seq.map (fun e -> e.AsObject()) |> Seq.filter (fun e -> e.["kind"].GetValue<string>() = "Http") |> Seq.exactlyOne
+
+let private referenceJsonWithProjects (projectIds: string list) =
+    let projects = projectIds |> List.map (fun id -> $"""{{"id":"{id}","name":"{id}","active":true}}""") |> String.concat ","
+    $"""{{"projects":[{projects}],"activityTypes":[],"tags":[]}}"""
+
+/// Resolves identity and moves straight through the reference pull, so
+/// CHR-INT-015's reconciliation is seeded and its first request (the
+/// first project's inbox listing) is already sitting in the returned
+/// response's effects.
+let private beginReconciliationWithProjects (projectIds: string list) : JsonObject =
+    configureGitHub "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" "kemiller2002" (Some "Kevin Miller")
+    |> ignore
+    sendJson (httpResult "github-reference-pull" "Success" (Some 200) (Some(contentsGetBody "reference-sha" (referenceJsonWithProjects projectIds))) None)
+
 let tests : (string * (unit -> unit)) list =
     [
       "Initialize requests a Storage load for the ledger and one for cached GitHub sync settings", fun () ->
@@ -1137,6 +1170,173 @@ let tests : (string * (unit -> unit)) list =
         runReconciliationPass store environment [ rawObservation "ros:activity:x" "not-defined"; rawObservation "ros:activity:y" "not-defined" ]
         assertTrue (store.Contains(candidateKey "ros:activity:x") && store.Contains(candidateKey "ros:activity:y")) "both observations should have produced their own candidate"
         assertTrue (candidateKey "ros:activity:x" <> candidateKey "ros:activity:y") "two different observation ids collided on the same candidate key"
+
+      // --- CHR-INT-015: startup reconciliation actually wired into Dispatch.fs ---
+      //
+      // The tests above (CHR-INT-014) prove `ObservationReconciliation.decide`
+      // converges correctly through a test-only in-process harness. These
+      // drive the *real* production wiring — `Dispatch.handle` itself, one
+      // EffectResultMessage at a time, exactly as `web/dom-bindings.js`
+      // would — proving the actual multi-step effect chain (list -> read ->
+      // check receipt -> check candidate -> write candidate -> write
+      // receipt) is sequenced correctly end to end.
+
+      "reconciliation is seeded the moment reference.json resolves, requesting the first project's inbox listing", fun () ->
+        reset ()
+        let response = beginReconciliationWithProjects [ "acme" ]
+        let listing = onlyHttpEffect response
+        assertTrue (listing.["correlationId"].GetValue<string>() = "github-observations-list") "reference.json resolving did not request an inbox listing"
+        let listingUrl = listing.["url"].GetValue<string>()
+        assertTrue (listingUrl.Contains "integration/projects/acme/observations/inbox") $"the inbox listing targeted the wrong path: {listingUrl}"
+
+      "a 404 (or empty) inbox listing for the only known project ends reconciliation without further requests", fun () ->
+        reset ()
+        beginReconciliationWithProjects [ "acme" ] |> ignore
+        let response = sendJson (httpResult "github-observations-list" "Success" (Some 404) (Some """{"message":"Not Found"}""") None)
+        assertTrue ((effectsOf response).Count = 0) "an empty/missing inbox for the only project should end reconciliation, not request anything else"
+
+      "an empty first project's inbox moves reconciliation on to the next project's listing", fun () ->
+        reset ()
+        beginReconciliationWithProjects [ "acme"; "beta" ] |> ignore
+        let response = sendJson (httpResult "github-observations-list" "Success" (Some 200) (Some(observationsListingBody [])) None)
+        let listing = onlyHttpEffect response
+        assertTrue
+            ((listing.["url"].GetValue<string>()).Contains "integration/projects/beta/observations/inbox")
+            "an empty inbox did not advance reconciliation to the next project"
+
+      "a full end-to-end pass — one new observation — lists, reads, checks, and writes a candidate then its receipt, in that order", fun () ->
+        reset ()
+        beginReconciliationWithProjects [ "acme" ] |> ignore
+        let observationJson = rawObservation "ros:activity:e2e-1" "acme"
+        let listResponse =
+            sendJson (httpResult "github-observations-list" "Success" (Some 200) (Some(observationsListingBody [ "e2e-1.json", "chrona-data/integration/projects/acme/observations/inbox/e2e-1.json" ])) None)
+        let readRequest = onlyHttpEffect listResponse
+        assertTrue (readRequest.["correlationId"].GetValue<string>() = "github-observation-pull") "the listing did not request the observation file next"
+        let readUrl = readRequest.["url"].GetValue<string>()
+        assertTrue (readUrl.Contains "inbox/e2e-1.json") $"the observation read targeted the wrong path: {readUrl}"
+
+        let receiptCheckResponse = sendJson (httpResult "github-observation-pull" "Success" (Some 200) (Some(contentsGetBody "obs-sha" observationJson)) None)
+        let receiptCheck = onlyHttpEffect receiptCheckResponse
+        let receiptCheckUrl = receiptCheck.["url"].GetValue<string>()
+        assertTrue
+            (receiptCheck.["correlationId"].GetValue<string>() = "github-receipt-pull" && receiptCheckUrl.Contains "observation-receipts/ros_3aactivity_3ae2e-1.json")
+            $"reading the observation did not check for an existing receipt at the expected path: {receiptCheckUrl}"
+
+        let candidateCheckResponse = sendJson (httpResult "github-receipt-pull" "Success" (Some 404) None None)
+        let candidateCheck = onlyHttpEffect candidateCheckResponse
+        let candidateCheckUrl = candidateCheck.["url"].GetValue<string>()
+        let expectedCandidateSegment = TimeCandidate.candidateId "ros:activity:e2e-1" |> StorageConvention.safeSegment
+        assertTrue
+            (candidateCheck.["correlationId"].GetValue<string>() = "github-candidate-pull" && candidateCheckUrl.Contains expectedCandidateSegment)
+            $"a missing receipt did not check for an existing candidate at the expected path: {candidateCheckUrl}"
+
+        let candidateWriteResponse = sendJson (httpResult "github-candidate-pull" "Success" (Some 404) None None)
+        let candidateWrite = onlyHttpEffect candidateWriteResponse
+        assertTrue
+            (candidateWrite.["correlationId"].GetValue<string>() = "github-candidate-push" && candidateWrite.["method"].GetValue<string>() = "PUT")
+            "a genuinely new observation (no receipt, no candidate) did not write a candidate"
+        let candidateBody = decodedPutContent candidateWrite
+        assertTrue (not (JsonNode.Parse(candidateWrite.["body"].GetValue<string>()).AsObject().ContainsKey "sha")) "the candidate write was not create-only (it carried a sha)"
+        match TimeCandidate.deserialize candidateBody with
+        | Error message -> failwith $"the written candidate body could not be read back: {message}"
+        | Ok candidate ->
+            assertTrue (candidate.SourceObservationId = "ros:activity:e2e-1") "the written candidate referenced the wrong observation"
+            assertTrue (candidate.CandidateId = TimeCandidate.candidateId "ros:activity:e2e-1") "the written candidate's id was not the deterministic candidate:<observationId> id"
+            assertTrue (candidate.State = Proposed) "a freshly-created candidate must start Proposed"
+
+        let receiptWriteResponse = sendJson (httpResult "github-candidate-push" "Success" (Some 201) None None)
+        let receiptWrite = onlyHttpEffect receiptWriteResponse
+        assertTrue
+            (receiptWrite.["correlationId"].GetValue<string>() = "github-receipt-push" && receiptWrite.["method"].GetValue<string>() = "PUT")
+            "a successful candidate write did not proceed to write its receipt — critical ordering (§22) requires the receipt only after the candidate succeeds"
+        assertTrue (not (JsonNode.Parse(receiptWrite.["body"].GetValue<string>()).AsObject().ContainsKey "sha")) "the receipt write was not create-only (it carried a sha)"
+        match ProcessingReceipt.deserialize (decodedPutContent receiptWrite) with
+        | Error message -> failwith $"the written receipt body could not be read back: {message}"
+        | Ok receipt ->
+            assertTrue (receipt.ObservationId = "ros:activity:e2e-1") "the written receipt referenced the wrong observation"
+            match receipt.Result with
+            | CandidateCreated candidateId -> assertTrue (candidateId = TimeCandidate.candidateId "ros:activity:e2e-1") "the receipt's candidateId did not match the candidate that was written"
+            | _ -> failwith "a newly-created candidate's receipt must record CandidateCreated"
+
+        // Only one observation existed and it is now fully processed —
+        // reconciliation should end cleanly with no further requests.
+        let finalResponse = sendJson (httpResult "github-receipt-push" "Success" (Some 201) None None)
+        assertTrue ((effectsOf finalResponse).Count = 0) "reconciliation kept going after its only observation was fully processed"
+
+      "an observation whose receipt already exists is skipped without reading or writing anything else", fun () ->
+        reset ()
+        beginReconciliationWithProjects [ "acme" ] |> ignore
+        sendJson (httpResult "github-observations-list" "Success" (Some 200) (Some(observationsListingBody [ "already-done.json", "chrona-data/integration/projects/acme/observations/inbox/already-done.json" ])) None)
+        |> ignore
+        sendJson (httpResult "github-observation-pull" "Success" (Some 200) (Some(contentsGetBody "obs-sha" (rawObservation "ros:activity:already-done" "acme"))) None)
+        |> ignore
+        let response = sendJson (httpResult "github-receipt-pull" "Success" (Some 200) None None)
+        assertTrue ((effectsOf response).Count = 0) "an observation with an existing receipt should end reconciliation (only one observation was queued), not request anything else"
+
+      "an existing candidate with a missing receipt only repairs the receipt — it never writes a second candidate", fun () ->
+        reset ()
+        beginReconciliationWithProjects [ "acme" ] |> ignore
+        sendJson (httpResult "github-observations-list" "Success" (Some 200) (Some(observationsListingBody [ "repair.json", "chrona-data/integration/projects/acme/observations/inbox/repair.json" ])) None)
+        |> ignore
+        sendJson (httpResult "github-observation-pull" "Success" (Some 200) (Some(contentsGetBody "obs-sha" (rawObservation "ros:activity:repair" "acme"))) None)
+        |> ignore
+        sendJson (httpResult "github-receipt-pull" "Success" (Some 404) None None) |> ignore
+        let existingCandidate: TimeCandidate =
+            { CandidateId = TimeCandidate.candidateId "ros:activity:repair"; SourceObservationId = "ros:activity:repair"; SourceSystem = "ros"
+              ProjectId = "acme"; WorkItemId = None; ActorId = None; ProposedStart = None; ProposedEnd = None
+              ProposedDurationMinutes = Some 30; Description = None; State = Proposed }
+        let response =
+            sendJson (httpResult "github-candidate-pull" "Success" (Some 200) (Some(contentsGetBody "candidate-sha" (TimeCandidate.serialize existingCandidate))) None)
+        let repairWrite = onlyHttpEffect response
+        assertTrue
+            (repairWrite.["correlationId"].GetValue<string>() = "github-receipt-push")
+            "an existing candidate with no receipt should go straight to writing the repair receipt, not a new candidate"
+        match ProcessingReceipt.deserialize (decodedPutContent repairWrite) with
+        | Error message -> failwith $"the repair receipt body could not be read back: {message}"
+        | Ok receipt ->
+            match receipt.Result with
+            | CandidateCreated candidateId -> assertTrue (candidateId = existingCandidate.CandidateId) "the repair receipt referenced a different candidate than the one that already existed"
+            | _ -> failwith "repairing a missing receipt for an already-created candidate must record CandidateCreated"
+
+      "an observation for a project Chrona does not recognize is rejected — its receipt records the rejection, and no candidate is ever written", fun () ->
+        reset ()
+        beginReconciliationWithProjects [ "acme" ] |> ignore
+        sendJson (httpResult "github-observations-list" "Success" (Some 200) (Some(observationsListingBody [ "unknown-project.json", "chrona-data/integration/projects/acme/observations/inbox/unknown-project.json" ])) None)
+        |> ignore
+        sendJson (httpResult "github-observation-pull" "Success" (Some 200) (Some(contentsGetBody "obs-sha" (rawObservation "ros:activity:unknown-project" "no-such-project"))) None)
+        |> ignore
+        sendJson (httpResult "github-receipt-pull" "Success" (Some 404) None None) |> ignore
+        let response = sendJson (httpResult "github-candidate-pull" "Success" (Some 404) None None)
+        let write = onlyHttpEffect response
+        assertTrue
+            (write.["correlationId"].GetValue<string>() = "github-receipt-push")
+            "an observation for an unrecognized project should be rejected straight to a receipt — never a candidate write"
+        match ProcessingReceipt.deserialize (decodedPutContent write) with
+        | Error message -> failwith $"the rejection receipt body could not be read back: {message}"
+        | Ok receipt ->
+            match receipt.Result with
+            | Rejected reason -> assertTrue (reason.Contains "no-such-project") $"the rejection reason did not identify the unrecognized project: {reason}"
+            | _ -> failwith "an observation for an unrecognized project must be recorded as Rejected, not CandidateCreated"
+
+      "a failed or unconfirmed candidate write is never followed by a receipt write, and the observation is simply dropped for this session", fun () ->
+        reset ()
+        beginReconciliationWithProjects [ "acme" ] |> ignore
+        sendJson (httpResult "github-observations-list" "Success" (Some 200) (Some(observationsListingBody [ "candidate-write-fails.json", "chrona-data/integration/projects/acme/observations/inbox/candidate-write-fails.json" ])) None)
+        |> ignore
+        sendJson (httpResult "github-observation-pull" "Success" (Some 200) (Some(contentsGetBody "obs-sha" (rawObservation "ros:activity:candidate-write-fails" "acme"))) None)
+        |> ignore
+        sendJson (httpResult "github-receipt-pull" "Success" (Some 404) None None) |> ignore
+        sendJson (httpResult "github-candidate-pull" "Success" (Some 404) None None) |> ignore
+        let response = sendJson (httpResult "github-candidate-push" "Failure" None None (Some "network error"))
+        assertTrue
+            ((effectsOf response).Count = 0)
+            "a failed candidate write must never be followed by a receipt write — this would permanently mark the observation processed with nothing to show for it"
+
+      "an unreadable reference.json never seeds reconciliation — no observations-list request is ever made", fun () ->
+        reset ()
+        configureGitHub "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" "kemiller2002" (Some "Kevin Miller") |> ignore
+        let response = sendJson (httpResult "github-reference-pull" "Failure" None None (Some "network error"))
+        assertTrue ((effectsOf response).Count = 0) "a failed reference.json pull should not start reconciliation"
     ]
 
 [<EntryPoint>]

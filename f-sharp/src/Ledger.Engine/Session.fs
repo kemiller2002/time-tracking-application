@@ -91,6 +91,42 @@ module Session =
               Timezone = None
               NewProjectName = None; NewActivityTypeName = None; NewTagName = None }
 
+    /// One file from a project's observation inbox listing — just enough
+    /// to fetch it next (`GitHubSync.buildObservationGetEffect`).
+    type IntegrationObservationRef = { Name: string; Path: string }
+
+    /// CHR-INT-015's startup observation reconciliation advances one HTTP
+    /// effect at a time — the WASM boundary allows only one request in
+    /// flight per `Dispatch.handle` call (see the existing atomic-commit
+    /// chain, `GitHubCommitParentSha` etc., above, which this mirrors).
+    /// Each case names exactly the one response reconciliation is still
+    /// waiting on; `Dispatch.fs`'s `handleEffectResult` advances a `Step`
+    /// only in response to that named response, and `handleMessage` reads
+    /// the (already advanced) `Step` to build the one next effect — see
+    /// docs/integration/STARTUP-RECONCILIATION.md.
+    type IntegrationReconciliationStep =
+        | AwaitingInboxListing
+        | AwaitingObservationBody of observationRef: IntegrationObservationRef
+        | AwaitingReceiptCheck of observationId: string * rawJson: string
+        | AwaitingCandidateCheck of observationId: string * rawJson: string
+        | AwaitingCandidateWrite of candidate: Integration.TimeCandidate
+        | AwaitingReceiptWrite of receipt: Integration.ProcessingReceipt
+
+    /// `None` means reconciliation is not currently running (either it
+    /// hasn't started yet this session, or it ran to completion across
+    /// every known project). Seeded once, right after `reference.json`
+    /// resolves (`Dispatch.fs`'s `beginObservationReconciliation`) so the
+    /// very first inbox listing is always built from the just-pulled
+    /// project list, never a stale one captured before that pull ran.
+    type IntegrationReconciliation =
+        { CurrentProjectId: string
+          RemainingProjectIds: string list
+          /// Files left to process in `CurrentProjectId`'s inbox — only
+          /// populated once its listing has actually been read (empty
+          /// while `Step = AwaitingInboxListing`).
+          RemainingObservations: IntegrationObservationRef list
+          Step: IntegrationReconciliationStep }
+
     type State =
         { Environment: Environment
           Document: LedgerDocument
@@ -150,7 +186,11 @@ module Session =
           /// "idle" | "identifying" | "pulling" | "pushing" | "merging" |
           /// "reconciling" | "synced" | "conflict" | "unknown" | "error"
           GitHubSyncStatus: string
-          GitHubLastSyncedAt: DateTimeOffset option }
+          GitHubLastSyncedAt: DateTimeOffset option
+          /// `None` except while CHR-INT-015's startup reconciliation is
+          /// actively working through observation inboxes. See
+          /// `IntegrationReconciliation`'s own doc comment.
+          IntegrationReconciliation: IntegrationReconciliation option }
 
     /// Not any particular organization's project/activity-type list — this app
     /// makes no assumption about who is using it. A single neutral "not
@@ -193,6 +233,7 @@ module Session =
           GitHubReferenceSha = None
           GitHubCommitParentSha = None
           GitHubSyncStatus = "idle"
-          GitHubLastSyncedAt = None }
+          GitHubLastSyncedAt = None
+          IntegrationReconciliation = None }
 
     let mutable current: State = initial ()
