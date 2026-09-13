@@ -386,6 +386,15 @@ module Dispatch =
         | "PullFromGitHub" -> handlePullFromGitHub state
         | "PushToGitHub" -> handlePushToGitHub state
         | "SaveSettings" -> handleSaveSettings state
+        /// A deliberate no-op: `web/dom-bindings.js` dispatches this once a
+        /// second while a timer is running purely to force a fresh
+        /// `Projections.build` — `timerFields`'s elapsed-time calculation
+        /// reads `environment.Clock()` fresh on every call, but nothing
+        /// re-renders between real events, so without this the elapsed
+        /// label would sit frozen at whatever it read on the last click.
+        /// Leaves `Document`/`TimerState` untouched, so it never triggers a
+        /// Storage save or a GitHub push (both gated on those changing).
+        | "Tick" -> state
         | _ -> { state with Draft = applyDraftField state.Draft event }
 
     /// Never trusts a Storage outcome as silent success or silent failure —
@@ -683,6 +692,38 @@ module Dispatch =
         | HttpResult("github-settings-push", OutcomeUnknown reason) ->
             state |> withError "githubSettings" $"Settings may not have saved to GitHub ({reason})."
 
+        /// Replaces the session's reference data (Projects/ActivityTypes/Tags)
+        /// wholesale, keeping `Environment.NewId`/`Clock` untouched. Read-only
+        /// in v1 — there is no put effect, so nothing in this app ever writes
+        /// `reference.json` back. A missing file (404) is not an error: it
+        /// just means no one has hand-authored a shared catalog into this
+        /// repo/folder yet, so the fixture defaults (`Session.fs`'s
+        /// `fixtureEnvironment`) keep serving as the active/inactive lists.
+        | HttpResult("github-reference-pull", OutcomeSuccess(status, Some body)) when status >= 200 && status < 300 ->
+            match GitHubSync.parseGetResponse body with
+            | Error message -> state |> withError "githubReference" message
+            | Ok parsed ->
+                match GitHubSync.parseReferenceJson parsed.DocumentJson with
+                | Error message -> state |> withError "githubReference" message
+                | Ok reference ->
+                    let toMap (items: ReferenceItem list) = items |> List.map (fun item -> item.Id, item) |> Map.ofList
+                    { state with
+                        Environment =
+                            { state.Environment with
+                                Projects = toMap reference.Projects
+                                ActivityTypes = toMap reference.ActivityTypes
+                                Tags = toMap reference.Tags } }
+                    |> clearError "githubReference"
+        | HttpResult("github-reference-pull", OutcomeSuccess(status, None)) when status >= 200 && status < 300 ->
+            state |> withError "githubReference" "GitHub's response had no content."
+        | HttpResult("github-reference-pull", OutcomeSuccess(404, _)) -> state |> clearError "githubReference" // no shared catalog published yet — not an error
+        | HttpResult("github-reference-pull", OutcomeSuccess(status, bodyOpt)) ->
+            state |> withError "githubReference" $"GitHub returned {status} loading reference data: {GitHubSync.errorMessage bodyOpt}"
+        | HttpResult("github-reference-pull", OutcomeFailure reason) -> state |> withError "githubReference" $"Could not load reference data from GitHub ({reason})."
+        | HttpResult("github-reference-pull", OutcomeCancelled) -> state
+        | HttpResult("github-reference-pull", OutcomeUnknown reason) ->
+            state |> withError "githubReference" $"Could not confirm whether reference data loaded from GitHub ({reason})."
+
         | HttpResult(_, _) -> state
 
     /// Returns the new state and the effects it requests. LocalStorage stays
@@ -773,7 +814,7 @@ module Dispatch =
                     match newState.GitHubSync with
                     | Some config ->
                         match config.Login with
-                        | Some login -> [ GitHubSync.buildSettingsGetEffect config login; GitHubSync.buildGetEffect config login ]
+                        | Some login -> [ GitHubSync.buildSettingsGetEffect config login; GitHubSync.buildGetEffect config login; GitHubSync.buildReferenceGetEffect config ]
                         | None -> [ GitHubSync.buildWhoAmIEffect config ]
                     | None -> []
                 | HttpResult("github-whoami", OutcomeSuccess(status, Some _)) when status >= 200 && status < 300 ->
@@ -781,7 +822,7 @@ module Dispatch =
                     | Some config ->
                         [ StorageEffect("github-config-save", StorageSet(GitHubSync.encodeConfig config), githubConfigStorageKey) ]
                         @ (match config.Login with
-                           | Some login -> [ GitHubSync.buildSettingsGetEffect config login; GitHubSync.buildGetEffect config login ]
+                           | Some login -> [ GitHubSync.buildSettingsGetEffect config login; GitHubSync.buildGetEffect config login; GitHubSync.buildReferenceGetEffect config ]
                            | None -> [])
                     | None -> []
                 | _ -> []

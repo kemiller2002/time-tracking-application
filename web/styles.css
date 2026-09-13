@@ -837,6 +837,17 @@ button,
   grid-column: 1 / -1;
 }
 
+/* A date+time input pair standing in for one <input type="datetime-local">
+   (see web/dom-bindings.js's data-compose-with) — split out because that
+   combined widget's native rendering can run wider than its box on some
+   mobile browsers regardless of CSS. Always full-width (the field wrapping
+   it is .field-full) so neither half is ever squeezed into a narrow column. */
+.field-pair {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 0.5rem;
+}
+
 .field label,
 .field-label {
   font-size: 0.82rem;
