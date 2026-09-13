@@ -49,6 +49,9 @@ module Dispatch =
         | "DraftGitHubBranchChanged" -> { draft with GitHubBranch = event.Value }
         | "DraftGitHubTokenChanged" -> { draft with GitHubToken = event.Value }
         | "DraftTimezoneChanged" -> { draft with Timezone = event.Value }
+        | "DraftNewProjectNameChanged" -> { draft with NewProjectName = event.Value }
+        | "DraftNewActivityTypeNameChanged" -> { draft with NewActivityTypeName = event.Value }
+        | "DraftNewTagNameChanged" -> { draft with NewTagName = event.Value }
         | "ToggleDraftTag" ->
             match event.Key, event.Value with
             | Some tagId, Some "on" -> { draft with TagIds = draft.TagIds.Add tagId }
@@ -359,6 +362,56 @@ module Dispatch =
         | Some { Login = None } -> state |> withError "githubSync" "Still identifying your GitHub account from your token — try again in a moment."
         | None -> state |> withError "githubSync" "Save your GitHub sync settings first."
 
+    // --- Reference data admin (Projects/Activity Types/Tags) ------------------
+
+    /// Shared "admin" error key across all six operations below — the admin
+    /// page (More screen) shows one error region for the whole reference-data
+    /// section, the same way the GitHub sync section shows one for its own.
+    let private handleAddProject (state: Session.State) : Session.State =
+        match state.Draft.NewProjectName |> Option.map (fun n -> n.Trim()) with
+        | Some name when name <> "" ->
+            match ReferenceCatalog.add state.Environment.Projects name with
+            | Ok(projects, _) ->
+                { state with Environment = { state.Environment with Projects = projects }; Draft = { state.Draft with NewProjectName = None } }
+                |> clearError "admin"
+            | Error diagnostic -> state |> withError "admin" diagnostic.Message
+        | _ -> state |> withError "admin" "A project name is required."
+
+    let private handleAddActivityType (state: Session.State) : Session.State =
+        match state.Draft.NewActivityTypeName |> Option.map (fun n -> n.Trim()) with
+        | Some name when name <> "" ->
+            match ReferenceCatalog.add state.Environment.ActivityTypes name with
+            | Ok(activityTypes, _) ->
+                { state with Environment = { state.Environment with ActivityTypes = activityTypes }; Draft = { state.Draft with NewActivityTypeName = None } }
+                |> clearError "admin"
+            | Error diagnostic -> state |> withError "admin" diagnostic.Message
+        | _ -> state |> withError "admin" "An activity type name is required."
+
+    let private handleAddTag (state: Session.State) : Session.State =
+        match state.Draft.NewTagName |> Option.map (fun n -> n.Trim()) with
+        | Some name when name <> "" ->
+            match ReferenceCatalog.add state.Environment.Tags name with
+            | Ok(tags, _) ->
+                { state with Environment = { state.Environment with Tags = tags }; Draft = { state.Draft with NewTagName = None } }
+                |> clearError "admin"
+            | Error diagnostic -> state |> withError "admin" diagnostic.Message
+        | _ -> state |> withError "admin" "A tag name is required."
+
+    let private handleSetProjectActive (state: Session.State) (id: string) (active: bool) : Session.State =
+        match ReferenceCatalog.setActive state.Environment.Projects id active with
+        | Ok projects -> { state with Environment = { state.Environment with Projects = projects } } |> clearError "admin"
+        | Error diagnostic -> state |> withError "admin" diagnostic.Message
+
+    let private handleSetActivityTypeActive (state: Session.State) (id: string) (active: bool) : Session.State =
+        match ReferenceCatalog.setActive state.Environment.ActivityTypes id active with
+        | Ok activityTypes -> { state with Environment = { state.Environment with ActivityTypes = activityTypes } } |> clearError "admin"
+        | Error diagnostic -> state |> withError "admin" diagnostic.Message
+
+    let private handleSetTagActive (state: Session.State) (id: string) (active: bool) : Session.State =
+        match ReferenceCatalog.setActive state.Environment.Tags id active with
+        | Ok tags -> { state with Environment = { state.Environment with Tags = tags } } |> clearError "admin"
+        | Error diagnostic -> state |> withError "admin" diagnostic.Message
+
     let private handleEvent (state: Session.State) (event: SemanticEvent) : Session.State =
         match event.Name with
         | "CreateActivity" -> handleCreate state
@@ -386,6 +439,21 @@ module Dispatch =
         | "PullFromGitHub" -> handlePullFromGitHub state
         | "PushToGitHub" -> handlePushToGitHub state
         | "SaveSettings" -> handleSaveSettings state
+        | "AddProject" -> handleAddProject state
+        | "AddActivityType" -> handleAddActivityType state
+        | "AddTag" -> handleAddTag state
+        | "SetProjectActive" ->
+            match event.Key, event.Value with
+            | Some id, Some v -> handleSetProjectActive state id (v = "on")
+            | _ -> state
+        | "SetActivityTypeActive" ->
+            match event.Key, event.Value with
+            | Some id, Some v -> handleSetActivityTypeActive state id (v = "on")
+            | _ -> state
+        | "SetTagActive" ->
+            match event.Key, event.Value with
+            | Some id, Some v -> handleSetTagActive state id (v = "on")
+            | _ -> state
         /// A deliberate no-op: `web/dom-bindings.js` dispatches this once a
         /// second while a timer is running purely to force a fresh
         /// `Projections.build` — `timerFields`'s elapsed-time calculation
@@ -693,11 +761,10 @@ module Dispatch =
             state |> withError "githubSettings" $"Settings may not have saved to GitHub ({reason})."
 
         /// Replaces the session's reference data (Projects/ActivityTypes/Tags)
-        /// wholesale, keeping `Environment.NewId`/`Clock` untouched. Read-only
-        /// in v1 — there is no put effect, so nothing in this app ever writes
-        /// `reference.json` back. A missing file (404) is not an error: it
-        /// just means no one has hand-authored a shared catalog into this
-        /// repo/folder yet, so the fixture defaults (`Session.fs`'s
+        /// wholesale, keeping `Environment.NewId`/`Clock` untouched. A missing
+        /// file (404) is not an error: it just means no one has published a
+        /// shared catalog into this repo/folder yet (whether by hand or via
+        /// the admin page), so the fixture defaults (`Session.fs`'s
         /// `fixtureEnvironment`) keep serving as the active/inactive lists.
         | HttpResult("github-reference-pull", OutcomeSuccess(status, Some body)) when status >= 200 && status < 300 ->
             match GitHubSync.parseGetResponse body with
@@ -712,7 +779,8 @@ module Dispatch =
                             { state.Environment with
                                 Projects = toMap reference.Projects
                                 ActivityTypes = toMap reference.ActivityTypes
-                                Tags = toMap reference.Tags } }
+                                Tags = toMap reference.Tags }
+                        GitHubReferenceSha = Some parsed.Sha }
                     |> clearError "githubReference"
         | HttpResult("github-reference-pull", OutcomeSuccess(status, None)) when status >= 200 && status < 300 ->
             state |> withError "githubReference" "GitHub's response had no content."
@@ -723,6 +791,28 @@ module Dispatch =
         | HttpResult("github-reference-pull", OutcomeCancelled) -> state
         | HttpResult("github-reference-pull", OutcomeUnknown reason) ->
             state |> withError "githubReference" $"Could not confirm whether reference data loaded from GitHub ({reason})."
+
+        /// The admin page's write path — fired after AddProject/AddActivityType/
+        /// AddTag/SetProjectActive/SetActivityTypeActive/SetTagActive in
+        /// `handleMessage`, below. Shares the `githubReference` error key
+        /// with the pull above (one region on the admin page shows either
+        /// direction's failure) — a 409 means someone else published a
+        /// newer catalog first, so the safe move is to pull latest before
+        /// retrying, not to silently overwrite it.
+        | HttpResult("github-reference-push", OutcomeSuccess(status, Some body)) when status = 200 || status = 201 ->
+            match GitHubSync.parsePutResponse body with
+            | Ok sha -> { state with GitHubReferenceSha = Some sha } |> clearError "githubReference"
+            | Error message -> state |> withError "githubReference" message
+        | HttpResult("github-reference-push", OutcomeSuccess(status, None)) when status = 200 || status = 201 ->
+            state |> withError "githubReference" "GitHub's response had no content for the reference catalog."
+        | HttpResult("github-reference-push", OutcomeSuccess(409, _)) ->
+            state |> withError "githubReference" "The shared catalog on GitHub changed since it was last loaded — pull latest before editing again."
+        | HttpResult("github-reference-push", OutcomeSuccess(status, bodyOpt)) ->
+            state |> withError "githubReference" $"GitHub returned {status} saving the reference catalog: {GitHubSync.errorMessage bodyOpt}"
+        | HttpResult("github-reference-push", OutcomeFailure reason) -> state |> withError "githubReference" $"Could not reach GitHub to save the reference catalog ({reason})."
+        | HttpResult("github-reference-push", OutcomeCancelled) -> state
+        | HttpResult("github-reference-push", OutcomeUnknown reason) ->
+            state |> withError "githubReference" $"The reference catalog may not have saved to GitHub ({reason})."
 
         | HttpResult(_, _) -> state
 
@@ -767,6 +857,15 @@ module Dispatch =
             let settingsPushEffect (config: Session.GitHubSyncConfig) (login: string) =
                 let settingsJson = GitHubSync.buildSettingsJson newState.ReportFormat newState.Timezone
                 [ GitHubSync.buildSettingsPutEffect config login newState.GitHubSettingsSha settingsJson ]
+            /// No `login` parameter, unlike `settingsPushEffect` — `reference.json`
+            /// lives at the folder root, not under any one person's subfolder
+            /// (see `GitHubSync.referenceFilePath`'s doc comment), so any
+            /// identified person's edit pushes the same shared file.
+            let referencePushEffect (config: Session.GitHubSyncConfig) =
+                let env = newState.Environment
+                let allOf (directory: Map<string, ReferenceItem>) = directory |> Map.toList |> List.map snd
+                let referenceJson = GitHubSync.buildReferenceJson (allOf env.Projects) (allOf env.ActivityTypes) (allOf env.Tags)
+                [ GitHubSync.buildReferencePutEffect config newState.GitHubReferenceSha referenceJson ]
             let githubEffects =
                 match newState.GitHubSync with
                 | None -> []
@@ -776,6 +875,10 @@ module Dispatch =
                     | "PullFromGitHub", Some login -> [ GitHubSync.buildGetEffect config login ]
                     | "PushToGitHub", Some _ -> [ GitHubSync.buildRefGetEffect config ]
                     | ("SaveSettings" | "SelectReportFormat"), Some login -> settingsPushEffect config login
+                    | ("AddProject" | "AddActivityType" | "AddTag" | "SetProjectActive" | "SetActivityTypeActive" | "SetTagActive"), Some _ when
+                        not (newState.Errors.ContainsKey "admin")
+                        ->
+                        referencePushEffect config
                     | _, Some _ when documentChanged -> [ GitHubSync.buildRefGetEffect config ]
                     | _ -> []
             newState, cacheEffects @ githubEffects

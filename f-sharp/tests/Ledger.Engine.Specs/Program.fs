@@ -161,8 +161,8 @@ let todayAt hour minute =
     DateTimeOffset(today.AddHours(float hour).AddMinutes(float minute), TimeSpan.Zero).ToString "O"
 
 let fillCreateDraft startedAt endedAt =
-    sendJson (eventMessage "DraftActivityTypeChanged" None (Some "research")) |> ignore
-    sendJson (eventMessage "DraftProjectChanged" None (Some "echelon-foundry")) |> ignore
+    sendJson (eventMessage "DraftActivityTypeChanged" None (Some "not-defined")) |> ignore
+    sendJson (eventMessage "DraftProjectChanged" None (Some "not-defined")) |> ignore
     sendJson (eventMessage "DraftDescriptionChanged" None (Some "Write tests")) |> ignore
     sendJson (eventMessage "DraftBusinessPurposeChanged" None (Some "Coverage")) |> ignore
     sendJson (eventMessage "DraftStartedAtChanged" None (Some startedAt)) |> ignore
@@ -175,7 +175,7 @@ let createTodayActivity startHour endHour =
 let seedDocument () : LedgerDocument =
     let environment = (Session.initial ()).Environment
     let command : CreateActivityCommand =
-        { ActivityTypeId = "research"; ProjectId = "echelon-foundry"; Description = "Preloaded"; BusinessPurpose = "Preloaded purpose"
+        { ActivityTypeId = "not-defined"; ProjectId = "not-defined"; Description = "Preloaded"; BusinessPurpose = "Preloaded purpose"
           Outcome = ""; TagIds = []; EntryMethod = Manual; ReconstructionReason = None
           StartedAt = DateTimeOffset.Parse(todayAt 8 0); EndedAt = DateTimeOffset.Parse(todayAt 9 0); ClientTimestamp = None }
     match Commands.create environment LedgerDocument.empty command with
@@ -204,7 +204,7 @@ let tests : (string * (unit -> unit)) list =
 
       "CreateActivity with missing fields surfaces createError and does not save", fun () ->
         reset ()
-        sendJson (eventMessage "DraftActivityTypeChanged" None (Some "research")) |> ignore
+        sendJson (eventMessage "DraftActivityTypeChanged" None (Some "not-defined")) |> ignore
         let response = sendJson (eventMessage "CreateActivity" None None)
         assertTrue (stringView response "createError" <> "") "missing-field create did not surface an error"
         assertTrue ((itemsView response "dayActivities").Count = 0) "an activity was recorded despite missing fields"
@@ -273,8 +273,8 @@ let tests : (string * (unit -> unit)) list =
         let secondId = (itemsView second "dayActivities") |> Seq.find (fun a -> a.AsObject().["id"].GetValue<string>() <> firstId) |> fun a -> a.AsObject().["id"].GetValue<string>()
         sendJson (eventMessage "ToggleMergeSource" (Some firstId) (Some "on")) |> ignore
         sendJson (eventMessage "ToggleMergeSource" (Some secondId) (Some "on")) |> ignore
-        sendJson (eventMessage "DraftActivityTypeChanged" None (Some "research")) |> ignore
-        sendJson (eventMessage "DraftProjectChanged" None (Some "echelon-foundry")) |> ignore
+        sendJson (eventMessage "DraftActivityTypeChanged" None (Some "not-defined")) |> ignore
+        sendJson (eventMessage "DraftProjectChanged" None (Some "not-defined")) |> ignore
         sendJson (eventMessage "DraftDescriptionChanged" None (Some "Merged work")) |> ignore
         sendJson (eventMessage "DraftBusinessPurposeChanged" None (Some "Coverage")) |> ignore
         sendJson (eventMessage "DraftReasonChanged" None (Some "combine")) |> ignore
@@ -285,8 +285,8 @@ let tests : (string * (unit -> unit)) list =
 
       "a timer stopped almost immediately is discarded and records nothing", fun () ->
         reset ()
-        sendJson (eventMessage "DraftActivityTypeChanged" None (Some "research")) |> ignore
-        sendJson (eventMessage "DraftProjectChanged" None (Some "echelon-foundry")) |> ignore
+        sendJson (eventMessage "DraftActivityTypeChanged" None (Some "not-defined")) |> ignore
+        sendJson (eventMessage "DraftProjectChanged" None (Some "not-defined")) |> ignore
         sendJson (eventMessage "StartTimer" None None) |> ignore
         let response = sendJson (eventMessage "StopTimer" None None)
         assertTrue (stringView response "timerPhase" = "none") "timer did not clear after stopping"
@@ -299,8 +299,8 @@ let tests : (string * (unit -> unit)) list =
       /// timer state untouched.
       "Tick while a timer is running is a true no-op — no document change, no effects, timer keeps running", fun () ->
         reset ()
-        sendJson (eventMessage "DraftActivityTypeChanged" None (Some "research")) |> ignore
-        sendJson (eventMessage "DraftProjectChanged" None (Some "echelon-foundry")) |> ignore
+        sendJson (eventMessage "DraftActivityTypeChanged" None (Some "not-defined")) |> ignore
+        sendJson (eventMessage "DraftProjectChanged" None (Some "not-defined")) |> ignore
         sendJson (eventMessage "StartTimer" None None) |> ignore
         let response = sendJson (eventMessage "Tick" None None)
         assertTrue (stringView response "timerPhase" = "running") "a Tick changed the timer's phase"
@@ -677,7 +677,7 @@ let tests : (string * (unit -> unit)) list =
         let response = sendJson (httpResult "github-reference-pull" "Success" (Some 404) (Some """{"message":"Not Found"}""") None)
         assertTrue (stringView response "githubReferenceError" = "") "a 404 reference pull was treated as an error"
         let projectIds = itemsView response "projectOptions" |> Seq.map (fun i -> i.AsObject().["id"].GetValue<string>()) |> List.ofSeq
-        assertTrue (List.contains "echelon-foundry" projectIds) "a missing reference.json should leave the fixture's default projects in place"
+        assertTrue (List.contains "not-defined" projectIds) "a missing reference.json should leave the fixture's default projects in place"
 
       "resolving identity requests a reference pull alongside the settings and ledger pulls", fun () ->
         reset ()
@@ -686,6 +686,72 @@ let tests : (string * (unit -> unit)) list =
         let httpEffects = effectsOf response |> Seq.map (fun e -> e.AsObject()) |> Seq.filter (fun e -> e.["kind"].GetValue<string>() = "Http") |> List.ofSeq
         assertTrue (httpEffects |> List.exists (fun e -> (e.["url"].GetValue<string>()).Contains "reference.json"))
             "resolving identity did not also request the shared reference catalog"
+
+      // --- Reference data admin (add/toggle Projects/Activity Types/Tags) -----
+
+      "AddProject without GitHub sync configured applies locally and requests no effect", fun () ->
+        reset ()
+        sendJson (eventMessage "DraftNewProjectNameChanged" None (Some "Acme Corp")) |> ignore
+        let response = sendJson (eventMessage "AddProject" None None)
+        assertTrue (stringView response "adminError" = "") "unexpected adminError adding a project without GitHub sync configured"
+        let projectIds = itemsView response "projectOptions" |> Seq.map (fun i -> i.AsObject().["id"].GetValue<string>()) |> List.ofSeq
+        assertTrue (List.contains "acme-corp" projectIds) $"the new project did not appear in projectOptions, got {projectIds}"
+        assertTrue ((effectsOf response).Count = 0) "adding a project without GitHub sync configured requested an effect anyway"
+
+      "AddProject once identified pushes an updated reference.json and clears the draft field", fun () ->
+        reset ()
+        configureGitHub "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" "kemiller2002" (Some "Kevin Miller") |> ignore
+        sendJson (eventMessage "DraftNewProjectNameChanged" None (Some "Acme Corp")) |> ignore
+        let response = sendJson (eventMessage "AddProject" None None)
+        assertTrue (stringView response "adminError" = "") "unexpected adminError adding a project once identified"
+        let effects = effectsOf response |> Seq.map (fun e -> e.AsObject()) |> List.ofSeq
+        assertTrue (effects.Length = 1) $"expected exactly one effect (the reference.json push), got {effects.Length}"
+        let push = effects.[0]
+        assertTrue (push.["kind"].GetValue<string>() = "Http" && push.["method"].GetValue<string>() = "PUT" && (push.["url"].GetValue<string>()).Contains "reference.json")
+            "AddProject once identified did not PUT reference.json"
+        let decoded = Text.Encoding.UTF8.GetString(Convert.FromBase64String((JsonNode.Parse(push.["body"].GetValue<string>()).AsObject().["content"]).GetValue<string>()))
+        assertTrue (decoded.Contains "\"name\":\"Acme Corp\"") $"reference.json push body did not contain the new project: {decoded}"
+
+      "AddActivityType and AddTag with a blank name surface adminError and push nothing", fun () ->
+        reset ()
+        configureGitHub "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" "kemiller2002" (Some "Kevin Miller") |> ignore
+        let response = sendJson (eventMessage "AddActivityType" None None)
+        assertTrue (stringView response "adminError" <> "") "a blank activity type name was not rejected"
+        assertTrue ((effectsOf response).Count = 0) "a rejected AddActivityType still requested an effect"
+        let tagResponse = sendJson (eventMessage "AddTag" None None)
+        assertTrue (stringView tagResponse "adminError" <> "") "a blank tag name was not rejected"
+
+      "SetProjectActive deactivates the fixture's default project, removing it from projectOptions, and pushes the update once identified", fun () ->
+        reset ()
+        configureGitHub "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" "kemiller2002" (Some "Kevin Miller") |> ignore
+        let response = sendJson (eventMessage "SetProjectActive" (Some "not-defined") (Some "off"))
+        let projectIds = itemsView response "projectOptions" |> Seq.map (fun i -> i.AsObject().["id"].GetValue<string>()) |> List.ofSeq
+        assertTrue (not (List.contains "not-defined" projectIds)) "a deactivated project still appeared in projectOptions"
+        let effects = effectsOf response |> Seq.map (fun e -> e.AsObject()) |> List.ofSeq
+        assertTrue (effects.Length = 1 && effects.[0].["kind"].GetValue<string>() = "Http") "SetProjectActive once identified did not push reference.json"
+        let decoded = Text.Encoding.UTF8.GetString(Convert.FromBase64String((JsonNode.Parse(effects.[0].["body"].GetValue<string>()).AsObject().["content"]).GetValue<string>()))
+        assertTrue (decoded.Contains "\"active\":false") $"reference.json push body did not mark the project inactive: {decoded}"
+
+      "SetProjectActive on an unknown id surfaces adminError", fun () ->
+        reset ()
+        let response = sendJson (eventMessage "SetProjectActive" (Some "missing") (Some "off"))
+        assertTrue (stringView response "adminError" <> "") "toggling an unknown project id was not rejected"
+
+      "a successful reference.json push (201) is used as the sha on the next admin push", fun () ->
+        reset ()
+        configureGitHub "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" "kemiller2002" (Some "Kevin Miller") |> ignore
+        sendJson (httpResult "github-reference-push" "Success" (Some 201) (Some(contentsPutBody "reference-sha-new")) None) |> ignore
+        sendJson (eventMessage "DraftNewTagNameChanged" None (Some "Urgent")) |> ignore
+        let response = sendJson (eventMessage "AddTag" None None)
+        let effects = effectsOf response |> Seq.map (fun e -> e.AsObject()) |> List.ofSeq
+        let pushBody = JsonNode.Parse(effects.[0].["body"].GetValue<string>()).AsObject()
+        assertTrue (pushBody.["sha"].GetValue<string>() = "reference-sha-new") "the next reference push did not carry forward the sha from the prior successful push"
+
+      "a 409 reference.json push conflict surfaces githubReferenceError", fun () ->
+        reset ()
+        configureGitHub "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" "kemiller2002" (Some "Kevin Miller") |> ignore
+        let response = sendJson (httpResult "github-reference-push" "Success" (Some 409) (Some """{"message":"Conflict"}""") None)
+        assertTrue (stringView response "githubReferenceError" <> "") "a 409 reference push conflict was not surfaced"
 
       // --- GitHub sync config persistence across a reload ---------------------
 

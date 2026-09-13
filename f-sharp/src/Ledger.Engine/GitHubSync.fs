@@ -223,14 +223,45 @@ module GitHubSync =
         let body = putBody sha config.Branch "Update settings" settingsJson
         HttpEffect("github-settings-push", "PUT", contentsUrl config (settingsFilePath config login), headers config.Token, Some body, 15000)
 
-    /// Read-only in v1 — there is no corresponding put effect. A missing
-    /// `reference.json` (a fresh repo/folder no one has hand-authored one
-    /// into yet) is expected, not an error: `Dispatch.fs` treats a 404 here
-    /// exactly like a missing `settings.json`, keeping the fixture defaults
-    /// (`Session.fs`'s `fixtureEnvironment`) rather than surfacing a failure.
+    /// A missing `reference.json` (a fresh repo/folder no one has written
+    /// one into yet) is expected, not an error: `Dispatch.fs` treats a 404
+    /// here exactly like a missing `settings.json`, keeping the fixture
+    /// defaults (`Session.fs`'s `fixtureEnvironment`) rather than surfacing
+    /// a failure.
     let buildReferenceGetEffect (config: Session.GitHubSyncConfig) : EffectRequest =
         let url = $"{contentsUrl config (referenceFilePath config)}?ref={Uri.EscapeDataString config.Branch}"
         HttpEffect("github-reference-pull", "GET", url, headers config.Token, None, 15000)
+
+    let private referenceItemJson (item: ReferenceItem) : JsonNode =
+        let o = JsonObject()
+        o.["id"] <- JsonValue.Create(item.Id)
+        o.["name"] <- JsonValue.Create(item.Name)
+        o.["active"] <- JsonValue.Create(item.Active)
+        o
+
+    /// The full catalog — active and inactive items alike, so deactivating
+    /// one item in the admin page (More screen) never drops another item's
+    /// entry from the file. Sorted by name for a stable, human-readable
+    /// diff when the file is browsed directly on GitHub.
+    let buildReferenceJson (projects: ReferenceItem list) (activityTypes: ReferenceItem list) (tags: ReferenceItem list) : string =
+        let arrayOf (items: ReferenceItem list) =
+            let arr = JsonArray()
+            items |> List.sortBy (fun i -> i.Name) |> List.iter (fun i -> arr.Add(referenceItemJson i))
+            arr
+        let o = JsonObject()
+        o.["projects"] <- arrayOf projects
+        o.["activityTypes"] <- arrayOf activityTypes
+        o.["tags"] <- arrayOf tags
+        o.ToJsonString()
+
+    /// Whoever last saved an admin edit becomes the current shared catalog
+    /// — unlike the per-person `ledger.json`/`settings.json`, there is no
+    /// per-writer segregation here (`referenceFilePath` lives at the folder
+    /// root), matching the catalog's own "shared by everyone pointing their
+    /// config at this repo/folder" design.
+    let buildReferencePutEffect (config: Session.GitHubSyncConfig) (sha: string option) (referenceJson: string) : EffectRequest =
+        let body = putBody sha config.Branch "Update the shared project/activity-type/tag catalog" referenceJson
+        HttpEffect("github-reference-push", "PUT", contentsUrl config (referenceFilePath config), headers config.Token, Some body, 15000)
 
     let private parseReferenceItems (node: JsonNode) : ReferenceItem list =
         match node with

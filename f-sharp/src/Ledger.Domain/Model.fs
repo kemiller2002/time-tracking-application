@@ -13,6 +13,55 @@ open System
 type ReferenceItem =
     { Id: string; Name: string; Active: bool; Version: string }
 
+/// Pure catalog-maintenance operations for admin-managed reference data —
+/// Projects/Activity Types/Tags all share `ReferenceItem`'s shape, so one
+/// module covers all three. Lives here, not `Commands.fs`, because it has
+/// none of a command's concerns (no `LedgerDocument`, no optimistic
+/// concurrency, no audit trail): it edits one of `Environment`'s reference
+/// tables directly, the same tables `Commands.fs`'s `validateFields`
+/// already reads from.
+module ReferenceCatalog =
+    /// Lowercases, folds every non-alphanumeric run to a single "-", and
+    /// trims the edges — "LinkedIn Marketing!" -> "linkedin-marketing".
+    let private slugify (name: string) =
+        name.Trim().ToLowerInvariant()
+        |> Seq.map (fun c -> if Char.IsLetterOrDigit c then c else '-')
+        |> Seq.toArray
+        |> String
+        |> fun s -> s.Split([| '-' |], StringSplitOptions.RemoveEmptyEntries)
+        |> String.concat "-"
+
+    /// Appends "-2", "-3", ... until the id is free — a human-typed name
+    /// that slugifies to an id already in use must never silently
+    /// overwrite the existing item.
+    let private uniqueId (directory: Map<string, ReferenceItem>) (baseId: string) =
+        let baseId = if String.IsNullOrWhiteSpace baseId then "item" else baseId
+        if not (directory.ContainsKey baseId) then
+            baseId
+        else
+            Seq.initInfinite (fun i -> sprintf "%s-%d" baseId (i + 2)) |> Seq.find (directory.ContainsKey >> not)
+
+    let add (directory: Map<string, ReferenceItem>) (name: string) : Result<Map<string, ReferenceItem> * ReferenceItem, Diagnostic> =
+        let trimmed = name.Trim()
+        if trimmed = "" then
+            Error(Diagnostic.domain DiagnosticCode.ReferenceItemNameRequired "A name is required." |> Diagnostic.forField "name")
+        else
+            let id = uniqueId directory (slugify trimmed)
+            let item = { Id = id; Name = trimmed; Active = true; Version = "v1" }
+            Ok(directory.Add(id, item), item)
+
+    let rename (directory: Map<string, ReferenceItem>) (id: string) (name: string) : Result<Map<string, ReferenceItem>, Diagnostic> =
+        let trimmed = name.Trim()
+        match directory.TryFind id, trimmed with
+        | None, _ -> Error(Diagnostic.domain DiagnosticCode.ReferenceItemNotFound "That item no longer exists." |> Diagnostic.forSubject id)
+        | Some _, "" -> Error(Diagnostic.domain DiagnosticCode.ReferenceItemNameRequired "A name is required." |> Diagnostic.forField "name")
+        | Some item, _ -> Ok(directory.Add(id, { item with Name = trimmed }))
+
+    let setActive (directory: Map<string, ReferenceItem>) (id: string) (active: bool) : Result<Map<string, ReferenceItem>, Diagnostic> =
+        match directory.TryFind id with
+        | None -> Error(Diagnostic.domain DiagnosticCode.ReferenceItemNotFound "That item no longer exists." |> Diagnostic.forSubject id)
+        | Some item -> Ok(directory.Add(id, { item with Active = active }))
+
 type Config =
     { SchemaVersion: string
       ProjectionVersion: string

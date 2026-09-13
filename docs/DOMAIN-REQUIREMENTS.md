@@ -384,15 +384,30 @@ GitHub sync, per the Persistence contract section above:
   `metadata.json`, it lives at the folder root
   (`GitHubSync.referenceFilePath`), not under any one person's subfolder —
   the catalog is shared by everyone pointing their config at that
-  repo/folder. It is read-only in this version: there is no put effect, and
-  nothing in-app ever writes it back. A successful pull replaces
-  `Environment.Projects`/`ActivityTypes`/`Tags` wholesale (keeping
-  `NewId`/`Clock`); a 404 means "no shared catalog published yet," not an
-  error, and the hardcoded fixture defaults (`Session.fs`'s
-  `fixtureEnvironment`) keep serving as the active/inactive lists. Only
+  repo/folder, and any identified person's edit writes the same file
+  (`buildReferencePutEffect`, correlation id `"github-reference-push"`) —
+  there is no per-writer segregation the way `ledger.json` has. A
+  successful pull replaces `Environment.Projects`/`ActivityTypes`/`Tags`
+  wholesale (keeping `NewId`/`Clock`); a 404 means "no shared catalog
+  published yet," not an error, and the built-in fixture defaults
+  (`Session.fs`'s `fixtureEnvironment` — a single neutral "Not defined"
+  placeholder per category, no assumption about who is using the app)
+  keep serving as the active/inactive lists. The More screen's "Manage
+  projects, activity types & tags" section is the admin surface: adding an
+  item (`ReferenceCatalog.add`, `Model.fs`) slugifies its name into a
+  unique id, and toggling one off (`ReferenceCatalog.setActive`) removes
+  it from the choosable options without touching past activities that
+  already reference it (`lookupName` falls back to the raw id, so a
+  deactivated or since-renamed reference still displays); every edit
+  applies locally first and, once GitHub sync is identified, pushes the
+  updated catalog (`AddProject`/`AddActivityType`/`AddTag`/
+  `SetProjectActive`/`SetActivityTypeActive`/`SetTagActive` in
+  `Dispatch.fs`, sharing one `"admin"` error key). Only
   active items appear as choosable options (`Projections.fs`'s
   `projectOptions`/`activityTypeOptions`/`tagOptions`, rendered by
-  `dom-bindings.js`'s `data-options` binding) — an activity that already
+  `dom-bindings.js`'s `data-options` binding; the admin page instead reads
+  `adminProjects`/`adminActivityTypes`/`adminTags`, which include inactive
+  items too) — an activity that already
   references an archived item still displays correctly via `lookupName`,
   it just can't be chosen for new work.
 - The GitHub sync settings themselves (owner/repo/folder/branch/token,

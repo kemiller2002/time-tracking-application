@@ -69,6 +69,12 @@ export class DomBindings {
       if (Object.prototype.hasOwnProperty.call(view, key)) el.textContent = String(view[key]);
     }
 
+    for (const el of scope.querySelectorAll("[data-checked]")) {
+      if (this.#owningEach(el, scope)) continue;
+      const key = el.getAttribute("data-checked");
+      if (Object.prototype.hasOwnProperty.call(view, key)) el.checked = truthy(view[key]);
+    }
+
     for (const el of scope.querySelectorAll("[data-key-from]")) {
       if (this.#owningEach(el, scope)) continue;
       const key = el.getAttribute("data-key-from");

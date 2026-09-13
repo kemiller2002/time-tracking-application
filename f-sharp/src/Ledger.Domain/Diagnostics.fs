@@ -71,6 +71,10 @@ module DiagnosticCode =
     let TimerNotFound = "TIMER_NOT_FOUND"
     [<Literal>]
     let PersistenceInvalidDocument = "PERSISTENCE_INVALID_DOCUMENT"
+    [<Literal>]
+    let ReferenceItemNameRequired = "REFERENCE_ITEM_NAME_REQUIRED"
+    [<Literal>]
+    let ReferenceItemNotFound = "REFERENCE_ITEM_NOT_FOUND"
 
 type Diagnostic =
     { Code: string
