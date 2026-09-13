@@ -376,6 +376,25 @@ GitHub sync, per the Persistence contract section above:
   changes a preference, so a preference set on one device follows the
   person to another. A 404 here means "nothing saved yet," not a failure,
   same as for the ledger.
+- Projects, activity types, and tags are data-driven from a shared,
+  repo-level `reference.json` (`{projects, activityTypes, tags}`, each a
+  list of `{id, name, active}`) once GitHub sync identity resolves —
+  `GitHubSync.buildReferenceGetEffect`/`parseReferenceJson`,
+  `Dispatch.fs`'s `"github-reference-pull"` case. Unlike `ledger.json`/
+  `metadata.json`, it lives at the folder root
+  (`GitHubSync.referenceFilePath`), not under any one person's subfolder —
+  the catalog is shared by everyone pointing their config at that
+  repo/folder. It is read-only in this version: there is no put effect, and
+  nothing in-app ever writes it back. A successful pull replaces
+  `Environment.Projects`/`ActivityTypes`/`Tags` wholesale (keeping
+  `NewId`/`Clock`); a 404 means "no shared catalog published yet," not an
+  error, and the hardcoded fixture defaults (`Session.fs`'s
+  `fixtureEnvironment`) keep serving as the active/inactive lists. Only
+  active items appear as choosable options (`Projections.fs`'s
+  `projectOptions`/`activityTypeOptions`/`tagOptions`, rendered by
+  `dom-bindings.js`'s `data-options` binding) — an activity that already
+  references an archived item still displays correctly via `lookupName`,
+  it just can't be chosen for new work.
 - The GitHub sync settings themselves (owner/repo/folder/branch/token,
   plus the resolved login/display name) are cached in their own
   `localStorage` key (`GitHubSync.encodeConfig`/`decodeConfig`), separate

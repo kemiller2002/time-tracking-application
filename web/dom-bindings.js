@@ -39,6 +39,7 @@ export class DomBindings {
     await this.#transport.start();
     this.#bindDelegatedListeners();
     this.#bindConnectivityRetry();
+    this.#bindTimerTick();
     const response = await this.#transport.dispatch({ kind: "Initialize", protocolVersion: 1, capabilities: ["Storage"] });
     await this.#apply(response);
   }
@@ -89,6 +90,36 @@ export class DomBindings {
       if (this.#owningEach(el, scope)) continue;
       this.#renderEach(el, view);
     }
+
+    for (const el of scope.querySelectorAll("[data-options]")) {
+      if (this.#owningEach(el, scope)) continue;
+      const key = el.getAttribute("data-options");
+      this.#renderOptions(el, Array.isArray(view[key]) ? view[key] : []);
+    }
+  }
+
+  /**
+   * Populates a <select>'s options from a `VItems` view field ({id,name}
+   * rows) — the engine is the source of truth for which projects/activity
+   * types/tags exist (Session.fs's fixture defaults, or a pulled
+   * reference.json), so this never hardcodes a choice list. The first
+   * option is assumed to be a static placeholder (e.g. "Select a
+   * project…") authored directly in index.html and is left untouched;
+   * only options after it are replaced on every render. The previously
+   * selected value is restored if it's still present in the new list,
+   * so a re-render triggered by an unrelated event doesn't reset the
+   * user's in-progress choice.
+   */
+  #renderOptions(select, items) {
+    const previousValue = select.value;
+    for (const opt of Array.from(select.options).slice(1)) opt.remove();
+    for (const item of items) {
+      const opt = document.createElement("option");
+      opt.value = String(item.id);
+      opt.textContent = String(item.name);
+      select.append(opt);
+    }
+    if (Array.from(select.options).some((opt) => opt.value === previousValue)) select.value = previousValue;
   }
 
   /** True when `el` sits inside a *different* `data-each` template's rendered
@@ -170,6 +201,23 @@ export class DomBindings {
     });
   }
 
+  /**
+   * Keeps the timer widget's elapsed-time label live. The engine only
+   * recomputes anything in response to a dispatched event — with nothing
+   * to periodically ask it for a fresh render, the elapsed label would sit
+   * frozen at whatever it read on the last real click (Start/Pause/Resume),
+   * which reads exactly like the buttons not working. "Tick" is a genuine
+   * no-op on the engine side (Dispatch.fs's "Tick" case) — this never
+   * decides anything about timer state, only when to ask for a refresh,
+   * and only while `view.timerPhase` (already-public projection state)
+   * says a timer is actually running, so it costs nothing while idle.
+   */
+  #bindTimerTick() {
+    setInterval(() => {
+      if (this.#view.timerPhase === "running") this.dispatch("Tick", null, null);
+    }, 1000);
+  }
+
   #handleDomEvent(on, domEvent) {
     const target = domEvent.target;
     const trigger = target.closest(`[data-event][data-on="${on}"]`) ?? (on === "submit" ? target.closest("form[data-event]:not([data-on])") : null);
@@ -191,9 +239,27 @@ export class DomBindings {
   #resolveValue(trigger, on, target) {
     if (trigger.hasAttribute("data-event-value")) return trigger.getAttribute("data-event-value");
     if (on === "submit") return null;
+    if (trigger.hasAttribute("data-compose-with")) return this.#resolveComposedValue(trigger);
     if (target.type === "checkbox") return target.checked ? "on" : "off";
     if ("value" in target) return target.value;
     return null;
+  }
+
+  /**
+   * Joins a date input and a time input that share one data-event into the
+   * single "YYYY-MM-DDTHH:mm" string that event's handler already expects
+   * (unchanged since — see Dispatch.fs's applyDraftField/parseInstant).
+   * Plain text-joining, not a business decision: the engine still parses
+   * and validates the combined result exactly as it always has. Exists
+   * because a single <input type="datetime-local"> renders inconsistently
+   * on some mobile browsers (its native widget can run wider than its own
+   * box), so the date and time are entered as two ordinary inputs instead.
+   */
+  #resolveComposedValue(trigger) {
+    const other = this.#root.querySelector(trigger.getAttribute("data-compose-with"));
+    if (!other) return trigger.value;
+    const [dateEl, timeEl] = trigger.type === "date" ? [trigger, other] : [other, trigger];
+    return dateEl.value && timeEl.value ? `${dateEl.value}T${timeEl.value}` : "";
   }
 
   // --- effects ------------------------------------------------------------------

@@ -68,6 +68,18 @@ module Projections =
     let private breakdownItems (items: ActivityBreakdown list) =
         items |> List.map (fun b -> Map.ofList [ "key", VString b.Key; "exactMinutesLabel", VString(formatMinutes (b.ExactMs / 60000.0)) ])
 
+    /// Feeds `dom-bindings.js`'s `data-options` rendering — active-only (an
+    /// archived project/type/tag must not be choosable for new work, even
+    /// though existing activities that reference it still display fine via
+    /// `lookupName`), sorted by name for a stable, readable dropdown order.
+    let private referenceOptions (directory: Map<string, ReferenceItem>) =
+        directory
+        |> Map.toList
+        |> List.map snd
+        |> List.filter (fun item -> item.Active)
+        |> List.sortBy (fun item -> item.Name)
+        |> List.map (fun item -> Map.ofList [ "id", VString item.Id; "name", VString item.Name ])
+
     /// Common day/month summary figures, flattened under `prefix` — `ViewValue`
     /// has no object variant, so a summary's fields live at the top level
     /// rather than as a one-row `VItems` (which would misrepresent a single
@@ -123,7 +135,7 @@ module Projections =
           "activeCanRestore", VBool(has Restore) ]
 
     let private errorFields (errors: Map<string, string>) =
-        [ "create"; "amend"; "void"; "restore"; "split"; "merge"; "evidence"; "timer"; "attest"; "githubConfig"; "githubSync"; "githubSettings" ]
+        [ "create"; "amend"; "void"; "restore"; "split"; "merge"; "evidence"; "timer"; "attest"; "githubConfig"; "githubSync"; "githubSettings"; "githubReference" ]
         |> List.map (fun key -> key + "Error", VString(errors |> Map.tryFind key |> Option.defaultValue ""))
 
     /// Never echoes `Token` back — a pasted personal access token should
@@ -170,7 +182,10 @@ module Projections =
           "reportFormat", VString state.ReportFormat
           "reportContent", VString(Reports.renderDay state.ReportFormat daySummary)
           "timezone", VString(state.Timezone |> Option.defaultValue "")
-          "persistenceError", VString(state.PersistenceError |> Option.defaultValue "") ]
+          "persistenceError", VString(state.PersistenceError |> Option.defaultValue "")
+          "projectOptions", VItems(referenceOptions state.Environment.Projects)
+          "activityTypeOptions", VItems(referenceOptions state.Environment.ActivityTypes)
+          "tagOptions", VItems(referenceOptions state.Environment.Tags) ]
         @ summaryFields "day" daySummary.TotalExactMs daySummary.TotalBilledMinutes daySummary.DecimalHours daySummary.ManualCount daySummary.CorrectionCount
             daySummary.VoidCount daySummary.EvidenceCoverage daySummary.ByActivityType daySummary.ByProject
         @ summaryFields "month" monthSummary.TotalExactMs monthSummary.TotalBilledMinutes monthSummary.DecimalHours monthSummary.ManualCount monthSummary.CorrectionCount

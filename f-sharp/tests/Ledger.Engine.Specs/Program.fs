@@ -292,6 +292,20 @@ let tests : (string * (unit -> unit)) list =
         assertTrue (stringView response "timerPhase" = "none") "timer did not clear after stopping"
         assertTrue ((itemsView response "dayActivities").Count = 0) "an immediately-stopped timer recorded an activity"
 
+      /// dom-bindings.js dispatches this once a second while a timer runs,
+      /// purely so the elapsed-time label keeps reading a fresh clock value
+      /// instead of sitting frozen between real events (see Dispatch.fs's
+      /// "Tick" case). Must be a true no-op: no document change, no effect,
+      /// timer state untouched.
+      "Tick while a timer is running is a true no-op — no document change, no effects, timer keeps running", fun () ->
+        reset ()
+        sendJson (eventMessage "DraftActivityTypeChanged" None (Some "research")) |> ignore
+        sendJson (eventMessage "DraftProjectChanged" None (Some "echelon-foundry")) |> ignore
+        sendJson (eventMessage "StartTimer" None None) |> ignore
+        let response = sendJson (eventMessage "Tick" None None)
+        assertTrue (stringView response "timerPhase" = "running") "a Tick changed the timer's phase"
+        assertTrue (effectsOf response |> Seq.isEmpty) "a Tick requested an effect — it must be a pure view refresh"
+
       "AttestDay then amending the same activity flags amended_after_review", fun () ->
         reset ()
         let created = createTodayActivity 9 10
@@ -634,6 +648,45 @@ let tests : (string * (unit -> unit)) list =
         let response = sendJson (httpResult "github-settings-pull" "Success" (Some 404) (Some """{"message":"Not Found"}""") None)
         assertTrue (stringView response "githubSettingsError" = "") "a 404 settings pull was treated as an error"
 
+      // --- Reference data (projects/activity types/tags) round trip -----------
+
+      "a successful reference pull (200) replaces the option lists with what reference.json declares", fun () ->
+        reset ()
+        configureGitHub "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" "kemiller2002" (Some "Kevin Miller") |> ignore
+        let referenceJson = """{"projects":[{"id":"acme","name":"Acme Corp","active":true}],"activityTypes":[{"id":"design","name":"Design","active":true}],"tags":[{"id":"urgent","name":"Urgent","active":true}]}"""
+        let response = sendJson (httpResult "github-reference-pull" "Success" (Some 200) (Some(contentsGetBody "reference-sha-1" referenceJson)) None)
+        assertTrue (stringView response "githubReferenceError" = "") "unexpected githubReference error on a successful reference pull"
+        let projectIds = itemsView response "projectOptions" |> Seq.map (fun i -> i.AsObject().["id"].GetValue<string>()) |> List.ofSeq
+        let activityTypeIds = itemsView response "activityTypeOptions" |> Seq.map (fun i -> i.AsObject().["id"].GetValue<string>()) |> List.ofSeq
+        let tagIds = itemsView response "tagOptions" |> Seq.map (fun i -> i.AsObject().["id"].GetValue<string>()) |> List.ofSeq
+        assertTrue (projectIds = [ "acme" ]) $"pulled reference data did not replace projectOptions, got {projectIds}"
+        assertTrue (activityTypeIds = [ "design" ]) $"pulled reference data did not replace activityTypeOptions, got {activityTypeIds}"
+        assertTrue (tagIds = [ "urgent" ]) $"pulled reference data did not replace tagOptions, got {tagIds}"
+
+      "an inactive item in a pulled reference.json is excluded from the option lists", fun () ->
+        reset ()
+        configureGitHub "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" "kemiller2002" (Some "Kevin Miller") |> ignore
+        let referenceJson = """{"projects":[{"id":"acme","name":"Acme Corp","active":true},{"id":"old-co","name":"Old Co","active":false}],"activityTypes":[],"tags":[]}"""
+        let response = sendJson (httpResult "github-reference-pull" "Success" (Some 200) (Some(contentsGetBody "reference-sha-2" referenceJson)) None)
+        let projectIds = itemsView response "projectOptions" |> Seq.map (fun i -> i.AsObject().["id"].GetValue<string>()) |> List.ofSeq
+        assertTrue (projectIds = [ "acme" ]) $"an inactive project leaked into projectOptions, got {projectIds}"
+
+      "a 404 reference pull is treated as 'nothing published yet', not a failure, and keeps the fixture defaults", fun () ->
+        reset ()
+        configureGitHub "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" "kemiller2002" (Some "Kevin Miller") |> ignore
+        let response = sendJson (httpResult "github-reference-pull" "Success" (Some 404) (Some """{"message":"Not Found"}""") None)
+        assertTrue (stringView response "githubReferenceError" = "") "a 404 reference pull was treated as an error"
+        let projectIds = itemsView response "projectOptions" |> Seq.map (fun i -> i.AsObject().["id"].GetValue<string>()) |> List.ofSeq
+        assertTrue (List.contains "echelon-foundry" projectIds) "a missing reference.json should leave the fixture's default projects in place"
+
+      "resolving identity requests a reference pull alongside the settings and ledger pulls", fun () ->
+        reset ()
+        saveGitHubConfig "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" |> ignore
+        let response = resolveIdentity "kemiller2002" (Some "Kevin Miller")
+        let httpEffects = effectsOf response |> Seq.map (fun e -> e.AsObject()) |> Seq.filter (fun e -> e.["kind"].GetValue<string>() = "Http") |> List.ofSeq
+        assertTrue (httpEffects |> List.exists (fun e -> (e.["url"].GetValue<string>()).Contains "reference.json"))
+            "resolving identity did not also request the shared reference catalog"
+
       // --- GitHub sync config persistence across a reload ---------------------
 
       "a cached config missing Login re-triggers the identity lookup on load", fun () ->
@@ -656,25 +709,28 @@ let tests : (string * (unit -> unit)) list =
         assertTrue (boolView response "gitHubSyncIdentified") "a cached, already-identified config was not restored as identified"
         assertTrue (stringView response "gitHubSyncStatus" = "idle") "status was not 'idle' for an already-identified cached config"
         let effects = effectsOf response |> Seq.map (fun e -> e.AsObject()) |> List.ofSeq
-        assertTrue (effects.Length = 2) $"expected a settings pull and a ledger pull, got {effects.Length}"
-        assertTrue (effects |> List.forall (fun e -> e.["kind"].GetValue<string>() = "Http")) "both auto-pulls should be Http effects"
+        assertTrue (effects.Length = 3) $"expected a settings pull, a ledger pull, and a reference pull, got {effects.Length}"
+        assertTrue (effects |> List.forall (fun e -> e.["kind"].GetValue<string>() = "Http")) "all three auto-pulls should be Http effects"
         assertTrue (effects |> List.exists (fun e -> (e.["url"].GetValue<string>()).Contains "settings.json"))
             "an already-identified cached config did not go straight to a settings pull"
         assertTrue (effects |> List.exists (fun e -> (e.["url"].GetValue<string>()).Contains "ledger.json"))
             "an already-identified cached config did not also auto-pull the ledger"
+        assertTrue (effects |> List.exists (fun e -> (e.["url"].GetValue<string>()).Contains "reference.json"))
+            "an already-identified cached config did not also auto-pull the shared reference catalog"
 
       "a successful identity lookup re-caches the config (now including Login) and triggers a settings pull and a ledger pull", fun () ->
         reset ()
         saveGitHubConfig "kemiller2002" "ledger-data" (Some "time-entries") None "ghp_test_token" |> ignore
         let response = resolveIdentity "kemiller2002" (Some "Kevin Miller")
         let effects = effectsOf response |> Seq.map (fun e -> e.AsObject()) |> List.ofSeq
-        assertTrue (effects.Length = 3) $"expected a config re-cache, a settings pull, and a ledger pull, got {effects.Length}"
+        assertTrue (effects.Length = 4) $"expected a config re-cache, a settings pull, a ledger pull, and a reference pull, got {effects.Length}"
         let cacheSave = effects |> List.find (fun e -> e.["kind"].GetValue<string>() = "Storage")
         assertTrue (cacheSave.["key"].GetValue<string>() = "business-activity-ledger:github-config:v1") "the re-cache did not target the github-config storage key"
         assertTrue (cacheSave.["value"].GetValue<string>().Contains "\"login\":\"kemiller2002\"") "the re-cached config did not include the resolved login"
         let httpEffects = effects |> List.filter (fun e -> e.["kind"].GetValue<string>() = "Http")
         assertTrue (httpEffects |> List.exists (fun e -> (e.["url"].GetValue<string>()).Contains "settings.json")) "the identity lookup did not follow up with a settings pull"
         assertTrue (httpEffects |> List.exists (fun e -> (e.["url"].GetValue<string>()).Contains "ledger.json")) "the identity lookup did not also follow up with a ledger pull"
+        assertTrue (httpEffects |> List.exists (fun e -> (e.["url"].GetValue<string>()).Contains "reference.json")) "the identity lookup did not also follow up with a reference pull"
 
       // --- Multi-person folder segregation (GitHubSync module directly) ------
 

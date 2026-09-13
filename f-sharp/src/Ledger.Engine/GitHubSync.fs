@@ -3,6 +3,7 @@ namespace Ledger.Engine
 open System
 open System.Text
 open System.Text.Json.Nodes
+open Ledger.Domain
 open Ledger.Engine.Protocol
 
 /// SDE Tier 3: translates the GitHub REST API — a third party's Public
@@ -29,19 +30,27 @@ module GitHubSync =
     let private dataFileName = "ledger.json"
     let private metadataFileName = "metadata.json"
     let private settingsFileName = "settings.json"
+    let private referenceFileName = "reference.json"
+
+    let private folderPath (config: Session.GitHubSyncConfig) =
+        (if String.IsNullOrWhiteSpace config.Folder then defaultFolder else config.Folder).Trim('/')
 
     /// `<Folder>/<Login>` — the repository is never assumed to belong to
     /// this app alone (hence `Folder`), and that folder is never assumed to
     /// belong to one person alone either (hence `Login`): several people
     /// can point the same repo/folder at this app and each still gets a
     /// folder only they write to.
-    let private personFolder (config: Session.GitHubSyncConfig) (login: string) =
-        let folder = (if String.IsNullOrWhiteSpace config.Folder then defaultFolder else config.Folder).Trim('/')
-        $"{folder}/{login}"
+    let private personFolder (config: Session.GitHubSyncConfig) (login: string) = $"{folderPath config}/{login}"
 
     let dataFilePath (config: Session.GitHubSyncConfig) (login: string) = $"{personFolder config login}/{dataFileName}"
     let metadataFilePath (config: Session.GitHubSyncConfig) (login: string) = $"{personFolder config login}/{metadataFileName}"
     let settingsFilePath (config: Session.GitHubSyncConfig) (login: string) = $"{personFolder config login}/{settingsFileName}"
+
+    /// Lives at the folder root, not under any one person's subfolder — the
+    /// project/activity-type/tag catalog is shared by everyone pointing
+    /// their config at this repo/folder, not owned by whoever happens to
+    /// read or write it.
+    let referenceFilePath (config: Session.GitHubSyncConfig) = $"{folderPath config}/{referenceFileName}"
 
     /// GitHub's Contents API path segments are percent-encoded individually —
     /// `Uri.EscapeDataString` on the whole path would also encode the `/`
@@ -213,6 +222,41 @@ module GitHubSync =
     let buildSettingsPutEffect (config: Session.GitHubSyncConfig) (login: string) (sha: string option) (settingsJson: string) : EffectRequest =
         let body = putBody sha config.Branch "Update settings" settingsJson
         HttpEffect("github-settings-push", "PUT", contentsUrl config (settingsFilePath config login), headers config.Token, Some body, 15000)
+
+    /// Read-only in v1 — there is no corresponding put effect. A missing
+    /// `reference.json` (a fresh repo/folder no one has hand-authored one
+    /// into yet) is expected, not an error: `Dispatch.fs` treats a 404 here
+    /// exactly like a missing `settings.json`, keeping the fixture defaults
+    /// (`Session.fs`'s `fixtureEnvironment`) rather than surfacing a failure.
+    let buildReferenceGetEffect (config: Session.GitHubSyncConfig) : EffectRequest =
+        let url = $"{contentsUrl config (referenceFilePath config)}?ref={Uri.EscapeDataString config.Branch}"
+        HttpEffect("github-reference-pull", "GET", url, headers config.Token, None, 15000)
+
+    let private parseReferenceItems (node: JsonNode) : ReferenceItem list =
+        match node with
+        | null -> []
+        | array ->
+            array.AsArray()
+            |> Seq.map (fun item ->
+                let o = item.AsObject()
+                let active = match o.["active"] with null -> true | v -> v.GetValue<bool>()
+                { Id = o.["id"].GetValue<string>(); Name = o.["name"].GetValue<string>(); Active = active; Version = "v1" })
+            |> List.ofSeq
+
+    /// `{ "projects": [{id,name,active}], "activityTypes": [...], "tags": [...] }`
+    /// — hand-authored or generated externally, so every list defaults to
+    /// empty when its key is absent rather than failing the whole parse;
+    /// `active` defaults to `true` when omitted, matching a person who just
+    /// wants to list active items without typing the field every time.
+    let parseReferenceJson (json: string) : Result<{| Projects: ReferenceItem list; ActivityTypes: ReferenceItem list; Tags: ReferenceItem list |}, string> =
+        try
+            let node = JsonNode.Parse(json).AsObject()
+            Ok
+                {| Projects = parseReferenceItems node.["projects"]
+                   ActivityTypes = parseReferenceItems node.["activityTypes"]
+                   Tags = parseReferenceItems node.["tags"] |}
+        with ex ->
+            Error $"reference.json could not be read: {ex.Message}"
 
     /// The GET response's `content` is base64 with embedded newlines every 60
     /// characters — `Convert.FromBase64String` tolerates embedded whitespace,

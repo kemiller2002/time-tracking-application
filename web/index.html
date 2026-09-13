@@ -126,23 +126,14 @@
             <div class="form-grid">
               <div class="field">
                 <label for="timer-activity-type">Activity type</label>
-                <select id="timer-activity-type" data-event="DraftActivityTypeChanged" data-on="change">
+                <select id="timer-activity-type" data-event="DraftActivityTypeChanged" data-on="change" data-options="activityTypeOptions">
                   <option value="" selected disabled>Choose an activity type</option>
-                  <option value="research">Research</option>
-                  <option value="linkedin-marketing">LinkedIn marketing</option>
-                  <option value="software-development">Software development</option>
-                  <option value="administration">Administration</option>
-                  <option value="meeting">Meeting</option>
                 </select>
               </div>
               <div class="field">
                 <label for="timer-project">Project</label>
-                <select id="timer-project" data-event="DraftProjectChanged" data-on="change">
+                <select id="timer-project" data-event="DraftProjectChanged" data-on="change" data-options="projectOptions">
                   <option value="" selected disabled>Choose a project</option>
-                  <option value="echelon-foundry">Echelon Foundry</option>
-                  <option value="visual-engineering">Visual Engineering</option>
-                  <option value="helixnote">HelixNote</option>
-                  <option value="general">General</option>
                 </select>
               </div>
               <div class="field field-full">
@@ -165,32 +156,29 @@
               <div class="form-grid">
                 <div class="field">
                   <label for="create-activity-type">Activity type <span class="required">*</span></label>
-                  <select id="create-activity-type" required data-event="DraftActivityTypeChanged" data-on="change">
+                  <select id="create-activity-type" required data-event="DraftActivityTypeChanged" data-on="change" data-options="activityTypeOptions">
                     <option value="" selected disabled>Choose an activity type</option>
-                    <option value="research">Research</option>
-                    <option value="linkedin-marketing">LinkedIn marketing</option>
-                    <option value="software-development">Software development</option>
-                    <option value="administration">Administration</option>
-                    <option value="meeting">Meeting</option>
                   </select>
                 </div>
                 <div class="field">
                   <label for="create-project">Project <span class="required">*</span></label>
-                  <select id="create-project" required data-event="DraftProjectChanged" data-on="change">
+                  <select id="create-project" required data-event="DraftProjectChanged" data-on="change" data-options="projectOptions">
                     <option value="" selected disabled>Choose a project</option>
-                    <option value="echelon-foundry">Echelon Foundry</option>
-                    <option value="visual-engineering">Visual Engineering</option>
-                    <option value="helixnote">HelixNote</option>
-                    <option value="general">General</option>
                   </select>
                 </div>
-                <div class="field">
-                  <label for="create-started-at">Start <span class="required">*</span></label>
-                  <input id="create-started-at" type="datetime-local" required data-event="DraftStartedAtChanged" data-on="change" />
+                <div class="field field-full">
+                  <label for="create-started-date">Start <span class="required">*</span></label>
+                  <div class="field-pair">
+                    <input id="create-started-date" type="date" required aria-label="Start date" data-event="DraftStartedAtChanged" data-compose-with="#create-started-time" data-on="change" />
+                    <input id="create-started-time" type="time" required aria-label="Start time" data-event="DraftStartedAtChanged" data-compose-with="#create-started-date" data-on="change" />
+                  </div>
                 </div>
-                <div class="field">
-                  <label for="create-ended-at">End <span class="required">*</span></label>
-                  <input id="create-ended-at" type="datetime-local" required data-event="DraftEndedAtChanged" data-on="change" />
+                <div class="field field-full">
+                  <label for="create-ended-date">End <span class="required">*</span></label>
+                  <div class="field-pair">
+                    <input id="create-ended-date" type="date" required aria-label="End date" data-event="DraftEndedAtChanged" data-compose-with="#create-ended-time" data-on="change" />
+                    <input id="create-ended-time" type="time" required aria-label="End time" data-event="DraftEndedAtChanged" data-compose-with="#create-ended-date" data-on="change" />
+                  </div>
                 </div>
                 <div class="field field-full">
                   <label for="create-description">What did you do? <span class="required">*</span></label>
@@ -207,9 +195,9 @@
               </div>
               <p class="field-label section">Tags</p>
               <div class="review-list">
-                <label class="review-row"><input type="checkbox" data-event="ToggleDraftTag" data-event-key="billable" data-on="change" /><span class="review-title">Billable</span></label>
-                <label class="review-row"><input type="checkbox" data-event="ToggleDraftTag" data-event-key="client-facing" data-on="change" /><span class="review-title">Client-facing</span></label>
-                <label class="review-row"><input type="checkbox" data-event="ToggleDraftTag" data-event-key="internal-only" data-on="change" /><span class="review-title">Internal only</span></label>
+                <template data-each="tagOptions" data-key="id">
+                  <label class="review-row"><input type="checkbox" data-event="ToggleDraftTag" data-on="change" /><span class="review-title" data-text="name"></span></label>
+                </template>
               </div>
             </fieldset>
             <div class="form-actions">
@@ -349,23 +337,14 @@
               <div class="form-grid">
                 <div class="field">
                   <label for="merge-activity-type">Activity type</label>
-                  <select id="merge-activity-type" data-event="DraftActivityTypeChanged" data-on="change">
+                  <select id="merge-activity-type" data-event="DraftActivityTypeChanged" data-on="change" data-options="activityTypeOptions">
                     <option value="" selected disabled>Choose an activity type</option>
-                    <option value="research">Research</option>
-                    <option value="linkedin-marketing">LinkedIn marketing</option>
-                    <option value="software-development">Software development</option>
-                    <option value="administration">Administration</option>
-                    <option value="meeting">Meeting</option>
                   </select>
                 </div>
                 <div class="field">
                   <label for="merge-project">Project</label>
-                  <select id="merge-project" data-event="DraftProjectChanged" data-on="change">
+                  <select id="merge-project" data-event="DraftProjectChanged" data-on="change" data-options="projectOptions">
                     <option value="" selected disabled>Choose a project</option>
-                    <option value="echelon-foundry">Echelon Foundry</option>
-                    <option value="visual-engineering">Visual Engineering</option>
-                    <option value="helixnote">HelixNote</option>
-                    <option value="general">General</option>
                   </select>
                 </div>
                 <div class="field field-full"><label for="merge-description">Description</label><input id="merge-description" type="text" data-event="DraftDescriptionChanged" data-on="change" /></div>
@@ -450,6 +429,7 @@
                 </div>
                 <p class="field-error" role="alert" aria-live="assertive" data-if="githubConfigError" data-text="githubConfigError" hidden></p>
                 <p class="field-error" role="alert" aria-live="assertive" data-if="githubSyncError" data-text="githubSyncError" hidden></p>
+                <p class="field-error" role="alert" aria-live="assertive" data-if="githubReferenceError" data-text="githubReferenceError" hidden></p>
               </fieldset>
             </section>
           </aside>
