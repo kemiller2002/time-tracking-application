@@ -468,6 +468,10 @@
                 <p class="notice-title">Syncing as <span data-text="gitHubSyncLogin"></span> to <span data-text="gitHubSyncOwner"></span>/<span data-text="gitHubSyncRepo"></span></p>
                 <p class="notice-copy"><span data-text="gitHubSyncFilePath"></span> on branch <span data-text="gitHubSyncBranch"></span>. Status: <span data-text="gitHubSyncStatus"></span>. Last synced: <span data-text="gitHubLastSyncedLabel"></span>.</p>
               </div>
+              <div class="notice" data-if="integrationReconciliationActive" hidden>
+                <p class="notice-title">Checking for externally submitted time</p>
+                <p class="notice-copy" data-text="integrationReconciliationStatusLabel"></p>
+              </div>
 
               <fieldset class="form-section">
                 <legend class="form-legend">Repository settings</legend>

@@ -203,10 +203,17 @@ completely unchanged before merging. As of this writing:
   with no GitHub sync configured) is unaffected, and with sync configured
   the full chain fires in the correct order with the candidate write
   strictly before the receipt write.
+- CHR-INT-016 — a minimal integration processing status UI:
+  `Projections.fs`'s `integrationReconciliationFields` derives a human-
+  readable status line (which project is being checked, and what step
+  it's on) purely from `Session.IntegrationReconciliation` — no new
+  state, no new effects, nothing persisted, and nothing shown once
+  reconciliation finishes. Rendered in the More screen's GitHub sync
+  section. Verified by 3 new `Ledger.Engine.Specs` and live in a browser.
 
 **Not yet done (deferred to follow-up PRs):**
-- CHR-INT-016/017 — the integration status UI, and concurrent-processing
-  tests against simulated Git conflicts.
+- CHR-INT-017 — concurrent-processing tests against simulated Git
+  conflicts.
 - CHR-INT-018 through -021 — publishing the package, and anything on the
   ROS side (a separate repository, out of this session's access scope).
 
