@@ -5,7 +5,9 @@ This document defines the standard `EchelonFoundry.Chrona.Integration`
 "Chrona Integration Assembly and Time Observation Processing"
 specification's vocabulary and illustrative datastore layout against what
 already exists in this repository (see `BASELINE.md` and
-`DATASTORE-CURRENT.md`).
+`DATASTORE-CURRENT.md`). See [`ARCHITECTURE-RULES.md`](./ARCHITECTURE-RULES.md)
+for the specification's permanent architecture rules governing this
+surface going forward.
 
 ## Ownership
 
@@ -223,10 +225,34 @@ completely unchanged before merging. As of this writing:
   safe to race, for the same reason) rather than erroring, retrying the
   candidate write, or ever producing a second candidate. Test-only; no
   production code changed.
+- CHR-INT-018 — external-consumer simulation and packaging. `dotnet pack`
+  produces `EchelonFoundry.Chrona.Integration.1.0.0.nupkg`/`.snupkg`.
+  Before packing, a throwaway console app referencing *only* the packed
+  `.nupkg` via a local NuGet feed (no project reference, no access to
+  this repo's source — the closest simulation of a real external
+  consumer like ROS possible without ROS repository access) confirmed:
+  construct → serialize → deserialize round-trips; the repo's own
+  published fixture (`interval.json`, copied verbatim) deserializes
+  identically via the packaged assembly; `StorageConvention.
+  observationInboxPath` computes the documented path from outside the
+  repo; and structural validation still rejects an invalid observation.
+  No contract gap surfaced, so no contract change was needed before
+  packing. The release commit is tagged `chrona-integration-v1.0.0`
+  locally (`git push origin <tag>` is expected to fail with the same
+  HTTP 403 `BASELINE.md` already documents for tag refs in this sandbox
+  — the tag push itself, and any actual publish to a package feed
+  requiring credentials this session was never given, are left for
+  someone with that access). See [`ARCHITECTURE-RULES.md`](./ARCHITECTURE-RULES.md)
+  for the specification's permanent architecture rules, recorded
+  alongside this work rather than restated per-PR.
 
-**Not yet done (deferred to follow-up PRs):**
-- CHR-INT-018 through -021 — publishing the package, and anything on the
-  ROS side (a separate repository, out of this session's access scope).
+**Out of this session's scope:**
+- CHR-INT-019 through -021 — ROS-side consumption, shadow-testing, and
+  controlled production enablement all live in ROS's own repository,
+  which is not among the repositories this session was granted access
+  to. Nothing here blocks that work from starting once someone with ROS
+  repository access picks it up against the published `EchelonFoundry.
+  Chrona.Integration` 1.0.0 contract.
 
 This keeps every merged increment fully inert with respect to existing
 Chrona behavior, per the specification's own repeated instruction to
