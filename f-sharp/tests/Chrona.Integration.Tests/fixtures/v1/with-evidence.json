@@ -1,0 +1,24 @@
+{
+  "contractVersion": "1",
+  "observationId": "ros:activity:with-evidence-001",
+  "sourceSystem": "ros",
+  "organizationId": "echelon-foundry",
+  "projectId": "strata",
+  "workItemId": "STRATA-88",
+  "actorId": "kevin",
+  "startedAt": "2026-09-13T10:00:00-04:00",
+  "endedAt": "2026-09-13T11:00:00-04:00",
+  "durationMinutes": null,
+  "description": "Reviewed and merged PR",
+  "evidence": [
+    {
+      "kind": "github-pr",
+      "reference": "42"
+    },
+    {
+      "kind": "github-commit",
+      "reference": "def456"
+    }
+  ],
+  "observedAt": "2026-09-13T11:05:00-04:00"
+}

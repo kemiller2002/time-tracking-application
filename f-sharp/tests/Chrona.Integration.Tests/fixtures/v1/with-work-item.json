@@ -1,0 +1,15 @@
+{
+  "contractVersion": "1",
+  "observationId": "ros:activity:with-work-item-001",
+  "sourceSystem": "ros",
+  "organizationId": "echelon-foundry",
+  "projectId": "strata",
+  "workItemId": "STRATA-77",
+  "actorId": null,
+  "startedAt": "2026-09-13T09:00:00-04:00",
+  "endedAt": "2026-09-13T09:30:00-04:00",
+  "durationMinutes": null,
+  "description": null,
+  "evidence": [],
+  "observedAt": "2026-09-13T09:31:00-04:00"
+}

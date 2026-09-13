@@ -1,0 +1,15 @@
+{
+  "contractVersion": "1",
+  "observationId": "ros:activity:minimal-001",
+  "sourceSystem": "ros",
+  "organizationId": "echelon-foundry",
+  "projectId": "strata",
+  "workItemId": null,
+  "actorId": null,
+  "startedAt": null,
+  "endedAt": null,
+  "durationMinutes": 30,
+  "description": null,
+  "evidence": [],
+  "observedAt": "2026-09-13T14:03:00-04:00"
+}

@@ -1,0 +1,15 @@
+{
+  "contractVersion": "1",
+  "observationId": "ros:activity:duration-001",
+  "sourceSystem": "ros",
+  "organizationId": "echelon-foundry",
+  "projectId": "strata",
+  "workItemId": "STRATA-200",
+  "actorId": "kevin",
+  "startedAt": null,
+  "endedAt": null,
+  "durationMinutes": 45,
+  "description": "Code review",
+  "evidence": [],
+  "observedAt": "2026-09-13T15:00:00-04:00"
+}

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <PackageId>EchelonFoundry.Chrona.Integration</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Echelon Foundry</Authors>
+    <Company>Echelon Foundry</Company>
+    <Description>Public inbound integration contracts for Chrona — the data Chrona accepts from external systems (such as ROS) for consideration as time, independent of Chrona's own domain, persistence, or WASM implementation.</Description>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="TimeObservation.fs" />
+    <Compile Include="StorageConvention.fs" />
+  </ItemGroup>
+</Project>
