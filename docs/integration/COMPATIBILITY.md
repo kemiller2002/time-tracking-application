@@ -56,6 +56,17 @@ or WASM dependency:
   (containing `/`, `..`, spaces, or other non-`[A-Za-z0-9._-]`
   characters), and rejects blank segments.
 
+## External-consumer simulation (CHR-INT-018)
+
+Before packing `EchelonFoundry.Chrona.Integration` 1.0.0, a throwaway
+console app referencing *only* the packed `.nupkg` (via a local NuGet
+feed, no project reference) confirmed the package is usable standalone:
+construct → serialize → deserialize round-trips, the repo's own
+`interval.json` fixture deserializes identically via the packaged
+assembly, `StorageConvention.observationInboxPath` computes correctly
+from outside the repo, and structural validation still rejects an
+invalid observation. See `INTEGRATION-CONTRACT.md`'s CHR-INT-018 entry.
+
 ## Running
 
 ```
