@@ -217,11 +217,20 @@ export class DomBindings {
    * decides anything about timer state, only when to ask for a refresh,
    * and only while `view.timerPhase` (already-public projection state)
    * says a timer is actually running, so it costs nothing while idle.
+   *
+   * Every real `dispatch()` call is a full round trip into the WASM engine
+   * — never a client-side interpolation of the last-seen value — so the
+   * displayed elapsed time is always exactly what `Projections.build` just
+   * computed from `environment.Clock()`, never drifting out of sync with
+   * it. The label shows one decimal place of minutes (`formatMinutes`'s
+   * "%.1f min"), which changes only every six real seconds (0.1 min), so
+   * ticking more often than that would just be extra WASM round trips for
+   * a label that hasn't changed.
    */
   #bindTimerTick() {
     setInterval(() => {
       if (this.#view.timerPhase === "running") this.dispatch("Tick", null, null);
-    }, 1000);
+    }, 6000);
   }
 
   #handleDomEvent(on, domEvent) {

@@ -292,8 +292,8 @@ let tests : (string * (unit -> unit)) list =
         assertTrue (stringView response "timerPhase" = "none") "timer did not clear after stopping"
         assertTrue ((itemsView response "dayActivities").Count = 0) "an immediately-stopped timer recorded an activity"
 
-      /// dom-bindings.js dispatches this once a second while a timer runs,
-      /// purely so the elapsed-time label keeps reading a fresh clock value
+      /// dom-bindings.js dispatches this every six seconds while a timer
+      /// runs, purely so the elapsed-time label keeps reading a fresh clock value
       /// instead of sitting frozen between real events (see Dispatch.fs's
       /// "Tick" case). Must be a true no-op: no document change, no effect,
       /// timer state untouched.
