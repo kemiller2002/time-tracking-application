@@ -1,0 +1,59 @@
+name: Chrona Integration Package CI
+
+# CHR-INT-007. Independent of `fsharp-specs.yml` (which never runs this
+# package's own tests, and this workflow never runs the main app's)
+# because the two are meant to evolve on separate schedules — this
+# package is versioned and published on its own, per
+# docs/integration/INTEGRATION-CONTRACT.md's "contract version vs.
+# package version" distinction. Path-filtered so unrelated Chrona changes
+# never trigger a pack/build here, and vice versa.
+#
+# Builds, tests, and packs `EchelonFoundry.Chrona.Integration` on every
+# push to main and every PR that touches it, uploading the resulting
+# `.nupkg`/`.snupkg` as a workflow artifact. This workflow never
+# publishes to any package feed — see CHR-INT-018 for the intentional,
+# separate, tag-triggered publish step this repository does not yet have.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "f-sharp/src/Chrona.Integration/**"
+      - "f-sharp/tests/Chrona.Integration.Tests/**"
+      - ".github/workflows/chrona-integration-ci.yml"
+  pull_request:
+    paths:
+      - "f-sharp/src/Chrona.Integration/**"
+      - "f-sharp/tests/Chrona.Integration.Tests/**"
+      - ".github/workflows/chrona-integration-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build
+        run: dotnet build f-sharp/src/Chrona.Integration/Chrona.Integration.fsproj --configuration Release
+
+      - name: Test
+        run: dotnet run --project f-sharp/tests/Chrona.Integration.Tests --configuration Release
+
+      - name: Pack
+        run: >
+          dotnet pack
+          f-sharp/src/Chrona.Integration/Chrona.Integration.fsproj
+          --configuration Release
+          --output ./artifacts/packages
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: chrona-integration-package
+          path: ./artifacts/packages/*
