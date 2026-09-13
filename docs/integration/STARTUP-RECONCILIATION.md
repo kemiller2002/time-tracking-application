@@ -36,11 +36,19 @@ code — `Storage` is always tried first and is synchronous, and every
 subsequent GitHub effect is asynchronous, sequential, and re-renders
 incrementally rather than gating the first render.
 
-## Where observation reconciliation will slot in (not yet implemented)
+## Where observation reconciliation will slot in (building blocks done, orchestration not yet wired)
 
-This document records the **intended integration point** for the future
-work (CHR-INT-010/011/015); implementing it is out of scope for this PR
-(CHR-INT-001 through -006 only — see `INTEGRATION-CONTRACT.md`).
+This document records the **intended integration point**. As of
+CHR-INT-011/012/013, `GitHubSync.fs` has every effect-request/response
+building block reconciliation needs (listing the inbox, reading one
+observation, checking for and creating a candidate/receipt — see below)
+and `Integration.fs` has the pure decision (`ObservationReconciliation.
+decide`/`reconcileRaw`, CHR-INT-008/009/010). **None of it is called from
+anywhere yet** — `Dispatch.fs`'s `handleMessage` still only ever builds
+the settings/ledger/reference pull effects it already did before this
+work started. Wiring these pieces together into the actual startup
+sequence, including the write-ordering and idempotent-retry behavior
+sections 21-26 require, is CHR-INT-015, deferred to its own PR.
 
 Reconciliation is proposed to run as one more step in the same
 identity-resolve chain `handleMessage`'s `identityEffects` already builds
@@ -52,19 +60,40 @@ identity resolves
     ├── pull settings.json      (existing)
     ├── pull ledger.json        (existing)
     ├── pull reference.json     (existing)
-    └── list + reconcile observations/receipts   (new)
+    └── list + reconcile observations/receipts   (CHR-INT-015, not yet wired)
 ```
 
-Reconciliation itself needs a **list** operation the current
-`GitHubSync.fs` does not yet have (every existing GitHub read is "GET one
-known file path," never "list a directory's contents") — the GitHub
-Contents API supports listing a directory via the same endpoint
-(`GET /repos/{owner}/{repo}/contents/{path}`, returning an array instead
-of an object when `path` is a directory), so this fits the existing
-`HttpEffect` shape without a new effect kind, but does need a new
-response-parsing function in `GitHubSync.fs` and a new correlation-id
-convention (proposed: `"github-observations-list"`,
-`"github-receipts-list"`).
+### The building blocks now available (`GitHubSync.fs`)
+
+- `buildObservationsListEffect config projectId` — lists a project's
+  observation inbox. The GitHub Contents API returns a JSON *array*
+  (rather than every other GET in this file's single object) when `path`
+  names a directory — `parseObservationListing` reads that shape,
+  filtering to `.json` file entries.
+- `buildObservationGetEffect config path` — reads one already-located
+  observation (reuses the existing `parseGetResponse`, the same
+  single-file shape `reference.json`/`settings.json`/`ledger.json` already
+  parse).
+- `candidatePath`/`observationReceiptPath` — Chrona-internal deterministic
+  paths (`<Folder>/integration/candidates/<safe id>.json`,
+  `<Folder>/integration/observation-receipts/<safe id>.json`), not part of
+  the public `Chrona.Integration` package (a producer never needs them —
+  specification §51).
+- `buildCandidateGetEffect`/`buildReceiptGetEffect` — check whether a
+  candidate/receipt already exists for a given id (§23's idempotency
+  check) — a 404 means it doesn't.
+- `buildCandidatePutEffect`/`buildReceiptPutEffect` — **create-only**:
+  always send `sha = None`. GitHub's Contents API rejects a create-with-
+  no-`sha` PUT against a path that already exists, which is exactly the
+  fail-safe behavior two clients racing to process the same observation
+  need (§43/44) — neither can silently overwrite the other's write.
+
+None of these functions call each other or decide *when* to call which —
+that sequencing (list → for each unreceipted observation, check for an
+existing candidate, decide via `ObservationReconciliation`, write
+candidate-then-receipt in that order per §22) is exactly what CHR-INT-015
+adds, together with the actual `EffectResult` handling in `Dispatch.fs`
+that today only exists for settings/ledger/reference/whoami/push.
 
 Per section 20/72, reconciliation must never block the first render, and
 per the accepted V1 tradeoff (section 72), it only runs when Chrona's

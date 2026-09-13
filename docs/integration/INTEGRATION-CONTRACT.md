@@ -158,24 +158,44 @@ intended directory or collide with an unrelated file. Producers should
 call `StorageConvention.observationInboxPath` themselves rather than
 reimplementing this transform (specification §53).
 
-## What this PR (CHR-INT-001 through -006) does and does not do
+## Progress against the specification's work items
 
-**Does:**
-- Establish `docs/integration/` (this document and its siblings).
-- Add the standalone `EchelonFoundry.Chrona.Integration` package:
-  `TimeObservation` V1 (types, validated constructor, serialize/
-  deserialize), `StorageConvention.observationInboxPath`, and its test
-  suite with compatibility fixtures.
+Each PR implementing this specification is scoped to a coherent,
+independently-testable slice, verified to leave existing Chrona behavior
+completely unchanged before merging. As of this writing:
 
-**Does not (deferred to follow-up PRs, tracked as CHR-INT-007 onward):**
-- Any change to `Ledger.Domain`, `Ledger.Engine`, `Ledger.Wasm`, or `web/`.
-- The candidate/receipt domain model, the reconciliation state machine,
-  GitHub observation reading/writing, or WASM startup wiring.
-- Publishing the package (CI builds and packs it as a workflow artifact
-  only — see the new `.github/workflows/chrona-integration-ci.yml`).
-- Any change on the ROS side (a separate repository, out of this
-  session's access scope).
+**Done:**
+- CHR-INT-001/002 — this baseline and standard (`docs/integration/`).
+- CHR-INT-003/004/005/006 — the standalone `EchelonFoundry.Chrona.
+  Integration` package: `TimeObservation` V1 (types, validated
+  constructor, serialize/deserialize), `StorageConvention.
+  observationInboxPath`/`observationInboxDirectory`/`safeSegment`, and
+  its test suite with compatibility fixtures.
+- CHR-INT-007 — `.github/workflows/chrona-integration-ci.yml` (builds,
+  tests, packs as a workflow artifact; publishes nothing).
+- CHR-INT-008/009/010 — `Ledger.Engine/Integration.fs`: the `TimeCandidate`/
+  `ProcessingReceipt` domain model and the pure `ObservationReconciliation.
+  decide`/`reconcileRaw` decision function. See its own doc comments and
+  `STARTUP-RECONCILIATION.md`.
+- CHR-INT-011/012/013 — `GitHubSync.fs`: the effect-request/response
+  building blocks for listing/reading observations and for checking-for/
+  creating candidates and receipts. See `STARTUP-RECONCILIATION.md`'s
+  "building blocks now available" section.
 
-This keeps the addition fully inert with respect to existing Chrona
-behavior, per the specification's own repeated instruction to preserve
-the existing application and extend it safely rather than rewrite it.
+**Not yet done (deferred to follow-up PRs):**
+- CHR-INT-014 — partial-failure recovery proven against real (or
+  simulated) GitHub persistence, not just the pure decision function's
+  own unit tests.
+- CHR-INT-015 — actually wiring the CHR-INT-011/012/013 building blocks
+  and the CHR-INT-010 decision function into `Dispatch.fs`'s
+  `handleMessage`/`handleEffectResult` and WASM startup. Nothing built so
+  far is called from anywhere; the running app's behavior is unchanged.
+- CHR-INT-016/017 — the integration status UI, and concurrent-processing
+  tests against simulated Git conflicts.
+- CHR-INT-018 through -021 — publishing the package, and anything on the
+  ROS side (a separate repository, out of this session's access scope).
+
+This keeps every merged increment fully inert with respect to existing
+Chrona behavior, per the specification's own repeated instruction to
+preserve the existing application and extend it safely rather than
+rewrite it.

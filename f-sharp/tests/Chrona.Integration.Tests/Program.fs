@@ -223,6 +223,16 @@ let tests : (string * (unit -> unit)) list =
         match StorageConvention.observationInboxPath "time-tracking-data" "strata" "" with
         | Error (StorageConvention.BlankSegment "observationId") -> ()
         | other -> failwith $"expected BlankSegment \"observationId\", got {other}"
+
+      "observationInboxDirectory produces the parent directory observationInboxPath's file lives under", fun () ->
+        match StorageConvention.observationInboxDirectory "time-tracking-data" "strata", StorageConvention.observationInboxPath "time-tracking-data" "strata" "obs-1" with
+        | Ok directory, Ok filePath -> assertTrue (filePath = $"{directory}/obs-1.json") $"observationInboxPath's file did not live directly under observationInboxDirectory: {filePath} vs {directory}"
+        | other -> failwith $"expected both to succeed, got {other}"
+
+      "safeSegment is total (never fails) and encodes unsafe characters", fun () ->
+        assertTrue (StorageConvention.safeSegment "abc-123_ABC.def" = "abc-123_ABC.def") "already-safe characters should pass through unchanged"
+        assertTrue (StorageConvention.safeSegment "candidate:ros:activity:001" <> "candidate:ros:activity:001") "':' should have been encoded"
+        assertTrue (not ((StorageConvention.safeSegment "a/b").Contains "/")) "'/' must never survive encoding"
     ]
 
 [<EntryPoint>]

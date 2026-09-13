@@ -2,6 +2,7 @@ open System
 open System.Text.Json.Nodes
 open Ledger.Domain
 open Ledger.Engine
+open Ledger.Engine.Protocol
 open Ledger.Engine.Integration
 open EchelonFoundry.Chrona.Integration
 
@@ -923,6 +924,82 @@ let tests : (string * (unit -> unit)) list =
         | ObservationReconciliation.CandidateCreated c1, ObservationReconciliation.CandidateCreated c2 ->
             assertTrue (c1.CandidateId <> c2.CandidateId) "two different observations produced the same candidate id"
         | _ -> failwith $"expected two CandidateCreated results, got {first} and {second}"
+
+      // --- GitHubSync: integration observation reading + candidate/receipt --
+      // --- persistence (CHR-INT-011/012/013 — building effects only, no ------
+      // --- orchestration wired in yet) -----------------------------------
+
+      let integrationConfig : Session.GitHubSyncConfig =
+          { Owner = "acme-co"; Repo = "shared-ledger"; Folder = "time-tracking-data"; Branch = "main"; Token = "ghp_test_token"; Login = None; DisplayName = None }
+
+      "candidatePath and observationReceiptPath live under <folder>/integration/, safely encoding an id containing ':'", fun () ->
+        let candidateId = TimeCandidate.candidateId "ros:activity:001"
+        let cPath = GitHubSync.candidatePath integrationConfig candidateId
+        let rPath = GitHubSync.observationReceiptPath integrationConfig "ros:activity:001"
+        assertTrue (cPath.StartsWith "time-tracking-data/integration/candidates/") $"unexpected candidate path: {cPath}"
+        assertTrue (not (cPath.Contains ":")) $"candidate path did not encode the ':' in the candidate id: {cPath}"
+        assertTrue (rPath.StartsWith "time-tracking-data/integration/observation-receipts/") $"unexpected receipt path: {rPath}"
+        assertTrue (cPath <> rPath) "the candidate and receipt paths must never collide"
+
+      "observationInboxDirectory matches the path Chrona.Integration's public StorageConvention builds for the same folder/project", fun () ->
+        let directory = GitHubSync.observationInboxDirectory integrationConfig "strata"
+        assertTrue (directory = "time-tracking-data/integration/projects/strata/observations/inbox") $"unexpected directory: {directory}"
+
+      "buildObservationsListEffect requests a GET against the project's inbox directory", fun () ->
+        let effect = GitHubSync.buildObservationsListEffect integrationConfig "strata"
+        match effect with
+        | HttpEffect(correlationId, method, url, _, body, _) ->
+            assertTrue (correlationId = "github-observations-list") $"unexpected correlation id: {correlationId}"
+            assertTrue (method = "GET") $"expected GET, got {method}"
+            assertTrue (url.Contains "/contents/time-tracking-data/integration/projects/strata/observations/inbox") $"unexpected URL: {url}"
+            assertTrue (body.IsNone) "a listing GET should carry no body"
+        | other -> failwith $"expected an HttpEffect, got {other}"
+
+      "parseObservationListing extracts only .json file entries, skipping directories and non-json files", fun () ->
+        let body =
+            """[
+                 {"name":"ros-activity-001.json","path":"time-tracking-data/integration/projects/strata/observations/inbox/ros-activity-001.json","type":"file"},
+                 {"name":"ros-activity-002.json","path":"time-tracking-data/integration/projects/strata/observations/inbox/ros-activity-002.json","type":"file"},
+                 {"name":"README.md","path":"time-tracking-data/integration/projects/strata/observations/inbox/README.md","type":"file"},
+                 {"name":"subdir","path":"time-tracking-data/integration/projects/strata/observations/inbox/subdir","type":"dir"}
+               ]"""
+        match GitHubSync.parseObservationListing body with
+        | Ok entries ->
+            assertTrue (entries.Length = 2) $"expected exactly 2 .json file entries, got {entries.Length}: {entries}"
+            assertTrue (entries |> List.forall (fun e -> e.Name.EndsWith ".json")) "a non-.json entry leaked through"
+        | Error message -> failwith $"expected success, got {message}"
+
+      "parseObservationListing surfaces a parse failure rather than throwing", fun () ->
+        match GitHubSync.parseObservationListing "{ not an array" with
+        | Error _ -> ()
+        | Ok entries -> failwith $"expected a parse error, got {entries}"
+
+      "buildObservationGetEffect requests a GET against an already-known observation path", fun () ->
+        match GitHubSync.buildObservationGetEffect integrationConfig "time-tracking-data/integration/projects/strata/observations/inbox/ros-activity-001.json" with
+        | HttpEffect(correlationId, method, url, _, _, _) ->
+            assertTrue (correlationId = "github-observation-pull") $"unexpected correlation id: {correlationId}"
+            assertTrue (method = "GET" && url.Contains "ros-activity-001.json") $"unexpected GET: {method} {url}"
+        | other -> failwith $"expected an HttpEffect, got {other}"
+
+      "buildCandidateGetEffect and buildReceiptGetEffect request GETs against their deterministic paths", fun () ->
+        match GitHubSync.buildCandidateGetEffect integrationConfig "candidate:ros:activity:001" with
+        | HttpEffect("github-candidate-pull", "GET", url, _, _, _) -> assertTrue (url.Contains "/integration/candidates/") $"unexpected candidate GET url: {url}"
+        | other -> failwith $"expected a github-candidate-pull GET, got {other}"
+        match GitHubSync.buildReceiptGetEffect integrationConfig "ros:activity:001" with
+        | HttpEffect("github-receipt-pull", "GET", url, _, _, _) -> assertTrue (url.Contains "/integration/observation-receipts/") $"unexpected receipt GET url: {url}"
+        | other -> failwith $"expected a github-receipt-pull GET, got {other}"
+
+      "buildCandidatePutEffect and buildReceiptPutEffect are always create-only — never carry a sha", fun () ->
+        match GitHubSync.buildCandidatePutEffect integrationConfig "candidate:ros:activity:001" """{"candidateId":"candidate:ros:activity:001"}""" with
+        | HttpEffect("github-candidate-push", "PUT", _, _, Some body, _) ->
+            let bodyObject = JsonNode.Parse(body).AsObject()
+            assertTrue (isNull (bodyObject.["sha"] :> obj)) "a candidate create must never carry a sha — it would allow overwriting an existing candidate"
+        | other -> failwith $"expected a github-candidate-push PUT with a body, got {other}"
+        match GitHubSync.buildReceiptPutEffect integrationConfig "ros:activity:001" """{"observationId":"ros:activity:001"}""" with
+        | HttpEffect("github-receipt-push", "PUT", _, _, Some body, _) ->
+            let bodyObject = JsonNode.Parse(body).AsObject()
+            assertTrue (isNull (bodyObject.["sha"] :> obj)) "a receipt create must never carry a sha — two clients racing must fail safely, not overwrite"
+        | other -> failwith $"expected a github-receipt-push PUT with a body, got {other}"
     ]
 
 [<EntryPoint>]

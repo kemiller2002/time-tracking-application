@@ -5,6 +5,7 @@ open System.Text
 open System.Text.Json.Nodes
 open Ledger.Domain
 open Ledger.Engine.Protocol
+open EchelonFoundry.Chrona.Integration
 
 /// SDE Tier 3: translates the GitHub REST API — a third party's Public
 /// Integration Contract — into this app's own closed `HttpEffect`/`HttpResult`
@@ -366,6 +367,107 @@ module GitHubSync =
             JsonNode.Parse(raw).AsObject().["message"].GetValue<string>()
         with _ ->
             raw
+
+    // --- Inbound integration observations (see docs/integration/) -----------
+    //
+    // Reading what a producer (ROS) has written to the shared inbox, and
+    // persisting the resulting candidates/receipts — CHR-INT-011/012/013.
+    // Exactly like every other function in this file: builds effect
+    // requests and parses effect results, performs no I/O itself. The
+    // orchestration that calls these during WASM startup reconciliation
+    // is deferred (CHR-INT-015) — nothing here is wired into `Dispatch.fs`
+    // yet, so none of it runs today.
+
+    let private orInvalidPath (result: Result<string, StorageConvention.PathError>) =
+        match result with
+        | Ok path -> path
+        | Error(StorageConvention.BlankSegment field) -> failwith $"internal error: blank {field} while building an integration storage path"
+
+    /// The public, producer-facing convention (`Chrona.Integration.
+    /// StorageConvention`), scoped to this config's `Folder` exactly like
+    /// every other datastore path in this file.
+    let observationInboxDirectory (config: Session.GitHubSyncConfig) (projectId: string) : string =
+        StorageConvention.observationInboxDirectory (folderPath config) projectId |> orInvalidPath
+
+    /// Chrona-internal — deliberately not part of the public
+    /// `Chrona.Integration` package, since a producer never needs to know
+    /// where Chrona keeps its own candidates (specification §51). Still
+    /// reuses `StorageConvention.safeSegment` rather than reimplementing
+    /// path-safety, since `CandidateId` (`"candidate:<observationId>"`,
+    /// see `Integration.TimeCandidate.candidateId`) contains a `:`.
+    let candidatePath (config: Session.GitHubSyncConfig) (candidateId: string) : string =
+        $"{folderPath config}/integration/candidates/{StorageConvention.safeSegment candidateId}.json"
+
+    /// Chrona-internal, for the same reason as `candidatePath`.
+    let observationReceiptPath (config: Session.GitHubSyncConfig) (observationId: string) : string =
+        $"{folderPath config}/integration/observation-receipts/{StorageConvention.safeSegment observationId}.json"
+
+    /// Lists the observations a producer has written for one project —
+    /// the GitHub Contents API returns a JSON *array* (rather than the
+    /// single object every other GET in this file parses) when `path`
+    /// names a directory rather than a file.
+    let buildObservationsListEffect (config: Session.GitHubSyncConfig) (projectId: string) : EffectRequest =
+        let url = $"{contentsUrl config (observationInboxDirectory config projectId)}?ref={Uri.EscapeDataString config.Branch}"
+        HttpEffect("github-observations-list", "GET", url, headers config.Token, None, 15000)
+
+    /// One entry from a directory listing — only `name`/`path` are ever
+    /// read; a listing never carries file content (specification §35's
+    /// "list observation files" is a separate operation from "read
+    /// observation" — `buildObservationGetEffect`, below, is still needed
+    /// per file). Non-`.json` entries and subdirectories are filtered out
+    /// here rather than left for the caller to notice.
+    let parseObservationListing (body: string) : Result<{| Name: string; Path: string |} list, string> =
+        try
+            JsonNode.Parse(body).AsArray()
+            |> Seq.choose (fun item ->
+                let o = item.AsObject()
+                let entryType = match o.["type"] with null -> "" | v -> v.GetValue<string>()
+                let name = match o.["name"] with null -> "" | v -> v.GetValue<string>()
+                if entryType = "file" && name.EndsWith ".json" then Some {| Name = name; Path = o.["path"].GetValue<string>() |} else None)
+            |> List.ofSeq
+            |> Ok
+        with ex ->
+            Error $"GitHub's directory listing could not be read: {ex.Message}"
+
+    /// Reads one already-located observation file — reuses
+    /// `parseGetResponse` (the same Contents-API single-file GET shape
+    /// every other read in this file already parses).
+    let buildObservationGetEffect (config: Session.GitHubSyncConfig) (path: string) : EffectRequest =
+        let url = $"{contentsUrl config path}?ref={Uri.EscapeDataString config.Branch}"
+        HttpEffect("github-observation-pull", "GET", url, headers config.Token, None, 15000)
+
+    /// Checks whether a candidate already exists for a given (deterministic)
+    /// id — a 404 response means it does not (specification §23's "does a
+    /// candidate already exist for this ObservationId?").
+    let buildCandidateGetEffect (config: Session.GitHubSyncConfig) (candidateId: string) : EffectRequest =
+        let url = $"{contentsUrl config (candidatePath config candidateId)}?ref={Uri.EscapeDataString config.Branch}"
+        HttpEffect("github-candidate-pull", "GET", url, headers config.Token, None, 15000)
+
+    /// Create-only: always `sha = None`. A candidate/receipt file is
+    /// written exactly once and never updated (specification §26: "create-
+    /// only files such as deterministic receipts should fail safely if
+    /// another client already created them") — GitHub's Contents API
+    /// rejects a create-with-no-`sha` PUT against a path that already
+    /// exists (409/422), which is exactly the fail-safe two clients racing
+    /// to process the same observation need (specification §43/44) rather
+    /// than one silently overwriting the other's candidate.
+    let buildCandidatePutEffect (config: Session.GitHubSyncConfig) (candidateId: string) (candidateJson: string) : EffectRequest =
+        let body = putBody None config.Branch "Create a time candidate from an inbound observation" candidateJson
+        HttpEffect("github-candidate-push", "PUT", contentsUrl config (candidatePath config candidateId), headers config.Token, Some body, 15000)
+
+    /// Checks whether a receipt already exists for an observation id —
+    /// the other half of §23's idempotency check, alongside
+    /// `buildCandidateGetEffect`.
+    let buildReceiptGetEffect (config: Session.GitHubSyncConfig) (observationId: string) : EffectRequest =
+        let url = $"{contentsUrl config (observationReceiptPath config observationId)}?ref={Uri.EscapeDataString config.Branch}"
+        HttpEffect("github-receipt-pull", "GET", url, headers config.Token, None, 15000)
+
+    /// Create-only, for the same reason as `buildCandidatePutEffect` —
+    /// per specification §22, this must never be sent before the
+    /// corresponding candidate write has already succeeded.
+    let buildReceiptPutEffect (config: Session.GitHubSyncConfig) (observationId: string) (receiptJson: string) : EffectRequest =
+        let body = putBody None config.Branch "Record an observation-processing receipt" receiptJson
+        HttpEffect("github-receipt-push", "PUT", contentsUrl config (observationReceiptPath config observationId), headers config.Token, Some body, 15000)
 
     // --- localStorage persistence of the saved config (Owner/Repo/Folder/
     // Branch/Token/Login/DisplayName) — a separate cache key from the ledger
