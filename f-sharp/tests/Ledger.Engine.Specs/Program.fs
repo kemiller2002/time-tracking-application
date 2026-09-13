@@ -2,6 +2,8 @@ open System
 open System.Text.Json.Nodes
 open Ledger.Domain
 open Ledger.Engine
+open Ledger.Engine.Integration
+open EchelonFoundry.Chrona.Integration
 
 let assertTrue condition message = if not condition then failwith message
 
@@ -811,6 +813,116 @@ let tests : (string * (unit -> unit)) list =
         let aliceMetadata = GitHubSync.metadataFilePath config "alice"
         assertTrue (aliceMetadata = "time-tracking-data/alice/metadata.json") $"unexpected metadata path shape for alice: {aliceMetadata}"
         assertTrue (aliceMetadata <> alicePath) "the ledger and metadata files resolved to the same path"
+
+      // --- Integration: TimeObservation -> TimeCandidate mapping, receipts, --
+      // --- and the pure reconciliation decision (no GitHub involved) --------
+
+      "ObservationMapping.toCandidateProposal preserves every field and proposes it as Proposed", fun () ->
+        let evidence = [ { Kind = "github-commit"; Reference = "abc123" } ]
+        let observedAt = DateTimeOffset.Parse "2026-09-13T14:03:00-04:00"
+        let observation =
+            TimeObservation.create "ros:activity:001" "ros" "echelon-foundry" "not-defined" (Some "STRATA-1") (Some "kevin")
+                None None (Some 30) (Some "Did work") evidence observedAt
+            |> function Ok o -> o | Error e -> failwith $"test setup failed: {e}"
+        let candidate = ObservationMapping.toCandidateProposal observation
+        assertTrue (candidate.CandidateId = "candidate:ros:activity:001") $"unexpected deterministic candidate id: {candidate.CandidateId}"
+        assertTrue (candidate.SourceObservationId = observation.ObservationId) "SourceObservationId was not preserved"
+        assertTrue (candidate.ProjectId = observation.ProjectId) "ProjectId was not preserved"
+        assertTrue (candidate.WorkItemId = observation.WorkItemId) "WorkItemId was not preserved"
+        assertTrue (candidate.ProposedDurationMinutes = observation.DurationMinutes) "ProposedDurationMinutes was not preserved"
+        assertTrue (candidate.State = Proposed) "a freshly mapped candidate must start Proposed"
+
+      "TimeCandidate.candidateId is deterministic — the same observation id always produces the same candidate id", fun () ->
+        assertTrue (TimeCandidate.candidateId "ros:activity:001" = TimeCandidate.candidateId "ros:activity:001") "candidateId was not deterministic"
+
+      "TimeCandidate serialize then deserialize round-trips", fun () ->
+        let candidate : TimeCandidate =
+            { CandidateId = "candidate:ros:activity:001"; SourceObservationId = "ros:activity:001"; SourceSystem = "ros"; ProjectId = "not-defined"
+              WorkItemId = Some "STRATA-1"; ActorId = Some "kevin"
+              ProposedStart = Some(DateTimeOffset.Parse "2026-09-13T09:00:00-04:00"); ProposedEnd = Some(DateTimeOffset.Parse "2026-09-13T10:00:00-04:00")
+              ProposedDurationMinutes = None; Description = Some "Did work"; State = Proposed }
+        match TimeCandidate.deserialize (TimeCandidate.serialize candidate) with
+        | Ok roundTripped -> assertTrue (roundTripped = candidate) $"round trip did not preserve the candidate: {roundTripped} <> {candidate}"
+        | Error message -> failwith $"round trip failed to deserialize: {message}"
+
+      "ProcessingReceipt serialize then deserialize round-trips for CandidateCreated, Rejected, and Ignored", fun () ->
+        let processedAt = DateTimeOffset.Parse "2026-09-13T14:05:18-04:00"
+        for result in [ CandidateCreated "candidate:ros:activity:001"; Rejected "Unknown project 'x'."; Ignored "duplicate delivery" ] do
+            let receipt : ProcessingReceipt = { ReceiptVersion = ProcessingReceipt.CurrentReceiptVersion; ObservationId = "ros:activity:001"; ProcessedAt = processedAt; Result = result }
+            match ProcessingReceipt.deserialize (ProcessingReceipt.serialize receipt) with
+            | Ok roundTripped -> assertTrue (roundTripped = receipt) $"round trip did not preserve the receipt for {result}: {roundTripped} <> {receipt}"
+            | Error message -> failwith $"round trip failed to deserialize for {result}: {message}"
+
+      "ObservationReconciliation.decide proposes a candidate for a new, valid observation against a known project", fun () ->
+        let environment = (Session.initial ()).Environment
+        let observation =
+            TimeObservation.create "ros:activity:new" "ros" "echelon-foundry" "not-defined" None None None None (Some 30) None [] DateTimeOffset.UtcNow
+            |> function Ok o -> o | Error e -> failwith $"test setup failed: {e}"
+        match ObservationReconciliation.decide environment false None observation with
+        | ObservationReconciliation.CandidateCreated candidate -> assertTrue (candidate.SourceObservationId = "ros:activity:new") "the wrong observation was mapped"
+        | other -> failwith $"expected CandidateCreated, got {other}"
+
+      "ObservationReconciliation.decide reports AlreadyProcessed when a receipt already exists — never proposes a second candidate", fun () ->
+        let environment = (Session.initial ()).Environment
+        let observation =
+            TimeObservation.create "ros:activity:done" "ros" "echelon-foundry" "not-defined" None None None None (Some 30) None [] DateTimeOffset.UtcNow
+            |> function Ok o -> o | Error e -> failwith $"test setup failed: {e}"
+        match ObservationReconciliation.decide environment true None observation with
+        | ObservationReconciliation.AlreadyProcessed -> ()
+        | other -> failwith $"expected AlreadyProcessed, got {other}"
+
+      "ObservationReconciliation.decide repairs a missing receipt for an already-existing candidate, without proposing a new one", fun () ->
+        let environment = (Session.initial ()).Environment
+        let existing : TimeCandidate =
+            { CandidateId = "candidate:ros:activity:partial"; SourceObservationId = "ros:activity:partial"; SourceSystem = "ros"; ProjectId = "not-defined"
+              WorkItemId = None; ActorId = None; ProposedStart = None; ProposedEnd = None; ProposedDurationMinutes = Some 30; Description = None; State = Proposed }
+        let observation =
+            TimeObservation.create "ros:activity:partial" "ros" "echelon-foundry" "not-defined" None None None None (Some 30) None [] DateTimeOffset.UtcNow
+            |> function Ok o -> o | Error e -> failwith $"test setup failed: {e}"
+        match ObservationReconciliation.decide environment false (Some existing) observation with
+        | ObservationReconciliation.ReceiptRepairNeeded candidate -> assertTrue (candidate = existing) "a repaired receipt must reuse the exact existing candidate, never mint a new one"
+        | other -> failwith $"expected ReceiptRepairNeeded, got {other}"
+
+      "ObservationReconciliation.decide rejects an observation referencing a project Chrona does not recognize", fun () ->
+        let environment = (Session.initial ()).Environment
+        let observation =
+            TimeObservation.create "ros:activity:unknown-project" "ros" "echelon-foundry" "no-such-project" None None None None (Some 30) None [] DateTimeOffset.UtcNow
+            |> function Ok o -> o | Error e -> failwith $"test setup failed: {e}"
+        match ObservationReconciliation.decide environment false None observation with
+        | ObservationReconciliation.Rejected reason -> assertTrue (reason.Contains "no-such-project") $"rejection reason did not name the unknown project: {reason}"
+        | other -> failwith $"expected Rejected, got {other}"
+
+      "ObservationReconciliation.reconcileRaw rejects malformed JSON without throwing, and creates no candidate", fun () ->
+        let environment = (Session.initial ()).Environment
+        match ObservationReconciliation.reconcileRaw environment false None "{ not valid json" with
+        | ObservationReconciliation.Rejected _ -> ()
+        | other -> failwith $"expected Rejected, got {other}"
+
+      "ObservationReconciliation.reconcileRaw rejects an unsupported contract version explicitly, not silently", fun () ->
+        let environment = (Session.initial ()).Environment
+        let json = """{"contractVersion":"99","observationId":"id","sourceSystem":"ros","organizationId":"echelon-foundry","projectId":"not-defined","durationMinutes":30,"observedAt":"2026-09-13T14:03:00-04:00","evidence":[]}"""
+        match ObservationReconciliation.reconcileRaw environment false None json with
+        | ObservationReconciliation.Rejected reason -> assertTrue (reason.Contains "99") $"rejection reason did not name the unsupported version: {reason}"
+        | other -> failwith $"expected Rejected, got {other}"
+
+      "ObservationReconciliation.reconcileRaw round-trips a valid raw payload into a candidate proposal", fun () ->
+        let environment = (Session.initial ()).Environment
+        let json = """{"contractVersion":"1","observationId":"ros:activity:raw","sourceSystem":"ros","organizationId":"echelon-foundry","projectId":"not-defined","durationMinutes":30,"observedAt":"2026-09-13T14:03:00-04:00","evidence":[]}"""
+        match ObservationReconciliation.reconcileRaw environment false None json with
+        | ObservationReconciliation.CandidateCreated candidate -> assertTrue (candidate.SourceObservationId = "ros:activity:raw") "the raw payload was not mapped to the right observation id"
+        | other -> failwith $"expected CandidateCreated, got {other}"
+
+      "two distinct observations produce two distinct candidates, even with identical field values otherwise", fun () ->
+        let environment = (Session.initial ()).Environment
+        let observationFor id =
+            TimeObservation.create id "ros" "echelon-foundry" "not-defined" None None None None (Some 30) None [] DateTimeOffset.UtcNow
+            |> function Ok o -> o | Error e -> failwith $"test setup failed: {e}"
+        let first = ObservationReconciliation.decide environment false None (observationFor "ros:activity:a")
+        let second = ObservationReconciliation.decide environment false None (observationFor "ros:activity:b")
+        match first, second with
+        | ObservationReconciliation.CandidateCreated c1, ObservationReconciliation.CandidateCreated c2 ->
+            assertTrue (c1.CandidateId <> c2.CandidateId) "two different observations produced the same candidate id"
+        | _ -> failwith $"expected two CandidateCreated results, got {first} and {second}"
     ]
 
 [<EntryPoint>]

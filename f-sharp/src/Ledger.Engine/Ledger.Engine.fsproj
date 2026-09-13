@@ -8,11 +8,13 @@
     <Compile Include="DocumentCodec.fs" />
     <Compile Include="Session.fs" />
     <Compile Include="GitHubSync.fs" />
+    <Compile Include="Integration.fs" />
     <Compile Include="Reports.fs" />
     <Compile Include="Projections.fs" />
     <Compile Include="Dispatch.fs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Ledger.Domain/Ledger.Domain.fsproj" />
+    <ProjectReference Include="../Chrona.Integration/Chrona.Integration.fsproj" />
   </ItemGroup>
 </Project>
