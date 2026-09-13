@@ -2,7 +2,14 @@
 // the Ledger.Wasm shim's single [JSExport] method, parsing the JSON it
 // returns. It never inspects the message contents — pure mechanics.
 
-const WASM_FRAMEWORK_BASE = "/f-sharp/src/Ledger.Wasm/bin/Release/net10.0/publish/wwwroot/_framework";
+// Relative, not absolute-from-domain-root: a dynamic `import()` with a
+// relative specifier resolves against *this module's own* URL (the ES
+// module spec's standard behavior), not the page's URL or the domain root —
+// so this keeps working whether the app is served from the domain root
+// (local dev) or from a subpath (a GitHub Pages project site, served at
+// https://<owner>.github.io/<repo>/), as long as `web/` and `f-sharp/` stay
+// siblings under wherever the site's root actually is.
+const WASM_FRAMEWORK_BASE = "../f-sharp/src/Ledger.Wasm/bin/Release/net10.0/publish/wwwroot/_framework";
 
 export class WasmEngineTransport {
   #exports = null;

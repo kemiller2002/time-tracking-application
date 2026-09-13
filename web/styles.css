@@ -785,6 +785,22 @@ button,
   font-size: 0.9rem;
 }
 
+/* Report output (JSON/Markdown/CSV) is one long unbroken line at minimum —
+   a bare <pre> defaults to `white-space: pre`, which never wraps and forces
+   the whole page to scroll horizontally at narrow widths. */
+.report-content {
+  margin: 0.75rem 0 0;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper-raised);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+
 .form-section {
   border: 0;
   margin: 0;

@@ -101,6 +101,16 @@ cannot import Tier 3/4 even by accident).
   writes straight to `localStorage`) and how a failed GitHub push retries
   itself on reconnect (`dom-bindings.js`'s `online`-event listener
   re-dispatching `PushToGitHub`).
+- **Deployment**: `.github/workflows/fsharp-specs.yml`'s `deploy` job
+  publishes to GitHub Pages on every push to `main` that passes `test`/
+  `build-wasm` — a minimal staged site (`web/` plus the published
+  `_framework/` output, a redirect `index.html` at the root) via
+  `actions/deploy-pages`. `web/wasm-engine-transport.js`'s
+  `WASM_FRAMEWORK_BASE` is a *relative* path specifically so this keeps
+  working whichever subpath Pages serves the repo under. One manual,
+  one-time step outside this repo's own files: the repository's
+  Settings → Pages → "Build and deployment" source must be set to
+  "GitHub Actions".
 
 ## Tests and verification
 
