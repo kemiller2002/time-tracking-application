@@ -1,0 +1,152 @@
+name: Temporary Echelon capability reconciliation
+
+on:
+  push:
+    branches:
+      - "chore/echelon-capabilities-2026-09-21"
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: "chore/echelon-capabilities-2026-09-21"
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Fetch current Echelon capability sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/kemiller2002/repository-operating-system.git "$RUNNER_TEMP/ros-source"
+          git clone --depth 1 https://github.com/kemiller2002/state-directed-engineering.git "$RUNNER_TEMP/sde-source"
+          git clone --depth 1 https://github.com/kemiller2002/communication-engineering.git "$RUNNER_TEMP/communication-source"
+          git clone --depth 1 https://github.com/kemiller2002/typescript-wasm-kernel.git "$RUNNER_TEMP/limen-source"
+          (cd "$RUNNER_TEMP/sde-source/distribution" && npm run build:payload)
+
+      - name: Start attributed ROS work
+        shell: bash
+        env:
+          ROS_ACTOR: agent:chatgpt
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          export ROS_BASE_REF=origin/main
+          work_id="ECHELON-UPGRADE-2026-09-21"
+          ros_project="$RUNNER_TEMP/ros-source/src/Ros.Cli/Ros.Cli.fsproj"
+          dotnet run --project "$ros_project" -c Release -- --root "$GITHUB_WORKSPACE" work capture \
+            --title "Reconcile current Echelon engineering capabilities" \
+            --occurred-at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            --id "$work_id" --priority high --tag tooling --tag ordo --tag limen \
+            --actor agent:chatgpt --source agent-discovery \
+            --source-reference "public-repository-upgrade-2026-09-21"
+          dotnet run --project "$ros_project" -c Release -- --root "$GITHUB_WORKSPACE" work backlog-transition \
+            --id "$work_id" --action ready --occurred-at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          sleep 1
+          dotnet run --project "$ros_project" -c Release -- --root "$GITHUB_WORKSPACE" work start \
+            --id "$work_id" --occurred-at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            --type mechanical --actor agent:chatgpt
+
+      - name: Upgrade legacy SDE to 1.3.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDE_PAYLOAD_DIR="$RUNNER_TEMP/sde-source/distribution/dist" \
+            dotnet run --project "$RUNNER_TEMP/sde-source/src/Sde.Cli/Sde.Cli.fsproj" -c Release -- upgrade
+          SDE_PAYLOAD_DIR="$RUNNER_TEMP/sde-source/distribution/dist" \
+            dotnet run --project "$RUNNER_TEMP/sde-source/src/Sde.Cli/Sde.Cli.fsproj" -c Release -- verify
+
+      - name: Upgrade legacy ROS to 3.1.4
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet run --project "$RUNNER_TEMP/ros-source/src/Ros.Cli/Ros.Cli.fsproj" -c Release -- \
+            --root "$GITHUB_WORKSPACE" upgrade
+
+      - name: Adopt and upgrade Visual Engineering to 1.0.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes @echelon-foundry/visual-engineering@1.0.0 init
+          npx --yes @echelon-foundry/visual-engineering@1.0.0 verify --strict
+
+      - name: Install Communication Engineering 1.0.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          node "$RUNNER_TEMP/communication-source/bin/communication-engineering.mjs" init
+
+      - name: Install Limen 0.6.1 with the real F# to browser boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > limen.config.json <<'JSON'
+          {
+            "configurationVersion": 1,
+            "boundary": {
+              "engine": [
+                "f-sharp/src/Ledger.Domain",
+                "f-sharp/src/Ledger.Engine",
+                "f-sharp/src/Chrona.Integration"
+              ],
+              "kernel": [
+                "f-sharp/src/Ledger.Wasm",
+                "web"
+              ]
+            }
+          }
+          JSON
+          dotnet run --project "$RUNNER_TEMP/limen-source/cli/Limen.Cli/Limen.Cli.fsproj" -c Release -p:Version=0.6.1 -- \
+            --root "$GITHUB_WORKSPACE" init
+
+      - name: Verify combined state and complete work
+        shell: bash
+        env:
+          ROS_ACTOR: agent:chatgpt
+        run: |
+          set -euo pipefail
+          ros_project="$RUNNER_TEMP/ros-source/src/Ros.Cli/Ros.Cli.fsproj"
+          dotnet run --project "$ros_project" -c Release -- --root "$GITHUB_WORKSPACE" init
+          SDE_PAYLOAD_DIR="$RUNNER_TEMP/sde-source/distribution/dist" \
+            dotnet run --project "$RUNNER_TEMP/sde-source/src/Sde.Cli/Sde.Cli.fsproj" -c Release -- verify
+          npx --yes @echelon-foundry/visual-engineering@1.0.0 verify --strict
+          node "$RUNNER_TEMP/communication-source/bin/communication-engineering.mjs" verify --strict
+          dotnet run --project "$RUNNER_TEMP/limen-source/cli/Limen.Cli/Limen.Cli.fsproj" -c Release -p:Version=0.6.1 -- \
+            --root "$GITHUB_WORKSPACE" verify --strict
+          git fetch origin main
+          export ROS_BASE_REF=origin/main
+          dotnet run --project "$ros_project" -c Release -- --root "$GITHUB_WORKSPACE" work complete \
+            --id "ECHELON-UPGRADE-2026-09-21" \
+            --occurred-at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" --actor agent:chatgpt
+          dotnet run --project "$ros_project" -c Release -- --root "$GITHUB_WORKSPACE" registry build
+          dotnet run --project "$ros_project" -c Release -- --root "$GITHUB_WORKSPACE" registry check
+          dotnet run --project "$ros_project" -c Release -- --root "$GITHUB_WORKSPACE" validate
+
+      - name: Commit reconciled capability state
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Echelon Upgrade Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git reset ".github/workflows/echelon-capability-reconcile.yml"
+          if git diff --cached --quiet; then
+            echo "No capability-state changes required."
+            exit 0
+          fi
+          git commit -m "chore: reconcile current Echelon engineering capabilities"
+          git push origin HEAD:"chore/echelon-capabilities-2026-09-21"
