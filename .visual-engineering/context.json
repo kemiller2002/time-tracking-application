@@ -1,9 +1,9 @@
 {
   "schemaVersion": "1.0",
-  "contextVersion": "0.14.1",
+  "contextVersion": "1.0.0",
   "sourceRepository": "https://github.com/kemiller2002/Visual-Engineering",
-  "sourceCommit": "9722e3f749490e1b5efbc5910123b0a490c395a9",
-  "generatedAt": "2026-07-29T16:55:42-04:00",
+  "sourceCommit": "0be73c83d8c257794d53cb9ddc9a6db69f843fbf",
+  "generatedAt": "2026-09-17T20:09:11.210Z",
   "researchCatalogVersion": "1.1",
   "researchDocuments": 97,
   "profile": "ui-foundations",
@@ -27,11 +27,11 @@
     },
     {
       "file": "RESEARCH-INDEX.md",
-      "sha256": "2be0e95daaa1823a17220949faf1264f069d5173b38f5b74e6841ae1fc03da36"
+      "sha256": "b09cd82ad563c28188ebf731fda2b362de8c1144b6c31e1a509fab25ded52db6"
     },
     {
       "file": "sources.json",
-      "sha256": "4665b53a5c99a24cde525c5e6579776fc69715a455a849a68cdd7e397d3f82ed"
+      "sha256": "cfb3c9544ab0c9ce5f8dc225002b94eccd6de0fd8875069d4daa7def1be54be5"
     }
   ]
 }
