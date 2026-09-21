@@ -21,4 +21,4 @@ jobs:
         with:
           node-version: 22
       - name: Verify the Limen boundary
-        run: npx --yes @echelon-foundry/typescript-wasm-kernel verify --strict
+        run: npx --yes @echelon-foundry/typescript-wasm-kernel@0.6.2 verify --strict
