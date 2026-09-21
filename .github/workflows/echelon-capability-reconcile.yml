@@ -90,7 +90,7 @@ jobs:
           set -euo pipefail
           node "$RUNNER_TEMP/communication-source/bin/communication-engineering.mjs" init
 
-      - name: Install Limen 0.6.1 with the real F# to browser boundary
+      - name: Install Limen 0.6.2 with the real F# to browser boundary
         shell: bash
         run: |
           set -euo pipefail
@@ -110,7 +110,7 @@ jobs:
             }
           }
           JSON
-          dotnet run --project "$RUNNER_TEMP/limen-source/cli/Limen.Cli/Limen.Cli.fsproj" -c Release -p:Version=0.6.1 -- \
+          dotnet run --project "$RUNNER_TEMP/limen-source/cli/Limen.Cli/Limen.Cli.fsproj" -c Release -p:Version=0.6.2 -- \
             --root "$GITHUB_WORKSPACE" init
 
       - name: Verify combined state and complete work
@@ -125,7 +125,7 @@ jobs:
             dotnet run --project "$RUNNER_TEMP/sde-source/src/Sde.Cli/Sde.Cli.fsproj" -c Release -- verify
           npx --yes @echelon-foundry/visual-engineering@1.0.0 verify --strict
           node "$RUNNER_TEMP/communication-source/bin/communication-engineering.mjs" verify --strict
-          dotnet run --project "$RUNNER_TEMP/limen-source/cli/Limen.Cli/Limen.Cli.fsproj" -c Release -p:Version=0.6.1 -- \
+          dotnet run --project "$RUNNER_TEMP/limen-source/cli/Limen.Cli/Limen.Cli.fsproj" -c Release -p:Version=0.6.2 -- \
             --root "$GITHUB_WORKSPACE" verify --strict
           git fetch origin main
           export ROS_BASE_REF=origin/main
