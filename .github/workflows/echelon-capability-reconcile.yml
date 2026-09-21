@@ -131,7 +131,9 @@ jobs:
           export ROS_BASE_REF=origin/main
           dotnet run --project "$ros_project" -c Release -- --root "$GITHUB_WORKSPACE" work complete \
             --id "ECHELON-UPGRADE-2026-09-21" \
-            --occurred-at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" --actor agent:chatgpt
+            --occurred-at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" --actor agent:chatgpt \
+            --evidence implementation=limen.config.json \
+            --evidence tests=f-sharp/tests/Ledger.Engine.Specs/Program.fs
           dotnet run --project "$ros_project" -c Release -- --root "$GITHUB_WORKSPACE" registry build
           dotnet run --project "$ros_project" -c Release -- --root "$GITHUB_WORKSPACE" registry check
           dotnet run --project "$ros_project" -c Release -- --root "$GITHUB_WORKSPACE" validate
