@@ -44,7 +44,7 @@ jobs:
           dotnet run --project "$ros_project" -c Release -- --root "$GITHUB_WORKSPACE" work capture \
             --title "Re-adopt Limen 0.6.2 verifier bytes" \
             --occurred-at "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
-            --id "$work_id" --priority normal --tag tooling --tag limen \
+            --id "$work_id" --priority medium --tag tooling --tag limen \
             --actor agent:chatgpt --source agent-discovery \
             --source-reference "time-tracking-limen-0.6.2-reconciliation"
           dotnet run --project "$ros_project" -c Release -- --root "$GITHUB_WORKSPACE" work backlog-transition \
