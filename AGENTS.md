@@ -51,3 +51,38 @@ Apply, in descending order: explicit user instruction; applicable safety, legal,
 
 For substantial work, record: objective; work completed; files changed; decisions and assumptions; tests run and results; evidence added; unresolved questions; risks; and next recommended action. A capable successor must be able to continue without the originating conversation.
 
+<!-- BEGIN echelon:visual-engineering -->
+## Visual Engineering UI research
+
+Managed by `npx @echelon-foundry/visual-engineering`. Do not edit inside this block.
+
+Before designing, implementing, or reviewing UI:
+
+1. Run `npx @echelon-foundry/visual-engineering verify` and stop if it reports a failure.
+2. Read `.visual-engineering/AGENT-INSTRUCTIONS.md`.
+3. Read `.visual-engineering/UI-FOUNDATIONS.md`.
+4. Read `.visual-engineering/UI-DECISION-CHECKLIST.md`.
+5. Read `.visual-engineering/UI-ANTI-PATTERNS.md`.
+6. Consult `.visual-engineering/RESEARCH-INDEX.md` for provenance and deeper evidence.
+7. Inspect the product and its existing design system.
+8. Apply the research as decision criteria, not as a visual style.
+9. Report the context version, source commit, principles applied, verification
+   performed, and justified deviations.
+
+Do not copy Visual Engineering research into this repository by hand.
+<!-- END echelon:visual-engineering -->
+
+<!-- echelon:communication-engineering:start -->
+## Communication Engineering
+
+Communication Engineering is installed as evidence-bounded operational guidance.
+Before producing consequential communication, read:
+
+- `.communication-engineering/COMMUNICATION-FOUNDATIONS.md`
+- `.communication-engineering/COMMUNICATION-DECISION-CHECKLIST.md`
+- `.communication-engineering/PURPOSE-OUTCOME-MATRIX.md`
+- `.communication-engineering/COMMUNICATION-ANTI-PATTERNS.md`
+- `.communication-engineering/RESEARCH-STATUS.md`
+
+Treat research maturity as a constraint. Do not turn provisional findings into universal rules, optimize persuasion at the expense of user autonomy, or substitute style for proof obligations.
+<!-- echelon:communication-engineering:end -->

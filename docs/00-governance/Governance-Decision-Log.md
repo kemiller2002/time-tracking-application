@@ -2,11 +2,11 @@
 id: GV-DEC-001
 title: Governance Decision Log
 status: canonical
-version: 1.0.0
+version: 1.1.0
 owners:
   - repository-governance
 created: 2026-07-22
-updated: 2026-07-22
+updated: 2026-09-05
 review_cycle: quarterly
 supersedes: []
 superseded_by: []
@@ -14,6 +14,7 @@ related_documents:
   - AI-Repository-Operating-System.md
   - Research-Execution-Package-Specification.md
   - ../../prompts/Codex-Prompt-ROS-Phase-1-Governance-Foundation.md
+  - ../development-telemetry.md
 tags: [governance, decisions, phase-1]
 ---
 
@@ -153,3 +154,15 @@ On 2026-07-22, repository discovery found the Phase 1 execution prompt as the on
 - **Consequences:** New agents orient quickly; canonical detail remains maintainable.
 - **Revisit trigger:** Agent evaluations show missed rules, broken discovery, or tool incompatibility with links/front matter.
 
+## DF-GOV-011 — Adaptive Execution Telemetry Contract
+
+- **Date:** 2026-09-05
+- **Status:** accepted
+- **Context:** Work attribution and evidence existed, but ROS could not represent multiple runtime executions, distinguish unavailable telemetry from zero, or retain new provider fields.
+- **Hypothesis:** An automatic, provider-neutral execution envelope with a normalized registry and bounded raw extension layer improves traceability without making runtime-specific fields canonical.
+- **Evidence considered:** `EV-ROS-2026-A011`; current CLI/bootstrap/schema architecture; official Codex, Claude Code, Gemini CLI, and Copilot runtime documentation; dirty-worktree attribution limits.
+- **Alternatives:** Token fields on work items; provider-native schemas in core; OTel-only records; raw-only logs; automatic vendor hooks.
+- **Decision:** Apply `DF-ROS-2026-A010`: begin/finalize execution telemetry with work transitions, keep provider adapters at the edge, preserve measurement provenance/quality and unknown raw fields, require factual multi-valued work/R&D classification, and refuse untrustworthy dirty-baseline change attribution.
+- **Confidence:** High (0.86)
+- **Consequences:** Deterministic collection is inherited mechanically; detailed runtime and research facts remain capability-dependent. Records grow but are segmented and bounded. Historical work is not rewritten.
+- **Revisit trigger:** Cross-provider pilots reveal incompatible semantics, runtime hook security changes materially, or record volume requires an external retention tier.

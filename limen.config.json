@@ -1,0 +1,14 @@
+{
+  "configurationVersion": 1,
+  "boundary": {
+    "engine": [
+      "f-sharp/src/Ledger.Domain",
+      "f-sharp/src/Ledger.Engine",
+      "f-sharp/src/Chrona.Integration"
+    ],
+    "kernel": [
+      "f-sharp/src/Ledger.Wasm",
+      "web"
+    ]
+  }
+}
