@@ -1,3 +1,9 @@
+# Shared foundation inheritance
+
+The source requirements in this file are supplemented by `docs/ECHELON-SHARED-APPLICATION-FOUNDATIONS.md`. That document preserves the mandatory Aegis, Forma, and conditional Folio obligations that must migrate into Chrona with the rest of this requirement corpus.
+
+---
+
 # Domain requirements — Business Activity Ledger
 
 This is the authoritative statement of the business rules the Business
