@@ -36,11 +36,21 @@ name: CI and Pages deploy
 
 on:
   push:
+    needs: debounce
     branches: [main]
   pull_request:
+    needs: debounce
 
 jobs:
+  debounce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Wait for commit batch
+        run: sleep 600
+
   test:
+    needs: debounce
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -50,6 +60,7 @@ jobs:
       - run: npm run test
 
   build-wasm:
+    needs: debounce
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
