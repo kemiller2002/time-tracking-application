@@ -41,6 +41,10 @@ on:
   pull_request:
     needs: debounce
 
+concurrency:
+  group: fsharp-specs-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   debounce:
     runs-on: ubuntu-latest
