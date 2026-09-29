@@ -16,12 +16,14 @@ name: Chrona Integration Package CI
 
 on:
   push:
+    needs: debounce
     branches: [main]
     paths:
       - "f-sharp/src/Chrona.Integration/**"
       - "f-sharp/tests/Chrona.Integration.Tests/**"
       - ".github/workflows/chrona-integration-ci.yml"
   pull_request:
+    needs: debounce
     paths:
       - "f-sharp/src/Chrona.Integration/**"
       - "f-sharp/tests/Chrona.Integration.Tests/**"
@@ -30,8 +32,20 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: chrona-integration-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  debounce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Wait for commit batch
+        run: sleep 600
+
   verify:
+    needs: debounce
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
